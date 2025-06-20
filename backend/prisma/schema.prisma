@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  username      String   @unique
+  displayName   String?
+  bio           String?
+  avatar        String?
+  passwordHash  String
+  isVerified    Boolean  @default(false)
+  verificationTier String @default("none") // none, email, phone, identity, notable
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  posts         Post[]
+  followers     Follow[] @relation("FollowedUser")
+  
+  @@map("users")
+}
+
+model Post {
+  id            String   @id @default(cuid())
+  content       String
+  contentWarning String?
+  isScheduled   Boolean  @default(false)
+  scheduledFor  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  authorId      String
+  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  @@map("posts")
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String   // Can be external ActivityPub actor
+  followedId  String   // Always a ParaSocial user
+  actorId     String?  // ActivityPub actor ID for federated follows
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  followed    User     @relation("FollowedUser", fields: [followedId], references: [id], onDelete: Cascade)
+  
+  @@unique([followerId, followedId])
+  @@map("follows")
+}
+
+model Instance {
+  id          String   @id @default(cuid())
+  domain      String   @unique
+  isBlocked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  @@map("instances")
+}
