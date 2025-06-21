@@ -7,47 +7,86 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ParaSocial user accounts (content creators only)
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  username      String   @unique
-  displayName   String?
-  bio           String?
-  avatar        String?
-  passwordHash  String
-  isVerified    Boolean  @default(false)
-  verificationTier String @default("none") // none, email, phone, identity, notable
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(cuid())
+  email            String   @unique
+  username         String   @unique
+  displayName      String?
+  bio              String?
+  avatar           String?  // URL to avatar image
+  website          String?  // Optional website/portfolio link
+  passwordHash     String
+  isVerified       Boolean  @default(false)
+  verificationTier String   @default("none") // none, email, phone, identity, notable
+  isActive         Boolean  @default(true)   // For soft account suspension
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // ActivityPub fields for federation
+  actorId          String?  @unique // ActivityPub actor URI
+  publicKey        String?  // RSA public key for HTTP signatures
+  privateKey       String?  // RSA private key (encrypted)
   
   // Relations
-  posts         Post[]
-  followers     Follow[] @relation("FollowedUser")
+  posts            Post[]
+  followers        Follow[] @relation("FollowedUser")
+  blocks           Block[]  @relation("BlockingUser")
+  reports          Report[] @relation("ReportedUser")
   
   @@map("users")
 }
 
+// Posts created by ParaSocial users
 model Post {
-  id            String   @id @default(cuid())
-  content       String
-  contentWarning String?
-  isScheduled   Boolean  @default(false)
-  scheduledFor  DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(cuid())
+  content        String    // Main post content
+  contentWarning String?   // Content warning text
+  isScheduled    Boolean   @default(false)
+  scheduledFor   DateTime? // When to publish scheduled posts
+  isPublished    Boolean   @default(true)  // Draft vs published
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  publishedAt    DateTime? // Actual publication time
+  
+  // ActivityPub fields
+  activityId     String?   @unique // ActivityPub activity URI
   
   // Relations
-  authorId      String
-  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  media          Media[]   // Attached images/files
+  reports        Report[]  @relation("ReportedPost")
   
   @@map("posts")
 }
 
+// Media attachments for posts
+model Media {
+  id          String   @id @default(cuid())
+  filename    String   // Original filename
+  url         String   // Storage URL
+  mimeType    String   // MIME type (image/jpeg, etc.)
+  size        Int      // File size in bytes
+  altText     String?  // Accessibility description
+  width       Int?     // Image dimensions
+  height      Int?
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@map("media")
+}
+
+// Follow relationships (supports both local and federated)
 model Follow {
   id          String   @id @default(cuid())
-  followerId  String   // Can be external ActivityPub actor
-  followedId  String   // Always a ParaSocial user
-  actorId     String?  // ActivityPub actor ID for federated follows
+  followerId  String   // Can be external ActivityPub actor ID
+  followedId  String   // Always a ParaSocial user ID
+  actorId     String?  // Full ActivityPub actor URI for federated follows
+  isAccepted  Boolean  @default(true)  // For future follow request support
   createdAt   DateTime @default(now())
   
   // Relations
@@ -57,11 +96,124 @@ model Follow {
   @@map("follows")
 }
 
+// User blocking (ParaSocial users can block followers)
+model Block {
+  id         String   @id @default(cuid())
+  blockerId  String   // ParaSocial user doing the blocking
+  blockedId  String   // Actor being blocked (can be external)
+  reason     String?  // Optional reason for block
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  blocker    User     @relation("BlockingUser", fields: [blockerId], references: [id], onDelete: Cascade)
+  
+  @@unique([blockerId, blockedId])
+  @@map("blocks")
+}
+
+// Content and user reporting system
+model Report {
+  id          String      @id @default(cuid())
+  reporterId  String      // Who made the report (can be external)
+  reason      ReportType  // Type of violation
+  description String?     // Additional details
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  resolvedAt  DateTime?
+  
+  // What's being reported (one of these will be set)
+  reportedUserId String?
+  reportedPostId String?
+  
+  // Relations
+  reportedUser User? @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedPost Post? @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
+  
+  @@map("reports")
+}
+
+// Federated instance management
 model Instance {
-  id          String   @id @default(cuid())
-  domain      String   @unique
-  isBlocked   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  domain        String   @unique
+  isBlocked     Boolean  @default(false)
+  isSuspended   Boolean  @default(false)  // Temporary suspension
+  software      String?  // Mastodon, Pleroma, etc.
+  version       String?  // Software version
+  description   String?  // Instance description
+  lastSeen      DateTime? // Last successful federation
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   
   @@map("instances")
+}
+
+// ActivityPub activity processing queue
+model ActivityQueue {
+  id          String      @id @default(cuid())
+  activityId  String      @unique // ActivityPub activity ID
+  actorId     String      // Source actor
+  type        String      // Activity type (Follow, Undo, etc.)
+  object      Json        // Full activity object
+  status      QueueStatus @default(PENDING)
+  attempts    Int         @default(0)
+  maxAttempts Int         @default(3)
+  nextRetry   DateTime?   // When to retry failed activities
+  error       String?     // Last error message
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  @@map("activity_queue")
+}
+
+// Ban evasion tracking
+model DeviceFingerprint {
+  id         String   @id @default(cuid())
+  fingerprint String  @unique // Hashed device fingerprint
+  isBlocked  Boolean  @default(false)
+  reason     String?  // Why this fingerprint was blocked
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  @@map("device_fingerprints")
+}
+
+// IP address tracking for ban evasion
+model IpAddress {
+  id        String   @id @default(cuid())
+  address   String   @unique // Hashed IP address
+  isBlocked Boolean  @default(false)
+  reason    String?  // Why this IP was blocked
+  country   String?  // Geolocation data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("ip_addresses")
+}
+
+// Enums for type safety
+enum ReportType {
+  HARASSMENT
+  SPAM
+  MISINFORMATION
+  HATE_SPEECH
+  ILLEGAL_CONTENT
+  COPYRIGHT
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  ABANDONED
 }
