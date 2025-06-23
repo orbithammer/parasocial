@@ -6,7 +6,7 @@ A **unidirectional social network** for content creators. ParaSocial allows crea
 
 ParaSocial addresses the need for creators to share content without managing overwhelming social interactions. Followers from federated platforms can follow and read posts, but cannot reply or comment directly, creating a healthier creator experience.
 
-## Potential Use Cases
+## 📢 Potential Use Cases
 
 ### Broadcasting-First Use Cases
 
