@@ -26,12 +26,13 @@ export const UserSchemas = {
   // Login validation
   login: z.object({
     email: z.string().email('Invalid email format'),
-    password: z.string().min(1, 'Password is required')
+    password: z.string().trim().min(1, 'Password is required')
   }),
 
   // Profile update validation
   updateProfile: z.object({
     displayName: z.string()
+      .trim()
       .min(1, 'Display name cannot be empty')
       .max(50, 'Display name must be less than 50 characters')
       .optional(),
@@ -40,6 +41,9 @@ export const UserSchemas = {
       .optional(),
     website: z.string()
       .url('Invalid website URL')
+      .refine((url) => url.startsWith('http://') || url.startsWith('https://'), {
+        message: 'Invalid website URL'
+      })
       .optional()
       .or(z.literal(''))
   })
