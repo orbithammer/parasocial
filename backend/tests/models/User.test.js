@@ -2,7 +2,7 @@
 // Unit tests for User model registration validation
 
 import { describe, it, expect } from 'vitest'
-import { User, UserSchemas } from '../src/models/User.js'
+import { User, UserSchemas } from '../../src/models/User.js'
 
 describe('User Model - Registration Validation', () => {
   describe('Valid Registration Data', () => {
