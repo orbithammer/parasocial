@@ -1,7 +1,19 @@
-// frontend/src/components/test/FollowUnfollowTest.tsx
 import React, { useState, useEffect } from 'react'
 
-// Types for API responses
+// TypeScript interfaces
+interface User {
+  id: string
+  username: string
+  displayName: string
+  bio: string
+  avatar: string | null
+  website: string | null
+  isVerified: boolean
+  verificationTier: 'notable' | 'identity' | 'phone' | 'email' | 'none'
+  followersCount: number
+  postsCount: number
+}
+
 interface FollowResponse {
   success: boolean
   data: {
@@ -17,26 +29,30 @@ interface UnfollowResponse {
   message: string
 }
 
-interface UserProfile {
-  id: string
-  username: string
-  displayName: string
-  bio: string
-  avatar: string | null
-  website: string | null
-  isVerified: boolean
-  verificationTier: 'none' | 'email' | 'phone' | 'identity' | 'notable'
-  followersCount: number
-  postsCount: number
-}
-
 interface UserProfileResponse {
   success: boolean
-  data: UserProfile
+  data: User
 }
 
 interface FollowStatusResponse {
   isFollowing: boolean
+}
+
+interface FollowAction {
+  username: string
+  action: 'Followed' | 'Unfollowed'
+  timestamp: string
+}
+
+interface TestUser {
+  username: string
+  description: string
+  scenario: string
+}
+
+interface UserProfileCardProps {
+  username: string
+  onFollowChange?: (username: string, isNowFollowing: boolean) => void
 }
 
 // Mock API service for testing follow/unfollow functionality
@@ -88,7 +104,7 @@ const mockFollowAPI = {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 400))
     
-    const mockUsers: Record<string, UserProfile> = {
+    const mockUsers: Record<string, User> = {
       'techceo': {
         id: 'user1',
         username: 'techceo',
@@ -167,13 +183,8 @@ const mockFollowAPI = {
  * User Profile Card Component
  * Shows user info with follow/unfollow button
  */
-interface UserProfileCardProps {
-  username: string
-  onFollowChange?: (username: string, isNowFollowing: boolean) => void
-}
-
-function UserProfileCard({ username, onFollowChange }: UserProfileCardProps): React.JSX.Element {
-  const [user, setUser] = useState<UserProfile | null>(null)
+function UserProfileCard({ username, onFollowChange }: UserProfileCardProps) {
+  const [user, setUser] = useState<User | null>(null)
   const [isFollowing, setIsFollowing] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [isFollowLoading, setIsFollowLoading] = useState<boolean>(false)
@@ -197,7 +208,7 @@ function UserProfileCard({ username, onFollowChange }: UserProfileCardProps): Re
       setUser(profileResult.data)
       setIsFollowing(followResult.isFollowing)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred')
+      setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsLoading(false)
     }
@@ -218,13 +229,13 @@ function UserProfileCard({ username, onFollowChange }: UserProfileCardProps): Re
         onFollowChange?.(username, true)
       }
     } catch (err) {
-      setFollowError(err instanceof Error ? err.message : 'An unknown error occurred')
+      setFollowError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsFollowLoading(false)
     }
   }
 
-  const getVerificationBadgeColor = (tier: UserProfile['verificationTier']): string => {
+  const getVerificationBadgeColor = (tier: User['verificationTier']): string => {
     switch (tier) {
       case 'notable': return 'text-purple-500'
       case 'identity': return 'text-blue-500'
@@ -257,30 +268,6 @@ function UserProfileCard({ username, onFollowChange }: UserProfileCardProps): Re
           </div>
         </div>
       </div>
-)
-
-export default function FollowUnfollowTestComponent(): React.JSX.Element {
-  return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Follow/Unfollow Test</h1>
-          <p className="text-gray-600">
-            Test user following functionality with different scenarios including error handling
-          </p>
-        </div>
-        
-        <FollowTestScenarios />
-        
-        <div className="text-center text-sm text-gray-500 mt-8">
-          <p>This component tests UserController.followUser() and UserController.unfollowUser() functionality</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-        </div>
-      </div>
     )
   }
 
@@ -300,7 +287,7 @@ export default function FollowUnfollowTestComponent(): React.JSX.Element {
     )
   }
 
-  if (!user) return <div></div>
+  if (!user) return null
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
@@ -321,8 +308,8 @@ export default function FollowUnfollowTestComponent(): React.JSX.Element {
                 className={`w-5 h-5 flex-shrink-0 ${getVerificationBadgeColor(user.verificationTier)}`} 
                 fill="currentColor" 
                 viewBox="0 0 20 20"
+                aria-label={`Verified ${user.verificationTier}`}
               >
-                <title>{`Verified ${user.verificationTier}`}</title>
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
               </svg>
             )}
@@ -405,19 +392,7 @@ export default function FollowUnfollowTestComponent(): React.JSX.Element {
 /**
  * Follow Test Scenarios Component
  */
-interface TestUser {
-  username: string
-  description: string
-  scenario: string
-}
-
-interface FollowAction {
-  username: string
-  action: string
-  timestamp: string
-}
-
-function FollowTestScenarios(): React.JSX.Element {
+function FollowTestScenarios() {
   const [selectedUser, setSelectedUser] = useState<string>('techceo')
   const [followHistory, setFollowHistory] = useState<FollowAction[]>([])
 
@@ -455,7 +430,7 @@ function FollowTestScenarios(): React.JSX.Element {
   ]
 
   const handleFollowChange = (username: string, isNowFollowing: boolean): void => {
-    const action = isNowFollowing ? 'Followed' : 'Unfollowed'
+    const action: FollowAction['action'] = isNowFollowing ? 'Followed' : 'Unfollowed'
     const timestamp = new Date().toLocaleTimeString()
     
     setFollowHistory(prev => [
@@ -517,3 +492,26 @@ function FollowTestScenarios(): React.JSX.Element {
         />
       </div>
     </div>
+  )
+}
+
+export default function FollowUnfollowTestComponent() {
+  return (
+    <div className="min-h-screen bg-gray-100 py-8">
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Follow/Unfollow Test</h1>
+          <p className="text-gray-600">
+            Test user following functionality with different scenarios including error handling
+          </p>
+        </div>
+        
+        <FollowTestScenarios />
+        
+        <div className="text-center text-sm text-gray-500 mt-8">
+          <p>This component tests UserController.followUser() and UserController.unfollowUser() functionality</p>
+        </div>
+      </div>
+    </div>
+  )
+}
