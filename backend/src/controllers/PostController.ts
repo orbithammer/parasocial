@@ -1,52 +1,69 @@
-// backend/src/controllers/PostController.js
-// Post management controller with CRUD operations for posts
+// backend/src/controllers/PostController.ts
+// Post management controller with CRUD operations for posts using TypeScript
+
+import { Request, Response } from 'express'
+import { PostRepository } from '../repositories/PostRepository'
+import { UserRepository } from '../repositories/UserRepository'
+
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+}
 
 /**
  * Post controller class
  * Handles HTTP requests for post operations
  */
 export class PostController {
-  constructor(postRepository, userRepository) {
-    this.postRepository = postRepository
-    this.userRepository = userRepository
-  }
+  constructor(
+    private postRepository: PostRepository,
+    private userRepository: UserRepository
+  ) {}
 
   /**
    * Create a new post
    * POST /posts
    */
-  async createPost(req, res) {
+  async createPost(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Validate required fields
       const { content, contentWarning, isScheduled, scheduledFor } = req.body
 
       if (!content || content.trim().length === 0) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Post content is required'
         })
+        return
       }
 
       if (content.length > 5000) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Post content cannot exceed 5000 characters'
         })
+        return
       }
 
       // Validate scheduled post data
       if (isScheduled && !scheduledFor) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Scheduled posts must include scheduledFor date'
         })
+        return
       }
 
       if (isScheduled && new Date(scheduledFor) <= new Date()) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Scheduled date must be in the future'
         })
+        return
       }
 
       // Create post data
@@ -57,7 +74,7 @@ export class PostController {
         scheduledFor: isScheduled ? new Date(scheduledFor) : null,
         isPublished: !isScheduled,
         publishedAt: !isScheduled ? new Date() : null,
-        authorId: req.user.id
+        authorId: req.user!.id
       }
 
       // Create the post
@@ -72,7 +89,7 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to create post',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -81,11 +98,11 @@ export class PostController {
    * Get public feed of all posts
    * GET /posts
    */
-  async getPosts(req, res) {
+  async getPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Parse pagination parameters
-      const page = Math.max(1, parseInt(req.query.page) || 1)
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20))
+      const page = Math.max(1, parseInt(req.query.page as string) || 1)
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20))
       const offset = (page - 1) * limit
 
       // Get posts with pagination
@@ -100,7 +117,7 @@ export class PostController {
       // Filter out current user's own posts if they're logged in
       let filteredPosts = result.posts
       if (req.user) {
-        filteredPosts = result.posts.filter(post => post.authorId !== req.user.id)
+        filteredPosts = result.posts.filter(post => post.authorId !== req.user!.id)
       }
 
       // Calculate adjusted pagination
@@ -123,7 +140,7 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch posts',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -132,33 +149,36 @@ export class PostController {
    * Get specific post by ID
    * GET /posts/:id
    */
-  async getPostById(req, res) {
+  async getPostById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params
 
       if (!id) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Post ID is required'
         })
+        return
       }
 
       // Find post with author and media
       const post = await this.postRepository.findByIdWithAuthorAndMedia(id)
 
       if (!post) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'Post not found'
         })
+        return
       }
 
       // Check if post is published (unless it's the author viewing)
       if (!post.isPublished && (!req.user || req.user.id !== post.authorId)) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'Post not found'
         })
+        return
       }
 
       res.json({
@@ -169,7 +189,7 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch post',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -178,33 +198,36 @@ export class PostController {
    * Delete own post
    * DELETE /posts/:id
    */
-  async deletePost(req, res) {
+  async deletePost(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params
 
       if (!id) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Post ID is required'
         })
+        return
       }
 
       // Find post to verify ownership
       const post = await this.postRepository.findById(id)
 
       if (!post) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'Post not found'
         })
+        return
       }
 
       // Verify the user owns the post
-      if (post.authorId !== req.user.id) {
-        return res.status(403).json({
+      if (post.authorId !== req.user!.id) {
+        res.status(403).json({
           success: false,
           error: 'You can only delete your own posts'
         })
+        return
       }
 
       // Delete the post
@@ -218,7 +241,7 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to delete post',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -227,30 +250,32 @@ export class PostController {
    * Get posts by specific user
    * GET /users/:username/posts
    */
-  async getUserPosts(req, res) {
+  async getUserPosts(req: Request, res: Response): Promise<void> {
     try {
       const { username } = req.params
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find user first
       const user = await this.userRepository.findByUsername(username)
 
       if (!user) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Parse pagination parameters
-      const page = Math.max(1, parseInt(req.query.page) || 1)
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20))
+      const page = Math.max(1, parseInt(req.query.page as string) || 1)
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20))
       const offset = (page - 1) * limit
 
       // Get user's posts
@@ -281,7 +306,7 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch user posts',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }

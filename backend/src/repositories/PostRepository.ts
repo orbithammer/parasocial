@@ -1,21 +1,39 @@
-// backend/src/repositories/PostRepository.js
-// Data access layer for Post operations using Prisma
+// backend/src/repositories/PostRepository.ts
+// Data access layer for Post operations using Prisma with proper TypeScript types
+
+import { PrismaClient } from '@prisma/client'
+
+interface PostCreateData {
+  content: string
+  contentWarning?: string | null
+  isScheduled?: boolean
+  scheduledFor?: Date | null
+  isPublished?: boolean
+  publishedAt?: Date | null
+  authorId: string
+}
+
+interface PaginationOptions {
+  offset?: number
+  limit?: number
+  includeAuthor?: boolean
+  includeMedia?: boolean
+  onlyPublished?: boolean
+}
 
 /**
  * Post repository class
  * Handles database operations for posts
  */
 export class PostRepository {
-  constructor(prismaClient) {
-    this.prisma = prismaClient
-  }
+  constructor(private prisma: PrismaClient) {}
 
   /**
    * Create a new post
-   * @param {Object} postData - Post data to create
-   * @returns {Promise<Object>} Created post with author information
+   * @param postData - Post data to create
+   * @returns Promise<Object> Created post with author information
    */
-  async create(postData) {
+  async create(postData: PostCreateData) {
     return await this.prisma.post.create({
       data: postData,
       include: {
@@ -35,10 +53,10 @@ export class PostRepository {
 
   /**
    * Find post by ID
-   * @param {string} id - Post ID
-   * @returns {Promise<Object|null>} Post or null if not found
+   * @param id - Post ID
+   * @returns Promise<Object|null> Post or null if not found
    */
-  async findById(id) {
+  async findById(id: string) {
     return await this.prisma.post.findUnique({
       where: { id }
     })
@@ -46,10 +64,10 @@ export class PostRepository {
 
   /**
    * Find post by ID with author and media information
-   * @param {string} id - Post ID
-   * @returns {Promise<Object|null>} Post with relations or null if not found
+   * @param id - Post ID
+   * @returns Promise<Object|null> Post with relations or null if not found
    */
-  async findByIdWithAuthorAndMedia(id) {
+  async findByIdWithAuthorAndMedia(id: string) {
     return await this.prisma.post.findUnique({
       where: { id },
       include: {
@@ -79,15 +97,10 @@ export class PostRepository {
 
   /**
    * Find many posts with pagination
-   * @param {Object} options - Query options
-   * @param {number} options.offset - Number of posts to skip
-   * @param {number} options.limit - Number of posts to return
-   * @param {boolean} options.includeAuthor - Include author information
-   * @param {boolean} options.includeMedia - Include media attachments
-   * @param {boolean} options.onlyPublished - Only return published posts
-   * @returns {Promise<Object>} Posts array and total count
+   * @param options - Query options
+   * @returns Promise<Object> Posts array and total count
    */
-  async findManyWithPagination(options = {}) {
+  async findManyWithPagination(options: PaginationOptions = {}) {
     const {
       offset = 0,
       limit = 20,
@@ -97,13 +110,13 @@ export class PostRepository {
     } = options
 
     // Build where clause
-    const where = {}
+    const where: any = {}
     if (onlyPublished) {
       where.isPublished = true
     }
 
     // Build include clause
-    const include = {}
+    const include: any = {}
     if (includeAuthor) {
       include.author = {
         select: {
@@ -151,11 +164,11 @@ export class PostRepository {
 
   /**
    * Find posts by author ID with pagination
-   * @param {string} authorId - Author's user ID
-   * @param {Object} options - Query options (same as findManyWithPagination)
-   * @returns {Promise<Object>} Posts array and total count
+   * @param authorId - Author's user ID
+   * @param options - Query options (same as findManyWithPagination)
+   * @returns Promise<Object> Posts array and total count
    */
-  async findManyByAuthorId(authorId, options = {}) {
+  async findManyByAuthorId(authorId: string, options: PaginationOptions = {}) {
     const {
       offset = 0,
       limit = 20,
@@ -165,13 +178,13 @@ export class PostRepository {
     } = options
 
     // Build where clause
-    const where = { authorId }
+    const where: any = { authorId }
     if (onlyPublished) {
       where.isPublished = true
     }
 
     // Build include clause
-    const include = {}
+    const include: any = {}
     if (includeAuthor) {
       include.author = {
         select: {
@@ -219,11 +232,11 @@ export class PostRepository {
 
   /**
    * Update post by ID
-   * @param {string} id - Post ID
-   * @param {Object} updateData - Data to update
-   * @returns {Promise<Object>} Updated post
+   * @param id - Post ID
+   * @param updateData - Data to update
+   * @returns Promise<Object> Updated post
    */
-  async update(id, updateData) {
+  async update(id: string, updateData: Partial<PostCreateData>) {
     return await this.prisma.post.update({
       where: { id },
       data: updateData,
@@ -244,10 +257,10 @@ export class PostRepository {
 
   /**
    * Delete post by ID
-   * @param {string} id - Post ID
-   * @returns {Promise<Object>} Deleted post
+   * @param id - Post ID
+   * @returns Promise<Object> Deleted post
    */
-  async delete(id) {
+  async delete(id: string) {
     return await this.prisma.post.delete({
       where: { id }
     })
@@ -255,7 +268,7 @@ export class PostRepository {
 
   /**
    * Find scheduled posts that are ready to be published
-   * @returns {Promise<Array>} Array of posts ready for publication
+   * @returns Promise<Array> Array of posts ready for publication
    */
   async findScheduledPostsReadyToPublish() {
     return await this.prisma.post.findMany({
@@ -283,10 +296,10 @@ export class PostRepository {
 
   /**
    * Mark scheduled post as published
-   * @param {string} id - Post ID
-   * @returns {Promise<Object>} Updated post
+   * @param id - Post ID
+   * @returns Promise<Object> Updated post
    */
-  async publishScheduledPost(id) {
+  async publishScheduledPost(id: string) {
     return await this.prisma.post.update({
       where: { id },
       data: {
@@ -299,12 +312,12 @@ export class PostRepository {
 
   /**
    * Get post count for a user
-   * @param {string} authorId - Author's user ID
-   * @param {boolean} onlyPublished - Only count published posts
-   * @returns {Promise<number>} Number of posts
+   * @param authorId - Author's user ID
+   * @param onlyPublished - Only count published posts
+   * @returns Promise<number> Number of posts
    */
-  async getCountByAuthorId(authorId, onlyPublished = true) {
-    const where = { authorId }
+  async getCountByAuthorId(authorId: string, onlyPublished: boolean = true): Promise<number> {
+    const where: any = { authorId }
     if (onlyPublished) {
       where.isPublished = true
     }

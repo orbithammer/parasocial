@@ -1,26 +1,48 @@
-// backend/src/middleware/authMiddleware.js
-// Express middleware for JWT token authentication
+// backend/src/middleware/authMiddleware.ts
+// Express middleware for JWT token authentication using TypeScript
+
+import { Request, Response, NextFunction } from 'express'
+
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+}
+
+// Auth service interface
+interface AuthService {
+  extractTokenFromHeader(header: string): string | null
+  verifyToken(token: string): {
+    userId: string
+    email: string
+    username: string
+  }
+}
 
 /**
  * Authentication middleware factory
  * Creates middleware function with injected AuthService
  */
-export function createAuthMiddleware(authService) {
+export function createAuthMiddleware(authService: AuthService) {
   /**
    * Express middleware to authenticate requests
    * Extracts and verifies JWT token, adds user info to request
    */
-  return async (req, res, next) => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // Extract token from Authorization header
       const authHeader = req.headers.authorization
-      const token = authService.extractTokenFromHeader(authHeader)
+      const token = authService.extractTokenFromHeader(authHeader || '')
 
       if (!token) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Authentication token required'
         })
+        return
       }
 
       // Verify token and extract user information
@@ -35,9 +57,9 @@ export function createAuthMiddleware(authService) {
 
       next()
     } catch (error) {
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
-        error: error.message || 'Invalid authentication token'
+        error: error instanceof Error ? error.message : 'Invalid authentication token'
       })
     }
   }
@@ -47,11 +69,11 @@ export function createAuthMiddleware(authService) {
  * Optional authentication middleware
  * Similar to auth middleware but doesn't fail if no token is provided
  */
-export function createOptionalAuthMiddleware(authService) {
-  return async (req, res, next) => {
+export function createOptionalAuthMiddleware(authService: AuthService) {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const authHeader = req.headers.authorization
-      const token = authService.extractTokenFromHeader(authHeader)
+      const token = authService.extractTokenFromHeader(authHeader || '')
 
       if (token) {
         const decoded = authService.verifyToken(token)

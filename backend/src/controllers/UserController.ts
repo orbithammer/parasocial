@@ -1,40 +1,56 @@
-// backend/src/controllers/UserController.js
-// User management controller with profile and follow operations
+// backend/src/controllers/UserController.ts
+// User management controller with profile and follow operations using TypeScript
+
+import { Request, Response } from 'express'
+import { UserRepository } from '../repositories/UserRepository'
+import { FollowRepository } from '../repositories/FollowRepository'
+import { BlockRepository } from '../repositories/BlockRepository'
+
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+}
 
 /**
  * User controller class
  * Handles HTTP requests for user operations
  */
 export class UserController {
-  constructor(userRepository, followRepository, blockRepository) {
-    this.userRepository = userRepository
-    this.followRepository = followRepository
-    this.blockRepository = blockRepository
-  }
+  constructor(
+    private userRepository: UserRepository,
+    private followRepository: FollowRepository,
+    private blockRepository: BlockRepository
+  ) {}
 
   /**
    * Get user profile by username
    * GET /users/:username
    */
-  async getUserProfile(req, res) {
+  async getUserProfile(req: Request, res: Response): Promise<void> {
     try {
       const { username } = req.params
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find user with public profile information
       const user = await this.userRepository.findByUsernameWithCounts(username)
 
       if (!user || !user.isActive) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       res.json({
@@ -45,7 +61,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch user profile',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -54,47 +70,62 @@ export class UserController {
    * Follow a user
    * POST /users/:username/follow
    */
-  async followUser(req, res) {
+  async followUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
       const { actorId } = req.body
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find the user to follow
       const userToFollow = await this.userRepository.findByUsername(username)
 
       if (!userToFollow || !userToFollow.isActive) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Prevent self-following
       if (req.user && req.user.id === userToFollow.id) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'You cannot follow yourself'
         })
+        return
+      }
+
+      // Determine follower ID (either authenticated user or external actor)
+      const followerId = req.user?.id || actorId
+
+      if (!followerId) {
+        res.status(400).json({
+          success: false,
+          error: 'Follower identification required'
+        })
+        return
       }
 
       // Check if already following
       const existingFollow = await this.followRepository.findByFollowerAndFollowed(
-        req.user?.id || actorId,
+        followerId,
         userToFollow.id
       )
 
       if (existingFollow) {
-        return res.status(409).json({
+        res.status(409).json({
           success: false,
           error: 'Already following this user'
         })
+        return
       }
 
       // Check if the user has blocked the follower
@@ -105,16 +136,17 @@ export class UserController {
         )
 
         if (isBlocked) {
-          return res.status(403).json({
+          res.status(403).json({
             success: false,
             error: 'Cannot follow this user'
           })
+          return
         }
       }
 
       // Create follow relationship
       const followData = {
-        followerId: req.user?.id,
+        followerId: followerId,
         followedId: userToFollow.id,
         actorId: actorId || null
       }
@@ -135,7 +167,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to follow user',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -144,38 +176,41 @@ export class UserController {
    * Unfollow a user
    * DELETE /users/:username/follow
    */
-  async unfollowUser(req, res) {
+  async unfollowUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find the user to unfollow
       const userToUnfollow = await this.userRepository.findByUsername(username)
 
       if (!userToUnfollow) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Find existing follow relationship
       const existingFollow = await this.followRepository.findByFollowerAndFollowed(
-        req.user.id,
+        req.user!.id,
         userToUnfollow.id
       )
 
       if (!existingFollow) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'You are not following this user'
         })
+        return
       }
 
       // Delete follow relationship
@@ -189,7 +224,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to unfollow user',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -198,25 +233,27 @@ export class UserController {
    * Get user's followers
    * GET /users/:username/followers
    */
-  async getUserFollowers(req, res) {
+  async getUserFollowers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find user
       const user = await this.userRepository.findByUsername(username)
 
       if (!user || !user.isActive) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Check if requesting user can view followers
@@ -224,15 +261,16 @@ export class UserController {
       const canViewFollowers = req.user && req.user.id === user.id
 
       if (!canViewFollowers) {
-        return res.status(403).json({
+        res.status(403).json({
           success: false,
           error: 'You can only view your own followers'
         })
+        return
       }
 
       // Parse pagination parameters
-      const page = Math.max(1, parseInt(req.query.page) || 1)
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20))
+      const page = Math.max(1, parseInt(req.query.page as string) || 1)
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20))
       const offset = (page - 1) * limit
 
       // Get followers with pagination
@@ -260,7 +298,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch followers',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -269,52 +307,56 @@ export class UserController {
    * Block a follower
    * POST /users/:username/block
    */
-  async blockUser(req, res) {
+  async blockUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
       const { reason } = req.body
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find user to block
       const userToBlock = await this.userRepository.findByUsername(username)
 
       if (!userToBlock || !userToBlock.isActive) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Prevent self-blocking
-      if (req.user.id === userToBlock.id) {
-        return res.status(400).json({
+      if (req.user!.id === userToBlock.id) {
+        res.status(400).json({
           success: false,
           error: 'You cannot block yourself'
         })
+        return
       }
 
       // Check if already blocked
       const existingBlock = await this.blockRepository.findByBlockerAndBlocked(
-        req.user.id,
+        req.user!.id,
         userToBlock.id
       )
 
       if (existingBlock) {
-        return res.status(409).json({
+        res.status(409).json({
           success: false,
           error: 'User is already blocked'
         })
+        return
       }
 
       // Create block relationship
       const blockData = {
-        blockerId: req.user.id,
+        blockerId: req.user!.id,
         blockedId: userToBlock.id,
         reason: reason || null
       }
@@ -324,7 +366,7 @@ export class UserController {
       // Remove any existing follow relationship
       const existingFollow = await this.followRepository.findByFollowerAndFollowed(
         userToBlock.id,
-        req.user.id
+        req.user!.id
       )
 
       if (existingFollow) {
@@ -344,7 +386,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to block user',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -353,38 +395,41 @@ export class UserController {
    * Unblock a user
    * DELETE /users/:username/block
    */
-  async unblockUser(req, res) {
+  async unblockUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
 
       if (!username) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Username is required'
         })
+        return
       }
 
       // Find user to unblock
       const userToUnblock = await this.userRepository.findByUsername(username)
 
       if (!userToUnblock) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       // Find existing block relationship
       const existingBlock = await this.blockRepository.findByBlockerAndBlocked(
-        req.user.id,
+        req.user!.id,
         userToUnblock.id
       )
 
       if (!existingBlock) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User is not blocked'
         })
+        return
       }
 
       // Delete block relationship
@@ -398,7 +443,7 @@ export class UserController {
       res.status(500).json({
         success: false,
         error: 'Failed to unblock user',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }

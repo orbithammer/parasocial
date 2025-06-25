@@ -1,30 +1,54 @@
-// backend/src/controllers/AuthController.js
-// Authentication controller with register, login, and logout endpoints
+// backend/src/controllers/AuthController.ts
+// Authentication controller with register, login, and logout endpoints using TypeScript
+
+import { Request, Response } from 'express'
+import { UserRepository } from '../repositories/UserRepository'
+
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+}
+
+// Auth service interface (mock implementation for now)
+interface AuthService {
+  validateRegistrationData(data: any): { success: boolean; data?: any; error?: any }
+  validateLoginData(data: any): { success: boolean; data?: any; error?: any }
+  hashPassword(password: string): Promise<string>
+  verifyPassword(hashedPassword: string, password: string): Promise<boolean>
+  generateToken(user: any): string
+  extractTokenFromHeader(header: string): string | null
+  verifyToken(token: string): any
+}
 
 /**
  * Authentication controller class
  * Handles HTTP requests for user authentication operations
  */
 export class AuthController {
-  constructor(authService, userRepository) {
-    this.authService = authService
-    this.userRepository = userRepository
-  }
+  constructor(
+    private authService: AuthService,
+    private userRepository: UserRepository
+  ) {}
 
   /**
    * Register new user account
    * POST /auth/register
    */
-  async register(req, res) {
+  async register(req: Request, res: Response): Promise<void> {
     try {
       // Validate input data
       const validation = this.authService.validateRegistrationData(req.body)
       if (!validation.success) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Validation failed',
           details: validation.error.errors
         })
+        return
       }
 
       const { email, username, password, displayName } = validation.data
@@ -32,10 +56,11 @@ export class AuthController {
       // Check if user already exists
       const existingUser = await this.userRepository.findByEmailOrUsername(email, username)
       if (existingUser) {
-        return res.status(409).json({
+        res.status(409).json({
           success: false,
           error: existingUser.email === email ? 'Email already registered' : 'Username already taken'
         })
+        return
       }
 
       // Hash password and create user
@@ -62,7 +87,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         error: 'Registration failed',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -71,16 +96,17 @@ export class AuthController {
    * Login existing user
    * POST /auth/login
    */
-  async login(req, res) {
+  async login(req: Request, res: Response): Promise<void> {
     try {
       // Validate input data
       const validation = this.authService.validateLoginData(req.body)
       if (!validation.success) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Validation failed',
           details: validation.error.errors
         })
+        return
       }
 
       const { email, password } = validation.data
@@ -88,19 +114,21 @@ export class AuthController {
       // Find user by email
       const user = await this.userRepository.findByEmail(email)
       if (!user) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Invalid email or password'
         })
+        return
       }
 
       // Verify password
-      const isValidPassword = await this.authService.verifyPassword(user.password, password)
+      const isValidPassword = await this.authService.verifyPassword(user.passwordHash || '', password)
       if (!isValidPassword) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Invalid email or password'
         })
+        return
       }
 
       // Generate token and return user data
@@ -117,7 +145,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         error: 'Login failed',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -126,7 +154,7 @@ export class AuthController {
    * Logout user (token invalidation would be handled by client or token blacklist)
    * POST /auth/logout
    */
-  async logout(req, res) {
+  async logout(req: Request, res: Response): Promise<void> {
     try {
       // In a stateless JWT system, logout is primarily handled client-side
       // The client should remove the token from storage
@@ -140,7 +168,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         error: 'Logout failed',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -149,15 +177,24 @@ export class AuthController {
    * Get current user profile
    * GET /users/me
    */
-  async getCurrentUser(req, res) {
+  async getCurrentUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // User information is available from auth middleware
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        })
+        return
+      }
+
       const user = await this.userRepository.findById(req.user.id)
       if (!user) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'User not found'
         })
+        return
       }
 
       res.json({
@@ -168,7 +205,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         error: 'Failed to get user profile',
-        message: error.message
+        message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }

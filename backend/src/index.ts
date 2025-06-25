@@ -9,18 +9,18 @@ import dotenv from 'dotenv'
 import { PrismaClient } from '@prisma/client'
 
 // Import our repositories, controllers, and routes
-import { UserRepository } from './repositories/UserRepository.js'
-import { PostRepository } from './repositories/PostRepository.js'
-import { FollowRepository } from './repositories/FollowRepository.js'
-import { BlockRepository } from './repositories/BlockRepository.js'
+import { UserRepository } from './repositories/UserRepository'
+import { PostRepository } from './repositories/PostRepository'
+import { FollowRepository } from './repositories/FollowRepository'
+import { BlockRepository } from './repositories/BlockRepository'
 
-import { AuthController } from './controllers/AuthController.js'
-import { PostController } from './controllers/PostController.js'
-import { UserController } from './controllers/UserController.js'
+import { AuthController } from './controllers/AuthController'
+import { PostController } from './controllers/PostController'
+import { UserController } from './controllers/UserController'
 
-import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware.js'
-import { createPostsRouter } from './routes/posts.js'
-import { createUsersRouter } from './routes/users.js'
+import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleWare'
+import { createPostsRouter } from './routes/posts'
+import { createUsersRouter } from './routes/users'
 
 // Load environment variables
 dotenv.config()

@@ -1,23 +1,44 @@
-// backend/src/repositories/UserRepository.js
-// Enhanced user repository with methods for posts and follows
+// backend/src/repositories/UserRepository.ts
+// Enhanced user repository with methods for posts and follows using proper TypeScript types
 
-import { User } from '../models/User.js'
+import { PrismaClient } from '@prisma/client'
+import { User } from '../models/User'
+
+interface UserCreateData {
+  email: string
+  username: string
+  password: string
+  displayName?: string
+}
+
+interface UserUpdateData {
+  displayName?: string
+  bio?: string
+  avatar?: string
+  website?: string
+  isVerified?: boolean
+  verificationTier?: string
+  isActive?: boolean
+}
+
+interface SearchOptions {
+  offset?: number
+  limit?: number
+}
 
 /**
  * User repository class
  * Handles database operations for users
  */
 export class UserRepository {
-  constructor(prismaClient) {
-    this.prisma = prismaClient
-  }
+  constructor(private prisma: PrismaClient) {}
 
   /**
    * Create a new user
-   * @param {Object} userData - User data to create
-   * @returns {Promise<User>} Created user instance
+   * @param userData - User data to create
+   * @returns Promise<User> Created user instance
    */
-  async create(userData) {
+  async create(userData: UserCreateData): Promise<User> {
     const dbUser = await this.prisma.user.create({
       data: {
         email: userData.email,
@@ -32,10 +53,10 @@ export class UserRepository {
 
   /**
    * Find user by ID
-   * @param {string} id - User ID
-   * @returns {Promise<User|null>} User instance or null if not found
+   * @param id - User ID
+   * @returns Promise<User|null> User instance or null if not found
    */
-  async findById(id) {
+  async findById(id: string): Promise<User | null> {
     const dbUser = await this.prisma.user.findUnique({
       where: { id }
     })
@@ -45,10 +66,10 @@ export class UserRepository {
 
   /**
    * Find user by email
-   * @param {string} email - User email
-   * @returns {Promise<User|null>} User instance or null if not found
+   * @param email - User email
+   * @returns Promise<User|null> User instance or null if not found
    */
-  async findByEmail(email) {
+  async findByEmail(email: string): Promise<User | null> {
     const dbUser = await this.prisma.user.findUnique({
       where: { email }
     })
@@ -58,10 +79,10 @@ export class UserRepository {
 
   /**
    * Find user by username
-   * @param {string} username - Username
-   * @returns {Promise<User|null>} User instance or null if not found
+   * @param username - Username
+   * @returns Promise<User|null> User instance or null if not found
    */
-  async findByUsername(username) {
+  async findByUsername(username: string): Promise<User | null> {
     const dbUser = await this.prisma.user.findUnique({
       where: { username }
     })
@@ -71,11 +92,11 @@ export class UserRepository {
 
   /**
    * Find user by email or username
-   * @param {string} email - User email
-   * @param {string} username - Username
-   * @returns {Promise<User|null>} User instance or null if not found
+   * @param email - User email
+   * @param username - Username
+   * @returns Promise<User|null> User instance or null if not found
    */
-  async findByEmailOrUsername(email, username) {
+  async findByEmailOrUsername(email: string, username: string): Promise<User | null> {
     const dbUser = await this.prisma.user.findFirst({
       where: {
         OR: [
@@ -90,10 +111,10 @@ export class UserRepository {
 
   /**
    * Find user by username with follower and post counts
-   * @param {string} username - Username
-   * @returns {Promise<User|null>} User instance with counts or null if not found
+   * @param username - Username
+   * @returns Promise<User|null> User instance with counts or null if not found
    */
-  async findByUsernameWithCounts(username) {
+  async findByUsernameWithCounts(username: string): Promise<User | null> {
     const dbUser = await this.prisma.user.findUnique({
       where: { username },
       include: {
@@ -116,19 +137,20 @@ export class UserRepository {
 
     // Create User instance and add count properties
     const user = new User(dbUser)
-    user.followersCount = dbUser._count.followers
-    user.postsCount = dbUser._count.posts
+    // Add dynamic properties for counts
+    ;(user as any).followersCount = dbUser._count.followers
+    ;(user as any).postsCount = dbUser._count.posts
 
     return user
   }
 
   /**
    * Update user by ID
-   * @param {string} id - User ID
-   * @param {Object} updateData - Data to update
-   * @returns {Promise<User>} Updated user instance
+   * @param id - User ID
+   * @param updateData - Data to update
+   * @returns Promise<User> Updated user instance
    */
-  async update(id, updateData) {
+  async update(id: string, updateData: UserUpdateData): Promise<User> {
     const dbUser = await this.prisma.user.update({
       where: { id },
       data: updateData
@@ -139,10 +161,10 @@ export class UserRepository {
 
   /**
    * Delete user by ID (soft delete by setting isActive to false)
-   * @param {string} id - User ID
-   * @returns {Promise<User>} Updated user instance
+   * @param id - User ID
+   * @returns Promise<User> Updated user instance
    */
-  async delete(id) {
+  async delete(id: string): Promise<User> {
     const dbUser = await this.prisma.user.update({
       where: { id },
       data: { isActive: false }
@@ -153,13 +175,11 @@ export class UserRepository {
 
   /**
    * Search users by username or display name
-   * @param {string} query - Search query
-   * @param {Object} options - Search options
-   * @param {number} options.offset - Number of records to skip
-   * @param {number} options.limit - Number of records to return
-   * @returns {Promise<Object>} Users array and total count
+   * @param query - Search query
+   * @param options - Search options
+   * @returns Promise<Object> Users array and total count
    */
-  async searchUsers(query, options = {}) {
+  async searchUsers(query: string, options: SearchOptions = {}) {
     const { offset = 0, limit = 20 } = options
 
     const searchCondition = {
@@ -170,13 +190,13 @@ export class UserRepository {
             {
               username: {
                 contains: query,
-                mode: 'insensitive'
+                mode: 'insensitive' as const
               }
             },
             {
               displayName: {
                 contains: query,
-                mode: 'insensitive'
+                mode: 'insensitive' as const
               }
             }
           ]
@@ -212,8 +232,8 @@ export class UserRepository {
     // Convert to User instances with counts
     const users = dbUsers.map(dbUser => {
       const user = new User(dbUser)
-      user.followersCount = dbUser._count.followers
-      user.postsCount = dbUser._count.posts
+      ;(user as any).followersCount = dbUser._count.followers
+      ;(user as any).postsCount = dbUser._count.posts
       return user
     })
 
@@ -225,10 +245,10 @@ export class UserRepository {
 
   /**
    * Get all verified users
-   * @param {Object} options - Query options
-   * @returns {Promise<Object>} Verified users array and total count
+   * @param options - Query options
+   * @returns Promise<Object> Verified users array and total count
    */
-  async findVerifiedUsers(options = {}) {
+  async findVerifiedUsers(options: SearchOptions = {}) {
     const { offset = 0, limit = 20 } = options
 
     const [dbUsers, totalCount] = await Promise.all([
@@ -267,8 +287,8 @@ export class UserRepository {
     // Convert to User instances with counts
     const users = dbUsers.map(dbUser => {
       const user = new User(dbUser)
-      user.followersCount = dbUser._count.followers
-      user.postsCount = dbUser._count.posts
+      ;(user as any).followersCount = dbUser._count.followers
+      ;(user as any).postsCount = dbUser._count.posts
       return user
     })
 
@@ -280,12 +300,12 @@ export class UserRepository {
 
   /**
    * Check if username is available
-   * @param {string} username - Username to check
-   * @param {string} excludeUserId - User ID to exclude from check (for updates)
-   * @returns {Promise<boolean>} True if username is available
+   * @param username - Username to check
+   * @param excludeUserId - User ID to exclude from check (for updates)
+   * @returns Promise<boolean> True if username is available
    */
-  async isUsernameAvailable(username, excludeUserId = null) {
-    const where = { username }
+  async isUsernameAvailable(username: string, excludeUserId?: string): Promise<boolean> {
+    const where: any = { username }
     if (excludeUserId) {
       where.id = { not: excludeUserId }
     }
@@ -296,12 +316,12 @@ export class UserRepository {
 
   /**
    * Check if email is available
-   * @param {string} email - Email to check
-   * @param {string} excludeUserId - User ID to exclude from check (for updates)
-   * @returns {Promise<boolean>} True if email is available
+   * @param email - Email to check
+   * @param excludeUserId - User ID to exclude from check (for updates)
+   * @returns Promise<boolean> True if email is available
    */
-  async isEmailAvailable(email, excludeUserId = null) {
-    const where = { email }
+  async isEmailAvailable(email: string, excludeUserId?: string): Promise<boolean> {
+    const where: any = { email }
     if (excludeUserId) {
       where.id = { not: excludeUserId }
     }
@@ -312,10 +332,10 @@ export class UserRepository {
 
   /**
    * Get user statistics
-   * @param {string} userId - User ID
-   * @returns {Promise<Object>} User statistics
+   * @param userId - User ID
+   * @returns Promise<Object> User statistics
    */
-  async getUserStats(userId) {
+  async getUserStats(userId: string) {
     const stats = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
