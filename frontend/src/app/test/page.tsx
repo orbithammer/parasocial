@@ -1,5 +1,5 @@
 // frontend/src/app/test/page.tsx
-// Test page to demonstrate all Phase 2.2 components working together
+// Social media style test page for demonstrating all Phase 2.2 components
 
 'use client'
 
@@ -14,6 +14,7 @@ export default function TestPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [selectedPost, setSelectedPost] = useState<any>(null)
   const [selectedUser, setSelectedUser] = useState<string>('testuser')
+  const [showDeveloperTools, setShowDeveloperTools] = useState(false)
 
   // Mock users for testing
   const testUsers = [
@@ -24,124 +25,123 @@ export default function TestPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Phase 2.2 Component Testing
-          </h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Testing create/read posts and follow/unfollow functionality
-          </p>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          
-          {/* Left Column - Post Creation & Feed */}
-          <div className="xl:col-span-2 space-y-8">
-            
-            {/* Post Creation Section */}
-            <section>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  📝 Test Post Creation
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                  This tests your <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">POST /posts</code> endpoint
-                </p>
-                
-                <PostCreationForm
-                  onPostCreated={(post) => {
-                    if (post) {
-                      console.log('New post created:', post)
-                      // Refresh the feed when a new post is created
-                      setRefreshTrigger(prev => prev + 1)
-                      // Show success notification
-                      alert(`Post created successfully! ID: ${post.id}`)
-                    } else {
-                      console.warn('Post creation callback received undefined post')
-                    }
-                  }}
-                  className="max-w-none"
-                />
+      {/* Navigation Header */}
+      <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            {/* Logo */}
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">PS</span>
               </div>
-            </section>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">ParaSocial</h1>
+            </div>
 
-            {/* Post Feed Section */}
-            <section>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  📰 Test Post Feed
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                  This tests your <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">GET /posts</code> endpoint with user filtering
-                </p>
-                
-                <PostFeed
-                  refreshTrigger={refreshTrigger}
-                  postsPerPage={10}
-                  onPostClick={(post) => {
-                    setSelectedPost(post)
-                    console.log('Post clicked:', post)
-                  }}
-                />
-              </div>
-            </section>
-
-            {/* Selected Post Details */}
-            {selectedPost && (
-              <section>
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700 p-6">
-                  <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-4">
-                    🔍 Selected Post Details
-                  </h3>
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 space-y-2">
-                    <p><strong>ID:</strong> {selectedPost.id}</p>
-                    <p><strong>Author:</strong> @{selectedPost.author?.username}</p>
-                    <p><strong>Content:</strong> {selectedPost.content?.substring(0, 100)}...</p>
-                    <p><strong>Created:</strong> {selectedPost.createdAt ? new Date(selectedPost.createdAt).toLocaleString() : 'Unknown'}</p>
-                    {selectedPost.contentWarning && (
-                      <p><strong>Warning:</strong> {selectedPost.contentWarning}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setSelectedPost(null)}
-                    className="mt-4 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Close Details
-                  </button>
-                </div>
-              </section>
-            )}
+            {/* Navigation Items */}
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setShowDeveloperTools(!showDeveloperTools)}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                </svg>
+                {showDeveloperTools ? 'Hide' : 'Show'} Dev Tools
+              </button>
+            </div>
           </div>
+        </div>
+      </nav>
 
-          {/* Right Column - User Profiles & Follow Testing */}
-          <div className="space-y-8">
-            
-            {/* User Profile Section */}
-            <section>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  👤 Test User Profiles
+      {/* Developer Tools Panel */}
+      {showDeveloperTools && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  localStorage.setItem('auth_token', 'mock_test_token_123')
+                  alert('✅ Mock auth token set! You can now create posts.')
+                }}
+                className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+              >
+                🔑 Set Auth Token
+              </button>
+              
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('http://localhost:3001/api/v1/dev/seed', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    })
+                    const data = await response.json()
+                    if (data.success) {
+                      alert(`✅ Test data created!\nUsers: ${data.data.users}\nPosts: ${data.data.posts}`)
+                    } else {
+                      alert(`❌ Failed: ${data.error}`)
+                    }
+                  } catch (error) {
+                    alert(`❌ Error: ${error}`)
+                  }
+                }}
+                className="inline-flex items-center px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700"
+              >
+                🌱 Create Test Data
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('http://localhost:3001/health')
+                    const data = await response.json()
+                    alert(`✅ API: ${data.status}`)
+                  } catch (error) {
+                    alert(`❌ API Error: ${error}`)
+                  }
+                }}
+                className="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700"
+              >
+                💚 Check API
+              </button>
+
+              <button
+                onClick={() => {
+                  localStorage.removeItem('auth_token')
+                  alert('🗑️ Auth token cleared!')
+                }}
+                className="inline-flex items-center px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+              >
+                🗑️ Clear Token
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Left Sidebar - User Profile */}
+          <div className="lg:col-span-3 space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  User Profile
                 </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Tests <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">GET /users/:username</code> endpoint
-                </p>
-
+                
                 {/* Username Input */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Enter username to view profile:
+                    Username
                   </label>
                   <input
                     type="text"
                     value={selectedUser}
                     onChange={(e) => setSelectedUser(e.target.value)}
-                    placeholder="e.g., testuser"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm
-                             dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter username"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
@@ -149,36 +149,167 @@ export default function TestPage() {
                 {selectedUser && (
                   <UserProfile
                     username={selectedUser}
+                    showFullProfile={false}
                     onFollowClick={(username) => {
-                      console.log('Follow clicked for:', username)
                       alert(`Follow clicked for @${username}`)
                     }}
                     onPostsClick={(username) => {
-                      console.log('Posts clicked for:', username)
                       alert(`Show posts for @${username}`)
                     }}
                   />
                 )}
               </div>
-            </section>
+            </div>
 
-            {/* Follow Button Testing */}
-            <section>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  ➕ Test Follow Buttons
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                  Tests <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">POST/DELETE /users/:username/follow</code>
-                </p>
+            {/* Suggested Users */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Suggested Users
+                </h3>
+                <div className="space-y-3">
+                  {testUsers.map((user) => (
+                    <FollowButtonWithUser
+                      key={user.username}
+                      username={user.username}
+                      displayName={user.displayName}
+                      isVerified={user.isVerified}
+                      showFollowerCount={true}
+                      followerCount={user.followerCount}
+                      size="sm"
+                      variant="primary"
+                      onFollowChange={(isFollowing, count) => {
+                        console.log(`${user.username} follow state: ${isFollowing}, count: ${count}`)
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
 
+          {/* Main Feed */}
+          <div className="lg:col-span-6 space-y-6">
+            {/* Post Creation */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                    <span className="text-white font-semibold text-sm">You</span>
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    What's happening?
+                  </h2>
+                </div>
+                
+                <PostCreationForm
+                  onPostCreated={(post) => {
+                    if (post) {
+                      console.log('New post created:', post)
+                      setRefreshTrigger(prev => prev + 1)
+                      
+                      // Show success with a more social media style notification
+                      const notification = document.createElement('div')
+                      notification.className = 'fixed top-20 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300'
+                      notification.innerHTML = `
+                        <div class="flex items-center space-x-2">
+                          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                          </svg>
+                          <span>Post published successfully!</span>
+                        </div>
+                      `
+                      document.body.appendChild(notification)
+                      setTimeout(() => {
+                        notification.style.transform = 'translateX(100%)'
+                        setTimeout(() => notification.remove(), 300)
+                      }, 3000)
+                    }
+                  }}
+                  className="max-w-none"
+                />
+              </div>
+            </div>
+
+            {/* Post Feed */}
+            <div className="space-y-4">
+              <PostFeed
+                refreshTrigger={refreshTrigger}
+                postsPerPage={10}
+                onPostClick={(post) => {
+                  setSelectedPost(post)
+                  console.log('Post clicked:', post)
+                }}
+                className="space-y-4"
+              />
+            </div>
+
+            {/* Selected Post Modal */}
+            {selectedPost && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Post Details
+                      </h3>
+                      <button
+                        onClick={() => setSelectedPost(null)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+                      >
+                        <svg className="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-3 text-sm">
+                      <div className="grid grid-cols-3 gap-4">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">ID:</span>
+                        <span className="col-span-2 text-gray-900 dark:text-white font-mono text-xs">{selectedPost.id}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Author:</span>
+                        <span className="col-span-2 text-gray-900 dark:text-white">@{selectedPost.author?.username}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Content:</span>
+                        <span className="col-span-2 text-gray-900 dark:text-white">{selectedPost.content}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Created:</span>
+                        <span className="col-span-2 text-gray-900 dark:text-white">
+                          {selectedPost.createdAt ? new Date(selectedPost.createdAt).toLocaleString() : 'Unknown'}
+                        </span>
+                      </div>
+                      {selectedPost.contentWarning && (
+                        <div className="grid grid-cols-3 gap-4">
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Warning:</span>
+                          <span className="col-span-2 text-amber-600 dark:text-amber-400">{selectedPost.contentWarning}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Sidebar - Follow Testing */}
+          <div className="lg:col-span-3 space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Follow Testing
+                </h3>
+                
                 <div className="space-y-4">
                   {/* Different Button Variants */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                      Button Variants:
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Button Styles
+                    </h4>
+                    <div className="space-y-2">
                       <FollowButton
                         username="alice"
                         variant="primary"
@@ -191,106 +322,45 @@ export default function TestPage() {
                       />
                       <FollowButton
                         username="bob"
-                        variant="secondary"
+                        variant="outline"
                         size="md"
                         onFollowChange={(isFollowing) => {
                           console.log(`Bob follow state: ${isFollowing}`)
                         }}
                       />
-                      <FollowButton
-                        username="charlie"
-                        variant="outline"
-                        size="lg"
-                        onFollowChange={(isFollowing) => {
-                          console.log(`Charlie follow state: ${isFollowing}`)
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* User Cards with Follow Buttons */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                      User Cards with Follow:
-                    </h3>
-                    <div className="space-y-3">
-                      {testUsers.map((user) => (
-                        <FollowButtonWithUser
-                          key={user.username}
-                          username={user.username}
-                          displayName={user.displayName}
-                          isVerified={user.isVerified}
-                          showFollowerCount={true}
-                          followerCount={user.followerCount}
-                          size="sm"
-                          variant="primary"
-                          onFollowChange={(isFollowing, count) => {
-                            console.log(`${user.username} follow state: ${isFollowing}, count: ${count}`)
-                          }}
-                        />
-                      ))}
                     </div>
                   </div>
                 </div>
               </div>
-            </section>
+            </div>
 
-            {/* API Status Checker */}
-            <section>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  🔧 API Status
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Quick health check for your backend
-                </p>
-                
-                <button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('http://localhost:3001/health')
-                      const data = await response.json()
-                      alert(`API Status: ${data.status}\nEnvironment: ${data.environment}\nTime: ${data.timestamp}`)
-                    } catch (error) {
-                      alert(`API Error: ${error}`)
-                    }
-                  }}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium"
-                >
-                  Check API Health
-                </button>
-
-                <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                  <p><strong>Expected Endpoints:</strong></p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>POST /api/v1/posts</li>
-                    <li>GET /api/v1/posts</li>
-                    <li>GET /api/v1/users/:username</li>
-                    <li>POST /api/v1/users/:username/follow</li>
-                    <li>DELETE /api/v1/users/:username/follow</li>
-                  </ul>
+            {/* Trending Section */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  What's happening
+                </h3>
+                <div className="space-y-3">
+                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending in Technology</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">ParaSocial</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">2,847 posts</p>
+                  </div>
+                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">#ActivityPub</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">1,234 posts</p>
+                  </div>
+                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending in Social</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">#Decentralized</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">892 posts</p>
+                  </div>
                 </div>
               </div>
-            </section>
+            </div>
           </div>
         </div>
-
-        {/* Debug Console */}
-        <section className="mt-8">
-          <div className="bg-gray-900 text-green-400 rounded-lg p-6 font-mono text-sm">
-            <h3 className="text-white mb-3">🖥️ Debug Console</h3>
-            <p className="opacity-75">Check your browser's developer console for detailed API responses and component interactions.</p>
-            <p className="opacity-75 mt-2">
-              <strong>Tips:</strong>
-            </p>
-            <ul className="list-disc list-inside opacity-75 mt-1 space-y-1">
-              <li>Make sure your backend is running on localhost:3001</li>
-              <li>Ensure you have a valid auth token in localStorage</li>
-              <li>Check network tab for failed API calls</li>
-              <li>All component interactions are logged to console</li>
-            </ul>
-          </div>
-        </section>
       </div>
     </div>
   )
