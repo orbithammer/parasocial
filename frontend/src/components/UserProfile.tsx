@@ -1,387 +1,577 @@
-// frontend/src/components/UserProfile.tsx
-// User profile component for displaying user information and stats
-
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { 
+  Calendar, 
+  MapPin, 
+  Link2, 
+  MoreHorizontal, 
+  UserPlus, 
+  UserMinus, 
+  Shield, 
+  Flag, 
+  Settings, 
+  Verified,
+  Users,
+  FileText,
+  ExternalLink,
+  Edit3
+} from 'lucide-react'
 
-// Types for user profile
+/**
+ * User profile data interface
+ */
 interface UserProfile {
   id: string
   username: string
   displayName: string
-  bio: string
-  avatar: string | null
-  website: string | null
+  bio?: string | null
+  avatar?: string | null
+  website?: string | null
   isVerified: boolean
   verificationTier: string
-  followersCount?: number
-  postsCount?: number
-  actorId?: string
+  followersCount: number
+  postsCount: number
+  actorId?: string | null
+  createdAt: string
 }
 
+/**
+ * API response interface for user profile
+ */
 interface UserProfileResponse {
   success: boolean
-  data?: UserProfile
-  error?: string
+  data: UserProfile
 }
 
+/**
+ * Follow state interface
+ */
+interface FollowState {
+  isFollowing: boolean
+  isBlocked: boolean
+  followersCount: number
+}
+
+/**
+ * Props for UserProfile component
+ */
 interface UserProfileProps {
   username: string
+  currentUserId?: string
+  apiUrl?: string
+  onFollow?: (username: string) => Promise<void>
+  onUnfollow?: (username: string) => Promise<void>
+  onBlock?: (username: string) => Promise<void>
+  onUnblock?: (username: string) => Promise<void>
+  onReport?: (username: string) => Promise<void>
+  onEditProfile?: () => void
   className?: string
-  showFullProfile?: boolean
-  onFollowClick?: (username: string) => void
-  onPostsClick?: (username: string) => void
 }
 
-export default function UserProfile({ 
-  username, 
-  className = '',
-  showFullProfile = true,
-  onFollowClick,
-  onPostsClick
-}: UserProfileProps) {
-  // State management
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [retryCount, setRetryCount] = useState(0)
+/**
+ * Dropdown menu for user actions
+ */
+function UserActionsDropdown({
+  user,
+  currentUserId,
+  followState,
+  onBlock,
+  onUnblock,
+  onReport,
+  onClose
+}: {
+  user: UserProfile
+  currentUserId?: string
+  followState: FollowState
+  onBlock?: (username: string) => Promise<void>
+  onUnblock?: (username: string) => Promise<void>
+  onReport?: (username: string) => Promise<void>
+  onClose: () => void
+}) {
+  const isOwnProfile = currentUserId === user.id
 
-  // Configuration
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-  const MAX_RETRY_ATTEMPTS = 3
-
-  // Get verification badge color based on tier
-  const getVerificationColor = useCallback((tier: string) => {
-    switch (tier) {
-      case 'notable': return 'text-purple-500'
-      case 'identity': return 'text-green-500'
-      case 'phone': return 'text-yellow-500'
-      case 'email': return 'text-blue-500'
-      default: return 'text-gray-500'
-    }
-  }, [])
-
-  // Get verification tier display name
-  const getVerificationTierName = useCallback((tier: string) => {
-    switch (tier) {
-      case 'notable': return 'Notable Person'
-      case 'identity': return 'Identity Verified'
-      case 'phone': return 'Phone Verified'
-      case 'email': return 'Email Verified'
-      default: return 'Unverified'
-    }
-  }, [])
-
-  // Format website URL for display
-  const formatWebsiteUrl = useCallback((url: string | null) => {
-    if (!url) return null
+  const handleAction = async (action: () => Promise<void>) => {
     try {
-      const urlObj = new URL(url)
-      return urlObj.hostname.replace('www.', '')
-    } catch {
-      return url
+      await action()
+      onClose()
+    } catch (error) {
+      console.error('Action failed:', error)
+      onClose()
     }
-  }, [])
+  }
 
-  // Fetch user profile from API
-  const fetchUserProfile = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      setError('')
+  if (isOwnProfile) {
+    return (
+      <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+        <button
+          onClick={() => navigator.clipboard.writeText(window.location.href)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+        >
+          <Link2 className="w-4 h-4" />
+          Copy profile link
+        </button>
+      </div>
+    )
+  }
 
-      // Optional authentication for potentially enhanced profile data
-      const token = localStorage.getItem('auth_token')
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      }
+  return (
+    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+      <button
+        onClick={() => navigator.clipboard.writeText(window.location.href)}
+        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+      >
+        <Link2 className="w-4 h-4" />
+        Copy profile link
+      </button>
       
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
+      {followState.isBlocked ? (
+        onUnblock && (
+          <button
+            onClick={() => handleAction(() => onUnblock!(user.username))}
+            className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
+          >
+            <Shield className="w-4 h-4" />
+            Unblock user
+          </button>
+        )
+      ) : (
+        onBlock && (
+          <button
+            onClick={() => handleAction(() => onBlock!(user.username))}
+            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+          >
+            <Shield className="w-4 h-4" />
+            Block user
+          </button>
+        )
+      )}
+      
+      {onReport && (
+        <button
+          onClick={() => handleAction(() => onReport!(user.username))}
+          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+        >
+          <Flag className="w-4 h-4" />
+          Report user
+        </button>
+      )}
+    </div>
+  )
+}
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/users/${encodeURIComponent(username)}`,
-        { headers }
-      )
+/**
+ * Profile stats component
+ */
+function ProfileStats({ user }: { user: UserProfile }) {
+  return (
+    <div className="flex items-center gap-6 text-sm">
+      <div className="flex items-center gap-2">
+        <FileText className="w-4 h-4 text-gray-400" />
+        <span className="font-semibold text-gray-900">
+          {user.postsCount.toLocaleString()}
+        </span>
+        <span className="text-gray-600">
+          {user.postsCount === 1 ? 'post' : 'posts'}
+        </span>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        <Users className="w-4 h-4 text-gray-400" />
+        <span className="font-semibold text-gray-900">
+          {user.followersCount.toLocaleString()}
+        </span>
+        <span className="text-gray-600">
+          {user.followersCount === 1 ? 'follower' : 'followers'}
+        </span>
+      </div>
+    </div>
+  )
+}
 
+/**
+ * Main UserProfile component
+ * Displays user profile with modern social media styling
+ */
+export default function UserProfile({
+  username,
+  currentUserId,
+  apiUrl = '/api',
+  onFollow,
+  onUnfollow,
+  onBlock,
+  onUnblock,
+  onReport,
+  onEditProfile,
+  className = ''
+}: UserProfileProps) {
+  const [user, setUser] = useState<UserProfile | null>(null)
+  const [followState, setFollowState] = useState<FollowState>({
+    isFollowing: false,
+    isBlocked: false,
+    followersCount: 0
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const isOwnProfile = currentUserId === user?.id
+
+  /**
+   * Fetch user profile from API
+   */
+  const fetchUserProfile = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch(`${apiUrl}/users/${username}`)
+      
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('User not found')
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`Failed to fetch profile: ${response.statusText}`)
       }
 
-      const result: UserProfileResponse = await response.json()
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Failed to fetch user profile')
-      }
-
-      setProfile(result.data)
-      setRetryCount(0) // Reset retry count on success
-
-    } catch (error) {
-      console.error('Failed to fetch user profile:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load user profile'
-      setError(errorMessage)
+      const data: UserProfileResponse = await response.json()
       
-      // Retry logic for non-404 errors
-      if (retryCount < MAX_RETRY_ATTEMPTS && !errorMessage.includes('not found')) {
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1)
-          fetchUserProfile()
-        }, 1000 * Math.pow(2, retryCount)) // Exponential backoff
+      if (!data.success) {
+        throw new Error('Failed to load user profile')
       }
+
+      setUser(data.data)
+      setFollowState(prev => ({
+        ...prev,
+        followersCount: data.data.followersCount
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+      console.error('Error fetching user profile:', err)
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
-  }, [username, API_BASE_URL, retryCount])
+  }
 
-  // Load profile when username changes
+  /**
+   * Handle follow action
+   */
+  const handleFollow = async () => {
+    if (!user || actionLoading) return
+
+    try {
+      setActionLoading('follow')
+      
+      if (onFollow) {
+        await onFollow(user.username)
+      } else {
+        const response = await fetch(`${apiUrl}/users/${user.username}/follow`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to follow user')
+        }
+      }
+
+      setFollowState(prev => ({
+        ...prev,
+        isFollowing: true,
+        followersCount: prev.followersCount + 1
+      }))
+    } catch (err) {
+      console.error('Failed to follow user:', err)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  /**
+   * Handle unfollow action
+   */
+  const handleUnfollow = async () => {
+    if (!user || actionLoading) return
+
+    try {
+      setActionLoading('unfollow')
+      
+      if (onUnfollow) {
+        await onUnfollow(user.username)
+      } else {
+        const response = await fetch(`${apiUrl}/users/${user.username}/follow`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to unfollow user')
+        }
+      }
+
+      setFollowState(prev => ({
+        ...prev,
+        isFollowing: false,
+        followersCount: Math.max(0, prev.followersCount - 1)
+      }))
+    } catch (err) {
+      console.error('Failed to unfollow user:', err)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  /**
+   * Get user avatar or generate initials
+   */
+  const getAvatarContent = () => {
+    if (!user) return null
+
+    if (user.avatar) {
+      return (
+        <img 
+          src={user.avatar} 
+          alt={`${user.displayName}'s avatar`}
+          className="w-full h-full object-cover"
+        />
+      )
+    }
+    
+    const initials = user.displayName
+      .split(' ')
+      .map(name => name[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+    
+    return (
+      <span className="text-white font-bold text-4xl">
+        {initials}
+      </span>
+    )
+  }
+
+  /**
+   * Format join date
+   */
+  const formatJoinDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric'
+    })
+  }
+
+  // Fetch profile on mount
   useEffect(() => {
-    if (username) {
-      setRetryCount(0)
-      fetchUserProfile()
-    }
-  }, [username, fetchUserProfile])
+    fetchUserProfile()
+  }, [username])
 
-  // Render loading skeleton
-  const renderLoadingSkeleton = () => (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${className}`}>
-      <div className="animate-pulse">
-        {showFullProfile ? (
-          <>
-            {/* Header skeleton */}
-            <div className="flex flex-col sm:flex-row sm:items-start space-y-4 sm:space-y-0 sm:space-x-6 mb-6">
-              <div className="w-24 h-24 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-              <div className="flex-1 space-y-3">
-                <div className="h-6 bg-gray-300 dark:bg-gray-600 rounded w-1/3"></div>
-                <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/4"></div>
-                <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4"></div>
+  if (loading) {
+    return (
+      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${className}`}>
+        {/* Loading Skeleton */}
+        <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600 animate-pulse" />
+        <div className="p-6">
+          <div className="flex items-start gap-4 mb-6">
+            <div className="w-24 h-24 bg-gray-300 rounded-full animate-pulse -mt-12" />
+            <div className="flex-1 space-y-3 mt-4">
+              <div className="h-6 bg-gray-300 rounded animate-pulse w-48" />
+              <div className="h-4 bg-gray-300 rounded animate-pulse w-32" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="h-4 bg-gray-300 rounded animate-pulse w-full" />
+            <div className="h-4 bg-gray-300 rounded animate-pulse w-3/4" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center ${className}`}>
+        <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+          <Flag className="w-8 h-8 text-red-600" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          {error === 'User not found' ? 'User not found' : 'Error loading profile'}
+        </h3>
+        <p className="text-gray-600 mb-4">
+          {error === 'User not found' 
+            ? 'This user may have been deleted or the username is incorrect.'
+            : error
+          }
+        </p>
+        <button
+          onClick={fetchUserProfile}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+
+  if (!user) return null
+
+  return (
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${className}`}>
+      {/* Cover Image */}
+      <div className="h-32 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 relative">
+        <div className="absolute inset-0 bg-black bg-opacity-20" />
+      </div>
+
+      {/* Profile Content */}
+      <div className="p-6">
+        {/* Profile Header */}
+        <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start gap-4">
+            {/* Avatar */}
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden ring-4 ring-white shadow-xl -mt-12">
+              {getAvatarContent()}
+            </div>
+            
+            {/* User Info */}
+            <div className="flex-1 min-w-0 mt-2">
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900 truncate">
+                  {user.displayName}
+                </h1>
+                {user.isVerified && (
+                  <Verified className="w-6 h-6 text-blue-500 flex-shrink-0" />
+                )}
+                {user.verificationTier && user.verificationTier !== 'none' && (
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                    {user.verificationTier}
+                  </span>
+                )}
               </div>
+              <p className="text-gray-600 mb-3">@{user.username}</p>
+              
+              {/* Stats */}
+              <ProfileStats user={user} />
             </div>
-            {/* Stats skeleton */}
-            <div className="flex space-x-6">
-              <div className="h-8 bg-gray-300 dark:bg-gray-600 rounded w-20"></div>
-              <div className="h-8 bg-gray-300 dark:bg-gray-600 rounded w-20"></div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 mt-2">
+            {isOwnProfile ? (
+              <button
+                onClick={onEditProfile}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+              >
+                <Edit3 className="w-4 h-4" />
+                Edit profile
+              </button>
+            ) : (
+              <>
+                {followState.isBlocked ? (
+                  <span className="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium">
+                    Blocked
+                  </span>
+                ) : (
+                  <button
+                    onClick={followState.isFollowing ? handleUnfollow : handleFollow}
+                    disabled={!!actionLoading}
+                    className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-all duration-200 ${
+                      followState.isFollowing
+                        ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600 border border-gray-300'
+                        : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl'
+                    } ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {actionLoading ? (
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : followState.isFollowing ? (
+                      <UserMinus className="w-4 h-4" />
+                    ) : (
+                      <UserPlus className="w-4 h-4" />
+                    )}
+                    <span>
+                      {actionLoading === 'follow' ? 'Following...' :
+                       actionLoading === 'unfollow' ? 'Unfollowing...' :
+                       followState.isFollowing ? 'Following' : 'Follow'}
+                    </span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* More Actions */}
+            <div className="relative">
+              <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="p-2 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+
+              {showDropdown && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-5" 
+                    onClick={() => setShowDropdown(false)}
+                  />
+                  <UserActionsDropdown
+                    user={user}
+                    currentUserId={currentUserId}
+                    followState={followState}
+                    onBlock={onBlock}
+                    onUnblock={onUnblock}
+                    onReport={onReport}
+                    onClose={() => setShowDropdown(false)}
+                  />
+                </>
+              )}
             </div>
-          </>
-        ) : (
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-            <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/2"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-1/3"></div>
-            </div>
+          </div>
+        </div>
+
+        {/* Bio */}
+        {user.bio && (
+          <div className="mb-4">
+            <p className="text-gray-900 leading-relaxed whitespace-pre-wrap">
+              {user.bio}
+            </p>
+          </div>
+        )}
+
+        {/* Additional Info */}
+        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+          {user.website && (
+            <a
+              href={user.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+            >
+              <Link2 className="w-4 h-4" />
+              <span className="truncate max-w-xs">{user.website.replace(/^https?:\/\//, '')}</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+          
+          <div className="flex items-center gap-1">
+            <Calendar className="w-4 h-4" />
+            <span>Joined {formatJoinDate(user.createdAt)}</span>
+          </div>
+        </div>
+
+        {/* Updated follower count */}
+        {followState.followersCount !== user.followersCount && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <span className="font-medium">{followState.followersCount.toLocaleString()}</span> followers
+            </p>
           </div>
         )}
       </div>
-    </div>
-  )
-
-  // Render error state
-  if (error && retryCount >= MAX_RETRY_ATTEMPTS) {
-    return (
-      <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${className}`}>
-        <div className="text-center">
-          <svg className="mx-auto h-12 w-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">Failed to load profile</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{error}</p>
-          <button
-            onClick={() => {
-              setRetryCount(0)
-              fetchUserProfile()
-            }}
-            className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-500"
-          >
-            Try again
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Loading state
-  if (isLoading || !profile) {
-    return renderLoadingSkeleton()
-  }
-
-  // Compact profile view
-  if (!showFullProfile) {
-    return (
-      <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 ${className}`}>
-        <div className="flex items-center space-x-3">
-          {/* Avatar */}
-          <div className="flex-shrink-0">
-            {profile.avatar ? (
-              <img
-                src={profile.avatar}
-                alt={`${profile.displayName}'s avatar`}
-                className="w-12 h-12 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                <span className="text-gray-600 dark:text-gray-300 font-medium text-lg">
-                  {profile.displayName.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* User Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {profile.displayName}
-              </h3>
-              {profile.isVerified && (
-                <svg 
-                  className={`w-4 h-4 ${getVerificationColor(profile.verificationTier)}`} 
-                  fill="currentColor" 
-                  viewBox="0 0 20 20"
-                  aria-label={getVerificationTierName(profile.verificationTier)}
-                >
-                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              )}
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">@{profile.username}</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Full profile view
-  return (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${className}`}>
-      {/* Profile Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start space-y-4 sm:space-y-0 sm:space-x-6 mb-6">
-        {/* Avatar */}
-        <div className="flex-shrink-0">
-          {profile.avatar ? (
-            <img
-              src={profile.avatar}
-              alt={`${profile.displayName}'s avatar`}
-              className="w-24 h-24 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-24 h-24 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-              <span className="text-gray-600 dark:text-gray-300 font-bold text-2xl">
-                {profile.displayName.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* User Details */}
-        <div className="flex-1 min-w-0">
-          {/* Name and verification */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
-            <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {profile.displayName}
-              </h1>
-              {profile.isVerified && (
-                <div className="flex items-center space-x-1">
-                  <svg 
-                    className={`w-6 h-6 ${getVerificationColor(profile.verificationTier)}`} 
-                    fill="currentColor" 
-                    viewBox="0 0 20 20"
-                    aria-label={getVerificationTierName(profile.verificationTier)}
-                  >
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
-                    {getVerificationTierName(profile.verificationTier)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Follow Button */}
-            {onFollowClick && (
-              <button
-                onClick={() => onFollowClick(profile.username)}
-                className="
-                  px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent 
-                  rounded-md shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500
-                  self-start sm:self-auto
-                "
-              >
-                Follow
-              </button>
-            )}
-          </div>
-
-          {/* Username */}
-          <p className="text-gray-500 dark:text-gray-400 mb-3">@{profile.username}</p>
-
-          {/* Bio */}
-          {profile.bio && (
-            <p className="text-gray-900 dark:text-gray-100 mb-3 whitespace-pre-wrap">
-              {profile.bio}
-            </p>
-          )}
-
-          {/* Website */}
-          {profile.website && (
-            <div className="mb-3">
-              <a
-                href={profile.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center space-x-1 text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.102m0-2.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.102m-2.828 2.828l2.828-2.828" />
-                </svg>
-                <span>{formatWebsiteUrl(profile.website)}</span>
-              </a>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="flex space-x-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-        {/* Posts Count */}
-        <button
-          onClick={() => onPostsClick?.(profile.username)}
-          className={`flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2 ${onPostsClick ? 'hover:bg-gray-50 dark:hover:bg-gray-750 rounded p-2 -m-2' : ''}`}
-          disabled={!onPostsClick}
-        >
-          <span className="text-xl font-bold text-gray-900 dark:text-white">
-            {profile.postsCount?.toLocaleString() || 0}
-          </span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Post{profile.postsCount !== 1 ? 's' : ''}
-          </span>
-        </button>
-
-        {/* Followers Count */}
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-          <span className="text-xl font-bold text-gray-900 dark:text-white">
-            {profile.followersCount?.toLocaleString() || 0}
-          </span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Follower{profile.followersCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-      </div>
-
-      {/* ActivityPub Info (for debugging) */}
-      {process.env.NODE_ENV === 'development' && profile.actorId && (
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <details className="text-xs text-gray-500 dark:text-gray-400">
-            <summary className="cursor-pointer">ActivityPub Info</summary>
-            <p className="mt-1 font-mono break-all">{profile.actorId}</p>
-          </details>
-        </div>
-      )}
     </div>
   )
 }

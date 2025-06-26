@@ -1,343 +1,463 @@
-// frontend/src/components/FollowButton.tsx
-// Modern social media style follow/unfollow button component
-
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { 
+  UserPlus, 
+  UserMinus, 
+  UserX, 
+  Shield, 
+  Check, 
+  Loader2,
+  AlertCircle
+} from 'lucide-react'
 
-// Types for follow functionality
-interface FollowResponse {
-  success: boolean
-  data?: {
-    id: string
-    followerId: string
-    followedId: string
-    actorId?: string | null
-    createdAt: string
-  }
-  error?: string
-  message?: string
-}
+/**
+ * Follow relationship state
+ */
+type FollowState = 'not-following' | 'following' | 'blocked' | 'self' | 'unknown'
 
+/**
+ * Button variants for different contexts
+ */
+type ButtonVariant = 'default' | 'outline' | 'ghost' | 'compact' | 'icon-only'
+
+/**
+ * Button sizes
+ */
+type ButtonSize = 'sm' | 'md' | 'lg'
+
+/**
+ * Props for FollowButton component
+ */
 interface FollowButtonProps {
+  /** Username of the user to follow/unfollow */
   username: string
-  initialFollowState?: boolean
-  size?: 'sm' | 'md' | 'lg'
-  variant?: 'primary' | 'secondary' | 'outline'
-  className?: string
-  disabled?: boolean
-  showFollowerCount?: boolean
+  /** Current user's ID (to prevent self-following) */
+  currentUserId?: string
+  /** Target user's ID (to check if it's self) */
+  targetUserId?: string
+  /** Initial follow state */
+  initialState?: FollowState
+  /** Button variant style */
+  variant?: ButtonVariant
+  /** Button size */
+  size?: ButtonSize
+  /** API base URL */
+  apiUrl?: string
+  /** Custom follow handler */
+  onFollow?: (username: string) => Promise<void>
+  /** Custom unfollow handler */
+  onUnfollow?: (username: string) => Promise<void>
+  /** Custom block handler */
+  onBlock?: (username: string) => Promise<void>
+  /** Custom unblock handler */
+  onUnblock?: (username: string) => Promise<void>
+  /** Callback when state changes */
+  onStateChange?: (newState: FollowState) => void
+  /** Show follower count */
+  showCount?: boolean
+  /** Initial follower count */
   followerCount?: number
-  onFollowChange?: (isFollowing: boolean, followerCount?: number) => void
+  /** Disabled state */
+  disabled?: boolean
+  /** Custom CSS classes */
+  className?: string
+  /** Show text labels */
+  showLabel?: boolean
 }
 
+/**
+ * Get authentication token from localStorage
+ */
+const getAuthToken = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token')
+  }
+  return null
+}
+
+/**
+ * Versatile FollowButton component
+ * Can be used in profiles, user cards, lists, etc.
+ */
 export default function FollowButton({
   username,
-  initialFollowState = false,
+  currentUserId,
+  targetUserId,
+  initialState = 'unknown',
+  variant = 'default',
   size = 'md',
-  variant = 'primary',
-  className = '',
-  disabled = false,
-  showFollowerCount = false,
+  apiUrl = '/api',
+  onFollow,
+  onUnfollow,
+  onBlock,
+  onUnblock,
+  onStateChange,
+  showCount = false,
   followerCount = 0,
-  onFollowChange
+  disabled = false,
+  className = '',
+  showLabel = true
 }: FollowButtonProps) {
-  // State management
-  const [isFollowing, setIsFollowing] = useState(initialFollowState)
+  const [followState, setFollowState] = useState<FollowState>(initialState)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [currentFollowerCount, setCurrentFollowerCount] = useState(followerCount)
-  const [isHovered, setIsHovered] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
 
-  // Configuration
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  // Check if this is user's own profile
+  const isSelfProfile = currentUserId === targetUserId || 
+    (currentUserId && !targetUserId && followState === 'self')
 
-  // Update state when props change
-  useEffect(() => {
-    setIsFollowing(initialFollowState)
-  }, [initialFollowState])
-
-  useEffect(() => {
-    setCurrentFollowerCount(followerCount)
-  }, [followerCount])
-
-  // Get button styling based on props
-  const getButtonStyles = useCallback(() => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-95'
-    
-    // Size variants
-    const sizeStyles = {
-      sm: 'px-4 py-1.5 text-xs min-w-[80px]',
-      md: 'px-6 py-2 text-sm min-w-[100px]',
-      lg: 'px-8 py-3 text-base min-w-[120px]'
-    }
-
-    // Color variants based on follow state and hover
-    let colorStyles = ''
-    
-    if (disabled || isLoading) {
-      colorStyles = 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500 border border-gray-300'
-    } else if (isFollowing) {
-      if (isHovered) {
-        // Unfollow state (red on hover)
-        colorStyles = 'bg-red-500 hover:bg-red-600 text-white border border-red-500 focus:ring-red-500'
-      } else {
-        // Following state (gray)
-        colorStyles = 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-300 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'
-      }
-    } else {
-      // Not following state (blue)
-      switch (variant) {
-        case 'primary':
-          colorStyles = 'bg-blue-500 hover:bg-blue-600 text-white border border-blue-500 focus:ring-blue-500'
-          break
-        case 'secondary':
-          colorStyles = 'bg-gray-800 hover:bg-gray-900 text-white border border-gray-800 focus:ring-gray-500'
-          break
-        case 'outline':
-          colorStyles = 'bg-transparent hover:bg-blue-50 text-blue-600 border border-blue-500 focus:ring-blue-500'
-          break
-        default:
-          colorStyles = 'bg-blue-500 hover:bg-blue-600 text-white border border-blue-500 focus:ring-blue-500'
-      }
-    }
-
-    return `${baseStyles} ${sizeStyles[size]} ${colorStyles} ${className}`
-  }, [isFollowing, variant, size, disabled, isLoading, className, isHovered])
-
-  // Get button text based on state
-  const getButtonText = useCallback(() => {
-    if (isLoading) {
-      return isFollowing ? 'Unfollowing...' : 'Following...'
-    }
-    
-    if (isFollowing) {
-      return isHovered ? 'Unfollow' : 'Following'
-    }
-    
-    return 'Follow'
-  }, [isFollowing, isLoading, isHovered])
-
-  // Format follower count
-  const formatFollowerCount = useCallback((count: number): string => {
-    if (count >= 1000000) {
-      return `${(count / 1000000).toFixed(1)}M`
-    } else if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}K`
-    }
-    return count.toString()
-  }, [])
-
-  // Handle follow/unfollow action
-  const handleFollowToggle = useCallback(async () => {
-    if (disabled || isLoading) return
-
-    // Get auth token
-    const token = localStorage.getItem('auth_token')
-    if (!token) {
-      setError('You must be logged in to follow users')
-      setTimeout(() => setError(''), 3000)
+  /**
+   * Fetch current follow state from API
+   */
+  const fetchFollowState = async () => {
+    if (!currentUserId || isSelfProfile) {
+      setFollowState('self')
       return
     }
 
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        setFollowState('not-following')
+        return
+      }
+
+      // This would typically be an endpoint that returns follow status
+      // For now, we'll use the initialState or make assumptions
+      setFollowState(initialState !== 'unknown' ? initialState : 'not-following')
+    } catch (err) {
+      console.error('Failed to fetch follow state:', err)
+      setFollowState('not-following')
+    }
+  }
+
+  /**
+   * Handle follow action
+   */
+  const handleFollow = async () => {
+    if (isLoading || !currentUserId || isSelfProfile) return
+
     setIsLoading(true)
-    setError('')
+    setError(null)
 
     try {
-      const method = isFollowing ? 'DELETE' : 'POST'
-      const url = `${API_BASE_URL}/api/v1/users/${encodeURIComponent(username)}/follow`
+      if (onFollow) {
+        await onFollow(username)
+      } else {
+        const token = getAuthToken()
+        const response = await fetch(`${apiUrl}/users/${username}/follow`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || 'Failed to follow user')
+        }
+      }
+
+      setFollowState('following')
+      setCurrentFollowerCount(prev => prev + 1)
+      setShowSuccess(true)
+      setTimeout(() => setShowSuccess(false), 2000)
       
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: method === 'POST' ? JSON.stringify({}) : undefined
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      if (onStateChange) {
+        onStateChange('following')
       }
-
-      const result: FollowResponse = await response.json()
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update follow status')
-      }
-
-      // Update local state
-      const newFollowState = !isFollowing
-      setIsFollowing(newFollowState)
-
-      // Update follower count
-      let newFollowerCount = currentFollowerCount
-      if (showFollowerCount) {
-        newFollowerCount = newFollowState 
-          ? currentFollowerCount + 1 
-          : Math.max(0, currentFollowerCount - 1)
-        setCurrentFollowerCount(newFollowerCount)
-      }
-
-      // Notify parent component
-      if (onFollowChange) {
-        onFollowChange(newFollowState, newFollowerCount)
-      }
-
-    } catch (error) {
-      console.error('Follow/unfollow error:', error)
-      setError(error instanceof Error ? error.message : 'Failed to update follow status')
-      setTimeout(() => setError(''), 3000)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to follow user'
+      setError(errorMessage)
+      console.error('Follow error:', err)
     } finally {
       setIsLoading(false)
     }
-  }, [
-    username,
-    isFollowing,
-    disabled,
-    isLoading,
-    API_BASE_URL,
-    showFollowerCount,
-    currentFollowerCount,
-    onFollowChange
-  ])
+  }
 
-  // Loading spinner
-  const LoadingSpinner = () => (
-    <svg 
-      className={`animate-spin ${size === 'sm' ? 'w-4 h-4' : size === 'lg' ? 'w-5 h-5' : 'w-4 h-4'} mr-2`} 
-      fill="none" 
-      viewBox="0 0 24 24"
-    >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-    </svg>
-  )
+  /**
+   * Handle unfollow action
+   */
+  const handleUnfollow = async () => {
+    if (isLoading || !currentUserId || isSelfProfile) return
 
-  // Follow icon
-  const FollowIcon = () => {
-    const iconSize = size === 'sm' ? 'w-3 h-3' : size === 'lg' ? 'w-5 h-5' : 'w-4 h-4'
-    
-    if (isFollowing) {
-      if (isHovered) {
-        // Unfollow icon (minus)
-        return (
-          <svg className={`${iconSize} mr-2`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
-        )
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      if (onUnfollow) {
+        await onUnfollow(username)
       } else {
-        // Following icon (check)
-        return (
-          <svg className={`${iconSize} mr-2`} fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-        )
+        const token = getAuthToken()
+        const response = await fetch(`${apiUrl}/users/${username}/follow`, {
+          method: 'DELETE',
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || 'Failed to unfollow user')
+        }
       }
-    } else {
-      // Follow icon (plus)
-      return (
-        <svg className={`${iconSize} mr-2`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-        </svg>
-      )
+
+      setFollowState('not-following')
+      setCurrentFollowerCount(prev => Math.max(0, prev - 1))
+      
+      if (onStateChange) {
+        onStateChange('not-following')
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to unfollow user'
+      setError(errorMessage)
+      console.error('Unfollow error:', err)
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  return (
-    <div className="relative">
-      {/* Main Follow Button */}
-      <button
-        onClick={handleFollowToggle}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        disabled={disabled || isLoading}
-        className={getButtonStyles()}
-        aria-label={`${isFollowing ? 'Unfollow' : 'Follow'} @${username}`}
-      >
-        {/* Button Content */}
-        <span className="flex items-center">
-          {isLoading ? <LoadingSpinner /> : <FollowIcon />}
-          <span>{getButtonText()}</span>
-          {showFollowerCount && (
-            <span className="ml-2 text-xs opacity-75">
-              ({formatFollowerCount(currentFollowerCount)})
-            </span>
-          )}
-        </span>
-      </button>
+  /**
+   * Handle block action
+   */
+  const handleBlock = async () => {
+    if (isLoading || !currentUserId || isSelfProfile) return
 
-      {/* Error Message */}
-      {error && (
-        <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-3 py-2 bg-red-500 text-white text-xs rounded-md shadow-lg z-50 whitespace-nowrap">
-          {error}
-        </div>
-      )}
-    </div>
-  )
-}
+    setIsLoading(true)
+    setError(null)
 
-// Compound component for follow button with user info
-interface FollowButtonWithUserProps extends FollowButtonProps {
-  displayName?: string
-  avatar?: string | null
-  isVerified?: boolean
-  showUserInfo?: boolean
-}
+    try {
+      if (onBlock) {
+        await onBlock(username)
+      } else {
+        const token = getAuthToken()
+        const response = await fetch(`${apiUrl}/users/${username}/block`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
+        })
 
-export function FollowButtonWithUser({
-  displayName,
-  avatar,
-  isVerified = false,
-  showUserInfo = true,
-  ...followButtonProps
-}: FollowButtonWithUserProps) {
-  if (!showUserInfo) {
-    return <FollowButton {...followButtonProps} />
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || 'Failed to block user')
+        }
+      }
+
+      setFollowState('blocked')
+      
+      if (onStateChange) {
+        onStateChange('blocked')
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to block user'
+      setError(errorMessage)
+      console.error('Block error:', err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
+  /**
+   * Handle unblock action
+   */
+  const handleUnblock = async () => {
+    if (isLoading || !currentUserId || isSelfProfile) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      if (onUnblock) {
+        await onUnblock(username)
+      } else {
+        const token = getAuthToken()
+        const response = await fetch(`${apiUrl}/users/${username}/block`, {
+          method: 'DELETE',
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || 'Failed to unblock user')
+        }
+      }
+
+      setFollowState('not-following')
+      
+      if (onStateChange) {
+        onStateChange('not-following')
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to unblock user'
+      setError(errorMessage)
+      console.error('Unblock error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  /**
+   * Get button configuration based on state and variant
+   */
+  const getButtonConfig = () => {
+    const baseClasses = 'inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2'
+    
+    // Size classes
+    const sizeClasses = {
+      sm: 'px-3 py-1.5 text-sm gap-1.5',
+      md: 'px-4 py-2 text-sm gap-2',
+      lg: 'px-6 py-3 text-base gap-2'
+    }
+
+    // Rounded classes based on variant
+    const roundedClasses = {
+      'default': 'rounded-lg',
+      'outline': 'rounded-lg',
+      'ghost': 'rounded-lg',
+      'compact': 'rounded-md',
+      'icon-only': 'rounded-full'
+    }
+
+    const sizeClass = sizeClasses[size]
+    const roundedClass = roundedClasses[variant]
+
+    if (isSelfProfile || followState === 'self') {
+      return {
+        classes: `${baseClasses} ${sizeClass} ${roundedClass} bg-gray-100 text-gray-400 cursor-not-allowed`,
+        icon: UserX,
+        label: 'You',
+        action: () => {}
+      }
+    }
+
+    switch (followState) {
+      case 'following':
+        if (variant === 'icon-only') {
+          return {
+            classes: `${baseClasses} ${sizeClass} ${roundedClass} bg-blue-100 text-blue-600 hover:bg-red-50 hover:text-red-600 focus:ring-red-500`,
+            icon: showSuccess ? Check : UserMinus,
+            label: showSuccess ? 'Following' : 'Unfollow',
+            action: handleUnfollow
+          }
+        }
+        return {
+          classes: `${baseClasses} ${sizeClass} ${roundedClass} ${
+            variant === 'outline' 
+              ? 'border-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200' 
+              : 'bg-blue-100 text-blue-700 hover:bg-red-50 hover:text-red-600'
+          } focus:ring-blue-500`,
+          icon: showSuccess ? Check : UserMinus,
+          label: showSuccess ? 'Following!' : 'Following',
+          action: handleUnfollow
+        }
+
+      case 'blocked':
+        return {
+          classes: `${baseClasses} ${sizeClass} ${roundedClass} ${
+            variant === 'outline' 
+              ? 'border-2 border-red-200 bg-red-50 text-red-700 hover:bg-red-100' 
+              : 'bg-red-100 text-red-700 hover:bg-red-200'
+          } focus:ring-red-500`,
+          icon: Shield,
+          label: 'Blocked',
+          action: handleUnblock
+        }
+
+      case 'not-following':
+      default:
+        if (variant === 'ghost') {
+          return {
+            classes: `${baseClasses} ${sizeClass} ${roundedClass} text-blue-600 hover:bg-blue-50 focus:ring-blue-500`,
+            icon: UserPlus,
+            label: 'Follow',
+            action: handleFollow
+          }
+        }
+        return {
+          classes: `${baseClasses} ${sizeClass} ${roundedClass} ${
+            variant === 'outline' 
+              ? 'border-2 border-blue-500 text-blue-600 hover:bg-blue-500 hover:text-white' 
+              : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:scale-105'
+          } focus:ring-blue-500`,
+          icon: UserPlus,
+          label: 'Follow',
+          action: handleFollow
+        }
+    }
+  }
+
+  // Initialize follow state
+  useEffect(() => {
+    if (initialState === 'unknown') {
+      fetchFollowState()
+    } else {
+      setFollowState(initialState)
+    }
+  }, [username, currentUserId, initialState])
+
+  // Clear error after a delay
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [error])
+
+  const buttonConfig = getButtonConfig()
+  const IconComponent = buttonConfig.icon
+
   return (
-    <div className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow duration-200">
-      {/* User Info */}
-      <div className="flex items-center space-x-3 min-w-0 flex-1">
-        {/* Avatar */}
-        <div className="flex-shrink-0">
-          {avatar ? (
-            <img
-              src={avatar}
-              alt={`${displayName}'s avatar`}
-              className="w-10 h-10 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-              <span className="text-white font-medium text-sm">
-                {displayName?.charAt(0).toUpperCase() || followButtonProps.username.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          )}
-        </div>
+    <div className={`relative ${className}`}>
+      <button
+        onClick={buttonConfig.action}
+        disabled={Boolean(disabled || isLoading || isSelfProfile)}
+        className={`${buttonConfig.classes} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        title={error || buttonConfig.label}
+      >
+        {isLoading ? (
+          <Loader2 className={`${variant === 'icon-only' ? 'w-5 h-5' : size === 'sm' ? 'w-4 h-4' : 'w-5 h-5'} animate-spin`} />
+        ) : (
+          <IconComponent className={`${variant === 'icon-only' ? 'w-5 h-5' : size === 'sm' ? 'w-4 h-4' : 'w-5 h-5'}`} />
+        )}
+        
+        {showLabel && variant !== 'icon-only' && (
+          <span className={`${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity`}>
+            {buttonConfig.label}
+          </span>
+        )}
 
-        {/* User Details */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center space-x-1">
-            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-              {displayName || followButtonProps.username}
-            </p>
-            {isVerified && (
-              <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            )}
+        {showCount && followState !== 'self' && (
+          <span className="ml-1 text-xs font-semibold">
+            {currentFollowerCount > 0 ? currentFollowerCount.toLocaleString() : ''}
+          </span>
+        )}
+      </button>
+
+      {/* Error Tooltip */}
+      {error && (
+        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-red-600 text-white text-xs rounded-lg whitespace-nowrap z-10">
+          <div className="flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {error}
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">@{followButtonProps.username}</p>
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-red-600" />
         </div>
-      </div>
+      )}
 
-      {/* Follow Button */}
-      <div className="flex-shrink-0 ml-3">
-        <FollowButton {...followButtonProps} size="sm" />
-      </div>
+      {/* Success Animation */}
+      {showSuccess && (
+        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-green-600 text-white text-xs px-2 py-1 rounded-md animate-pulse">
+          Following!
+        </div>
+      )}
     </div>
   )
 }

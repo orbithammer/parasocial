@@ -1,367 +1,425 @@
-// frontend/src/app/test/page.tsx
-// Social media style test page for demonstrating all Phase 2.2 components
-
 'use client'
 
 import { useState } from 'react'
 import PostCreationForm from '@/components/PostCreationForm'
 import PostFeed from '@/components/PostFeed'
+import PostCard from '@/components/PostCard'
 import UserProfile from '@/components/UserProfile'
-import FollowButton, { FollowButtonWithUser } from '@/components/FollowButton'
+import FollowButton from '@/components/FollowButton'
+import { Code, Sparkles, TestTube, Users, MessageSquare, User } from 'lucide-react'
 
-export default function TestPage() {
-  // State for coordinating components
-  const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [selectedPost, setSelectedPost] = useState<any>(null)
-  const [selectedUser, setSelectedUser] = useState<string>('testuser')
-  const [showDeveloperTools, setShowDeveloperTools] = useState(false)
-
-  // Mock users for testing
-  const testUsers = [
-    { username: 'alice', displayName: 'Alice Johnson', isVerified: true, followerCount: 1234 },
-    { username: 'bob', displayName: 'Bob Smith', isVerified: false, followerCount: 567 },
-    { username: 'charlie', displayName: 'Charlie Brown', isVerified: true, followerCount: 890 },
+/**
+ * Mock data for testing components
+ */
+const mockPost = {
+  id: 'post123',
+  content: 'This is a test post to demonstrate the PostCard component! 🎉\n\nIt supports multiple lines, emojis, and various content types. This is what a typical post would look like in the ParaSocial platform.',
+  contentWarning: null,
+  createdAt: '2024-06-25T10:30:00Z',
+  publishedAt: '2024-06-25T10:30:00Z',
+  author: {
+    id: 'user456',
+    username: 'testuser',
+    displayName: 'Test User',
+    avatar: null,
+    isVerified: true,
+    verificationTier: 'email'
+  },
+  media: [
+    {
+      id: 'media123',
+      url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&h=400&fit=crop',
+      altText: 'Beautiful landscape',
+      mimeType: 'image/jpeg',
+      width: 800,
+      height: 400
+    }
   ]
+}
+
+const mockPostWithWarning = {
+  ...mockPost,
+  id: 'post124',
+  content: 'This post contains sensitive content that might not be suitable for all audiences. The content warning system allows users to hide potentially disturbing content behind a warning.',
+  contentWarning: 'Contains discussion of sensitive topics',
+  media: []
+}
+
+const mockScheduledPost = {
+  ...mockPost,
+  id: 'post125',
+  content: 'This is a scheduled post that will be published later! ⏰',
+  isScheduled: true,
+  scheduledFor: '2024-12-31T23:59:59Z',
+  media: []
+}
+
+const mockUserProfile = {
+  id: 'user456',
+  username: 'testuser',
+  displayName: 'Test User',
+  bio: 'This is a sample bio for testing the UserProfile component. I\'m passionate about technology, design, and creating amazing user experiences! 🚀\n\nLove building things with React and TypeScript.',
+  avatar: null,
+  website: 'https://example.com',
+  isVerified: true,
+  verificationTier: 'identity',
+  followersCount: 1234,
+  postsCount: 89,
+  createdAt: '2023-01-15T12:00:00Z'
+}
+
+/**
+ * Component showcase section wrapper
+ */
+function ShowcaseSection({ 
+  title, 
+  description, 
+  icon: Icon, 
+  children 
+}: { 
+  title: string
+  description: string
+  icon: any
+  children: React.ReactNode 
+}) {
+  return (
+    <section className="mb-16">
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg text-white">
+            <Icon className="w-6 h-6" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+        </div>
+        <p className="text-gray-600 max-w-3xl">{description}</p>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+              <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+              <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+            </div>
+            <span className="text-sm text-gray-500 ml-2">Component Preview</span>
+          </div>
+        </div>
+        <div className="p-6">
+          {children}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Test page for showcasing all ParaSocial components
+ */
+export default function TestPage() {
+  const [currentUserId] = useState('user123') // Mock current user
+
+  // Mock handlers for component testing
+  const handlePostSubmit = async (data: any) => {
+    console.log('Post submitted:', data)
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    alert('Post created successfully! (This is just a test)')
+  }
+
+  const handleFollow = async (username: string) => {
+    console.log('Following:', username)
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  const handleUnfollow = async (username: string) => {
+    console.log('Unfollowing:', username)
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  const handleBlock = async (username: string) => {
+    console.log('Blocking:', username)
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  const handleReport = async (username: string) => {
+    console.log('Reporting:', username)
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  const handleEditProfile = () => {
+    alert('Edit profile clicked! (This would open an edit form)')
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Navigation Header */}
-      <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">PS</span>
-              </div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">ParaSocial</h1>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 backdrop-blur-sm bg-white/95">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl text-white">
+              <TestTube className="w-8 h-8" />
             </div>
-
-            {/* Navigation Items */}
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setShowDeveloperTools(!showDeveloperTools)}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                </svg>
-                {showDeveloperTools ? 'Hide' : 'Show'} Dev Tools
-              </button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">ParaSocial Component Showcase</h1>
+              <p className="text-gray-600">Testing all components for Phase 2.2 - Create/read posts, follow/unfollow users</p>
             </div>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* Developer Tools Panel */}
-      {showDeveloperTools && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => {
-                  localStorage.setItem('auth_token', 'mock_test_token_123')
-                  alert('✅ Mock auth token set! You can now create posts.')
-                }}
-                className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-              >
-                🔑 Set Auth Token
-              </button>
-              
-              <button
-                onClick={async () => {
-                  try {
-                    const response = await fetch('http://localhost:3001/api/v1/dev/seed', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' }
-                    })
-                    const data = await response.json()
-                    if (data.success) {
-                      alert(`✅ Test data created!\nUsers: ${data.data.users}\nPosts: ${data.data.posts}`)
-                    } else {
-                      alert(`❌ Failed: ${data.error}`)
-                    }
-                  } catch (error) {
-                    alert(`❌ Error: ${error}`)
-                  }
-                }}
-                className="inline-flex items-center px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700"
-              >
-                🌱 Create Test Data
-              </button>
-
-              <button
-                onClick={async () => {
-                  try {
-                    const response = await fetch('http://localhost:3001/health')
-                    const data = await response.json()
-                    alert(`✅ API: ${data.status}`)
-                  } catch (error) {
-                    alert(`❌ API Error: ${error}`)
-                  }
-                }}
-                className="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700"
-              >
-                💚 Check API
-              </button>
-
-              <button
-                onClick={() => {
-                  localStorage.removeItem('auth_token')
-                  alert('🗑️ Auth token cleared!')
-                }}
-                className="inline-flex items-center px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
-              >
-                🗑️ Clear Token
-              </button>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Introduction */}
+        <div className="mb-12 text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium mb-4">
+            <Sparkles className="w-4 h-4" />
+            Phase 2.2 Components
           </div>
+          <h2 className="text-4xl font-bold text-gray-900 mb-4">
+            Modern Social Media Components
+          </h2>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            Explore all the components built for the ParaSocial platform. Each component is fully functional, 
+            beautifully styled with Tailwind CSS, and ready for production use.
+          </p>
         </div>
-      )}
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Left Sidebar - User Profile */}
-          <div className="lg:col-span-3 space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  User Profile
-                </h2>
-                
-                {/* Username Input */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedUser}
-                    onChange={(e) => setSelectedUser(e.target.value)}
-                    placeholder="Enter username"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                {/* User Profile Display */}
-                {selectedUser && (
-                  <UserProfile
-                    username={selectedUser}
-                    showFullProfile={false}
-                    onFollowClick={(username) => {
-                      alert(`Follow clicked for @${username}`)
-                    }}
-                    onPostsClick={(username) => {
-                      alert(`Show posts for @${username}`)
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Suggested Users */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Suggested Users
-                </h3>
-                <div className="space-y-3">
-                  {testUsers.map((user) => (
-                    <FollowButtonWithUser
-                      key={user.username}
-                      username={user.username}
-                      displayName={user.displayName}
-                      isVerified={user.isVerified}
-                      showFollowerCount={true}
-                      followerCount={user.followerCount}
-                      size="sm"
-                      variant="primary"
-                      onFollowChange={(isFollowing, count) => {
-                        console.log(`${user.username} follow state: ${isFollowing}, count: ${count}`)
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* PostCreationForm Showcase */}
+        <ShowcaseSection
+          title="PostCreationForm"
+          description="A comprehensive form for creating posts with content warnings, scheduling, and character limits. Features real-time validation and modern UI patterns."
+          icon={MessageSquare}
+        >
+          <div className="max-w-2xl mx-auto">
+            <PostCreationForm 
+              onSubmit={handlePostSubmit}
+              className="shadow-lg"
+            />
           </div>
+        </ShowcaseSection>
 
-          {/* Main Feed */}
-          <div className="lg:col-span-6 space-y-6">
-            {/* Post Creation */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                    <span className="text-white font-semibold text-sm">You</span>
-                  </div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    What's happening?
-                  </h2>
-                </div>
-                
-                <PostCreationForm
-                  onPostCreated={(post) => {
-                    if (post) {
-                      console.log('New post created:', post)
-                      setRefreshTrigger(prev => prev + 1)
-                      
-                      // Show success with a more social media style notification
-                      const notification = document.createElement('div')
-                      notification.className = 'fixed top-20 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300'
-                      notification.innerHTML = `
-                        <div class="flex items-center space-x-2">
-                          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                          </svg>
-                          <span>Post published successfully!</span>
-                        </div>
-                      `
-                      document.body.appendChild(notification)
-                      setTimeout(() => {
-                        notification.style.transform = 'translateX(100%)'
-                        setTimeout(() => notification.remove(), 300)
-                      }, 3000)
-                    }
-                  }}
-                  className="max-w-none"
-                />
-              </div>
-            </div>
-
-            {/* Post Feed */}
-            <div className="space-y-4">
-              <PostFeed
-                refreshTrigger={refreshTrigger}
-                postsPerPage={10}
-                onPostClick={(post) => {
-                  setSelectedPost(post)
-                  console.log('Post clicked:', post)
-                }}
-                className="space-y-4"
+        {/* PostCard Showcase */}
+        <ShowcaseSection
+          title="PostCard"
+          description="Individual post display component with engagement buttons, media support, and content warnings. Supports different states and user interactions."
+          icon={MessageSquare}
+        >
+          <div className="space-y-6 max-w-2xl mx-auto">
+            {/* Regular Post */}
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 mb-3">Regular Post</h4>
+              <PostCard 
+                post={mockPost}
+                currentUserId={currentUserId}
+                onLike={(postId) => console.log('Liked post:', postId)}
+                onBookmark={(postId) => console.log('Bookmarked post:', postId)}
+                onShare={(post) => console.log('Shared post:', post)}
               />
             </div>
 
-            {/* Selected Post Modal */}
-            {selectedPost && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Post Details
-                      </h3>
-                      <button
-                        onClick={() => setSelectedPost(null)}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
-                      >
-                        <svg className="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-3 text-sm">
-                      <div className="grid grid-cols-3 gap-4">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">ID:</span>
-                        <span className="col-span-2 text-gray-900 dark:text-white font-mono text-xs">{selectedPost.id}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Author:</span>
-                        <span className="col-span-2 text-gray-900 dark:text-white">@{selectedPost.author?.username}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Content:</span>
-                        <span className="col-span-2 text-gray-900 dark:text-white">{selectedPost.content}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Created:</span>
-                        <span className="col-span-2 text-gray-900 dark:text-white">
-                          {selectedPost.createdAt ? new Date(selectedPost.createdAt).toLocaleString() : 'Unknown'}
-                        </span>
-                      </div>
-                      {selectedPost.contentWarning && (
-                        <div className="grid grid-cols-3 gap-4">
-                          <span className="font-medium text-gray-700 dark:text-gray-300">Warning:</span>
-                          <span className="col-span-2 text-amber-600 dark:text-amber-400">{selectedPost.contentWarning}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+            {/* Post with Content Warning */}
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 mb-3">Post with Content Warning</h4>
+              <PostCard 
+                post={mockPostWithWarning}
+                currentUserId={currentUserId}
+              />
+            </div>
 
-          {/* Right Sidebar - Follow Testing */}
-          <div className="lg:col-span-3 space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Follow Testing
-                </h3>
-                
-                <div className="space-y-4">
-                  {/* Different Button Variants */}
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                      Button Styles
-                    </h4>
-                    <div className="space-y-2">
-                      <FollowButton
-                        username="alice"
-                        variant="primary"
-                        size="sm"
-                        showFollowerCount={true}
-                        followerCount={1234}
-                        onFollowChange={(isFollowing, count) => {
-                          console.log(`Alice follow state: ${isFollowing}, count: ${count}`)
-                        }}
-                      />
-                      <FollowButton
-                        username="bob"
-                        variant="outline"
-                        size="md"
-                        onFollowChange={(isFollowing) => {
-                          console.log(`Bob follow state: ${isFollowing}`)
-                        }}
-                      />
-                    </div>
-                  </div>
+            {/* Scheduled Post */}
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 mb-3">Scheduled Post</h4>
+              <PostCard 
+                post={mockScheduledPost}
+                currentUserId={currentUserId}
+              />
+            </div>
+          </div>
+        </ShowcaseSection>
+
+        {/* UserProfile Showcase */}
+        <ShowcaseSection
+          title="UserProfile"
+          description="Complete user profile component with follow functionality, statistics, and user actions. Includes verification badges and social features."
+          icon={User}
+        >
+          <div className="max-w-2xl mx-auto">
+            <UserProfile
+              username="testuser"
+              currentUserId={currentUserId}
+              onFollow={handleFollow}
+              onUnfollow={handleUnfollow}
+              onBlock={handleBlock}
+              onReport={handleReport}
+              onEditProfile={handleEditProfile}
+            />
+          </div>
+        </ShowcaseSection>
+
+        {/* FollowButton Showcase */}
+        <ShowcaseSection
+          title="FollowButton"
+          description="Versatile follow button component with multiple variants and sizes. Handles all follow states with proper loading and error handling."
+          icon={Users}
+        >
+          <div className="space-y-8">
+            {/* Button Variants */}
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Button Variants</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Default</h5>
+                  <FollowButton
+                    username="user1"
+                    currentUserId={currentUserId}
+                    targetUserId="user1"
+                    variant="default"
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Outline</h5>
+                  <FollowButton
+                    username="user2"
+                    currentUserId={currentUserId}
+                    targetUserId="user2"
+                    variant="outline"
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Ghost</h5>
+                  <FollowButton
+                    username="user3"
+                    currentUserId={currentUserId}
+                    targetUserId="user3"
+                    variant="ghost"
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Compact</h5>
+                  <FollowButton
+                    username="user4"
+                    currentUserId={currentUserId}
+                    targetUserId="user4"
+                    variant="compact"
+                    size="sm"
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Icon Only</h5>
+                  <FollowButton
+                    username="user5"
+                    currentUserId={currentUserId}
+                    targetUserId="user5"
+                    variant="icon-only"
+                    showLabel={false}
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">With Count</h5>
+                  <FollowButton
+                    username="user6"
+                    currentUserId={currentUserId}
+                    targetUserId="user6"
+                    showCount={true}
+                    followerCount={1234}
+                    onFollow={handleFollow}
+                    onUnfollow={handleUnfollow}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Trending Section */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  What's happening
-                </h3>
-                <div className="space-y-3">
-                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending in Technology</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">ParaSocial</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">2,847 posts</p>
-                  </div>
-                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">#ActivityPub</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">1,234 posts</p>
-                  </div>
-                  <div className="hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg cursor-pointer">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Trending in Social</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">#Decentralized</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">892 posts</p>
-                  </div>
+            {/* Button States */}
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Button States</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Not Following</h5>
+                  <FollowButton
+                    username="state1"
+                    currentUserId={currentUserId}
+                    targetUserId="state1"
+                    initialState="not-following"
+                    onFollow={handleFollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Following</h5>
+                  <FollowButton
+                    username="state2"
+                    currentUserId={currentUserId}
+                    targetUserId="state2"
+                    initialState="following"
+                    onUnfollow={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Blocked</h5>
+                  <FollowButton
+                    username="state3"
+                    currentUserId={currentUserId}
+                    targetUserId="state3"
+                    initialState="blocked"
+                    onUnblock={handleUnfollow}
+                  />
+                </div>
+                <div className="text-center">
+                  <h5 className="text-sm font-medium text-gray-700 mb-3">Self Profile</h5>
+                  <FollowButton
+                    username="self"
+                    currentUserId={currentUserId}
+                    targetUserId={currentUserId}
+                    initialState="self"
+                  />
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        </ShowcaseSection>
+
+        {/* PostFeed Showcase */}
+        <ShowcaseSection
+          title="PostFeed"
+          description="Complete feed component with pagination, loading states, and error handling. Displays posts in a modern social media layout."
+          icon={Code}
+        >
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-sm">
+                <strong>Note:</strong> The PostFeed component will attempt to fetch from your API. 
+                Make sure your backend is running and the endpoints are available to see it in action.
+              </p>
+            </div>
+            <PostFeed 
+              apiUrl="/api/posts"
+              className="shadow-lg"
+            />
+          </div>
+        </ShowcaseSection>
+
+        {/* Footer */}
+        <footer className="mt-16 pt-8 border-t border-gray-200">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium mb-4">
+              <Sparkles className="w-4 h-4" />
+              All components ready for production!
+            </div>
+            <p className="text-gray-600">
+              These components are fully functional and styled for the ParaSocial platform. 
+              Integrate them into your pages and connect to your backend APIs.
+            </p>
+          </div>
+        </footer>
+      </main>
     </div>
   )
 }

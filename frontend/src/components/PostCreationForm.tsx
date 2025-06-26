@@ -1,11 +1,11 @@
-// frontend/src/components/PostCreationForm.tsx
-// Form component for creating new posts with validation and API integration
-
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import { Calendar, AlertTriangle, Send, Clock, X } from 'lucide-react'
 
-// Types for the post creation form
+/**
+ * Post creation form interface
+ */
 interface PostFormData {
   content: string
   contentWarning: string
@@ -13,363 +13,265 @@ interface PostFormData {
   scheduledFor: string
 }
 
-interface PostCreationResponse {
-  success: boolean
-  data?: {
-    id: string
-    content: string
-    contentWarning: string | null
-    isScheduled: boolean
-    scheduledFor: string | null
-    isPublished: boolean
-    publishedAt: string | null
-    author: {
-      id: string
-      username: string
-      displayName: string
-      avatar: string | null
-      isVerified: boolean
-    }
-  }
-  error?: string
-  message?: string
-}
-
+/**
+ * Props for PostCreationForm component
+ */
 interface PostCreationFormProps {
-  onPostCreated?: (post: PostCreationResponse['data']) => void
+  onSubmit?: (data: PostFormData) => Promise<void>
+  disabled?: boolean
   className?: string
 }
 
-export default function PostCreationForm({ onPostCreated, className = '' }: PostCreationFormProps) {
-  // Form state
-  const [formData, setFormData] = useState<PostFormData>({
-    content: '',
-    contentWarning: '',
-    isScheduled: false,
-    scheduledFor: ''
-  })
-
-  // UI state
+/**
+ * Modern post creation form component
+ * Styled to look like contemporary social media platforms
+ */
+export default function PostCreationForm({ 
+  onSubmit, 
+  disabled = false, 
+  className = '' 
+}: PostCreationFormProps) {
+  // Form state management
+  const [content, setContent] = useState('')
+  const [contentWarning, setContentWarning] = useState('')
+  const [showContentWarning, setShowContentWarning] = useState(false)
+  const [isScheduled, setIsScheduled] = useState(false)
+  const [scheduledFor, setScheduledFor] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [successMessage, setSuccessMessage] = useState('')
 
-  // Constants
+  // Constants for validation
   const MAX_CONTENT_LENGTH = 5000
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  const MAX_WARNING_LENGTH = 200
+  
+  // Calculate character counts and validation
+  const contentLength = content.length
+  const warningLength = contentWarning.length
+  const isContentValid = contentLength > 0 && contentLength <= MAX_CONTENT_LENGTH
+  const isWarningValid = !showContentWarning || warningLength <= MAX_WARNING_LENGTH
+  const isScheduleValid = !isScheduled || (scheduledFor && new Date(scheduledFor) > new Date())
+  const canSubmit = isContentValid && isWarningValid && isScheduleValid && !isSubmitting
 
-  // Get minimum date for scheduling (current time + 1 minute)
-  const getMinScheduleDate = useCallback(() => {
+  // Get minimum datetime for scheduling (current time + 5 minutes)
+  const getMinScheduleTime = () => {
     const now = new Date()
-    now.setMinutes(now.getMinutes() + 1)
-    return now.toISOString().slice(0, 16) // Format for datetime-local input
-  }, [])
+    now.setMinutes(now.getMinutes() + 5)
+    return now.toISOString().slice(0, 16)
+  }
 
-  // Form validation
-  const validateForm = useCallback((): boolean => {
-    const newErrors: Record<string, string> = {}
-
-    // Content validation
-    if (!formData.content.trim()) {
-      newErrors.content = 'Post content is required'
-    } else if (formData.content.length > MAX_CONTENT_LENGTH) {
-      newErrors.content = `Post content cannot exceed ${MAX_CONTENT_LENGTH} characters`
-    }
-
-    // Scheduled post validation
-    if (formData.isScheduled) {
-      if (!formData.scheduledFor) {
-        newErrors.scheduledFor = 'Scheduled date is required for scheduled posts'
-      } else {
-        const scheduledDate = new Date(formData.scheduledFor)
-        const now = new Date()
-        
-        if (scheduledDate <= now) {
-          newErrors.scheduledFor = 'Scheduled date must be in the future'
-        }
-      }
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }, [formData])
-
-  // Handle form input changes
-  const handleInputChange = useCallback((field: keyof PostFormData, value: string | boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }))
-    
-    // Clear error for this field when user starts typing
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[field]
-        return newErrors
-      })
-    }
-    
-    // Clear success message when user starts editing
-    if (successMessage) {
-      setSuccessMessage('')
-    }
-  }, [errors, successMessage])
-
-  // Submit form to API
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  /**
+   * Handle form submission
+   */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!validateForm()) {
-      return
-    }
+    if (!canSubmit || !onSubmit) return
 
     setIsSubmitting(true)
-    setErrors({})
-    setSuccessMessage('')
 
     try {
-      // Get auth token from localStorage
-      const token = localStorage.getItem('auth_token')
+      const formData: PostFormData = {
+        content: content.trim(),
+        contentWarning: showContentWarning ? contentWarning.trim() : '',
+        isScheduled,
+        scheduledFor: isScheduled ? scheduledFor : ''
+      }
+
+      await onSubmit(formData)
       
-      if (!token) {
-        setErrors({ submit: 'You must be logged in to create posts' })
-        return
-      }
-
-      // Prepare request body
-      const requestBody = {
-        content: formData.content.trim(),
-        contentWarning: formData.contentWarning.trim() || null,
-        isScheduled: formData.isScheduled,
-        scheduledFor: formData.isScheduled ? formData.scheduledFor : null
-      }
-
-      // Make API request
-      const response = await fetch(`${API_BASE_URL}/api/v1/posts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      const result: PostCreationResponse = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || `HTTP ${response.status}`)
-      }
-
-      if (result.success && result.data) {
-        // Success - reset form and show success message
-        setFormData({
-          content: '',
-          contentWarning: '',
-          isScheduled: false,
-          scheduledFor: ''
-        })
-        
-        setSuccessMessage(
-          formData.isScheduled 
-            ? 'Post scheduled successfully!' 
-            : 'Post created successfully!'
-        )
-
-        // Call callback if provided
-        if (onPostCreated) {
-          onPostCreated(result.data)
-        }
-      } else {
-        throw new Error(result.error || 'Failed to create post')
-      }
-
+      // Reset form on successful submission
+      setContent('')
+      setContentWarning('')
+      setShowContentWarning(false)
+      setIsScheduled(false)
+      setScheduledFor('')
     } catch (error) {
-      console.error('Post creation error:', error)
-      setErrors({
-        submit: error instanceof Error ? error.message : 'Failed to create post. Please try again.'
-      })
+      console.error('Failed to create post:', error)
+      // Error handling would typically show a toast or error message
     } finally {
       setIsSubmitting(false)
     }
-  }, [formData, validateForm, onPostCreated, API_BASE_URL])
+  }
 
-  // Calculate remaining characters
-  const remainingChars = MAX_CONTENT_LENGTH - formData.content.length
-  const isNearLimit = remainingChars < 100
+  /**
+   * Toggle content warning section
+   */
+  const toggleContentWarning = () => {
+    setShowContentWarning(!showContentWarning)
+    if (showContentWarning) {
+      setContentWarning('')
+    }
+  }
+
+  /**
+   * Toggle scheduled posting
+   */
+  const toggleScheduled = () => {
+    setIsScheduled(!isScheduled)
+    if (isScheduled) {
+      setScheduledFor('')
+    }
+  }
 
   return (
-    <form onSubmit={handleSubmit} className={`space-y-6 ${className}`}>
-      {/* Form Header */}
-      <header>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Create New Post
-        </h2>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-          Share your thoughts with your followers
-        </p>
-      </header>
-
-      {/* Success Message */}
-      {successMessage && (
-        <div className="p-4 bg-green-100 border border-green-400 text-green-700 rounded-md">
-          {successMessage}
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 ${className}`}>
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+          <span className="text-white font-semibold text-lg">U</span>
         </div>
-      )}
-
-      {/* Global Error */}
-      {errors.submit && (
-        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-md">
-          {errors.submit}
-        </div>
-      )}
-
-      {/* Content Input */}
-      <div className="space-y-2">
-        <label htmlFor="content" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Post Content *
-        </label>
-        <textarea
-          id="content"
-          value={formData.content}
-          onChange={(e) => handleInputChange('content', e.target.value)}
-          placeholder="What's on your mind?"
-          rows={6}
-          maxLength={MAX_CONTENT_LENGTH}
-          className={`
-            w-full px-3 py-2 border rounded-md shadow-sm resize-vertical
-            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-            dark:bg-gray-800 dark:border-gray-600 dark:text-white
-            ${errors.content ? 'border-red-500' : 'border-gray-300'}
-          `}
-          disabled={isSubmitting}
-        />
-        
-        {/* Character Counter */}
-        <div className="flex justify-between text-sm">
-          <span className={`${errors.content ? 'text-red-600' : 'text-gray-500'}`}>
-            {errors.content || ''}
-          </span>
-          <span className={`${isNearLimit ? 'text-orange-600' : 'text-gray-500'}`}>
-            {remainingChars} characters remaining
-          </span>
+        <div>
+          <h3 className="font-semibold text-gray-900">Create a post</h3>
+          <p className="text-sm text-gray-500">Share your thoughts with the world</p>
         </div>
       </div>
 
-      {/* Content Warning */}
-      <div className="space-y-2">
-        <label htmlFor="contentWarning" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Content Warning (Optional)
-        </label>
-        <input
-          type="text"
-          id="contentWarning"
-          value={formData.contentWarning}
-          onChange={(e) => handleInputChange('contentWarning', e.target.value)}
-          placeholder="e.g., Contains sensitive content"
-          maxLength={200}
-          className="
-            w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
-            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-            dark:bg-gray-800 dark:border-gray-600 dark:text-white
-          "
-          disabled={isSubmitting}
-        />
-        <p className="text-xs text-gray-500">
-          Add a warning if your post contains sensitive or potentially upsetting content
-        </p>
-      </div>
-
-      {/* Scheduling Options */}
-      <div className="space-y-4">
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="isScheduled"
-            checked={formData.isScheduled}
-            onChange={(e) => handleInputChange('isScheduled', e.target.checked)}
-            className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-            disabled={isSubmitting}
-          />
-          <label htmlFor="isScheduled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Schedule this post for later
-          </label>
-        </div>
-
-        {/* Scheduled Date Input */}
-        {formData.isScheduled && (
-          <div className="ml-6 space-y-2">
-            <label htmlFor="scheduledFor" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Publish Date & Time *
-            </label>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Content Warning Section */}
+        {showContentWarning && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-800">Content Warning</span>
+              </div>
+              <button
+                type="button"
+                onClick={toggleContentWarning}
+                className="text-amber-600 hover:text-amber-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             <input
-              type="datetime-local"
-              id="scheduledFor"
-              value={formData.scheduledFor}
-              min={getMinScheduleDate()}
-              onChange={(e) => handleInputChange('scheduledFor', e.target.value)}
-              className={`
-                w-full px-3 py-2 border rounded-md shadow-sm
-                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                dark:bg-gray-800 dark:border-gray-600 dark:text-white
-                ${errors.scheduledFor ? 'border-red-500' : 'border-gray-300'}
-              `}
-              disabled={isSubmitting}
+              type="text"
+              value={contentWarning}
+              onChange={(e) => setContentWarning(e.target.value)}
+              placeholder="Describe the sensitive content..."
+              className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              maxLength={MAX_WARNING_LENGTH}
             />
-            {errors.scheduledFor && (
-              <p className="text-sm text-red-600">{errors.scheduledFor}</p>
-            )}
+            <div className="flex justify-between items-center mt-1">
+              <span className="text-xs text-amber-600">
+                Help others understand what to expect
+              </span>
+              <span className={`text-xs ${warningLength > MAX_WARNING_LENGTH * 0.8 ? 'text-amber-600' : 'text-amber-500'}`}>
+                {warningLength}/{MAX_WARNING_LENGTH}
+              </span>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Submit Button */}
-      <div className="flex justify-end space-x-3">
-        <button
-          type="button"
-          onClick={() => {
-            setFormData({
-              content: '',
-              contentWarning: '',
-              isScheduled: false,
-              scheduledFor: ''
-            })
-            setErrors({})
-            setSuccessMessage('')
-          }}
-          disabled={isSubmitting}
-          className="
-            px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 
-            rounded-md shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 
-            disabled:opacity-50 disabled:cursor-not-allowed
-            dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700
-          "
-        >
-          Clear
-        </button>
-        
-        <button
-          type="submit"
-          disabled={isSubmitting || !formData.content.trim()}
-          className="
-            px-6 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent 
-            rounded-md shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 
-            disabled:opacity-50 disabled:cursor-not-allowed
-          "
-        >
-          {isSubmitting ? (
-            <span className="flex items-center">
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              {formData.isScheduled ? 'Scheduling...' : 'Publishing...'}
-            </span>
-          ) : (
-            formData.isScheduled ? 'Schedule Post' : 'Publish Post'
-          )}
-        </button>
-      </div>
-    </form>
+        {/* Main Content Textarea */}
+        <div className="relative">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="What's happening?"
+            className="w-full min-h-[120px] p-4 text-lg border-0 resize-none focus:outline-none placeholder-gray-400"
+            maxLength={MAX_CONTENT_LENGTH}
+            disabled={disabled || isSubmitting}
+          />
+          
+          {/* Character Counter */}
+          <div className="absolute bottom-3 right-3">
+            <div className={`text-sm font-medium ${
+              contentLength > MAX_CONTENT_LENGTH * 0.9 
+                ? 'text-red-500' 
+                : contentLength > MAX_CONTENT_LENGTH * 0.7 
+                ? 'text-amber-500' 
+                : 'text-gray-400'
+            }`}>
+              {contentLength}/{MAX_CONTENT_LENGTH}
+            </div>
+          </div>
+        </div>
+
+        {/* Schedule Section */}
+        {isScheduled && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">Schedule Post</span>
+              </div>
+              <button
+                type="button"
+                onClick={toggleScheduled}
+                className="text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              onChange={(e) => setScheduledFor(e.target.value)}
+              min={getMinScheduleTime()}
+              className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-blue-600 mt-1">
+              Your post will be published automatically at the scheduled time
+            </p>
+          </div>
+        )}
+
+        {/* Action Bar */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+          {/* Left side - Additional options */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleContentWarning}
+              className={`p-2 rounded-full transition-colors ${
+                showContentWarning 
+                  ? 'bg-amber-100 text-amber-600' 
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600'
+              }`}
+              title="Add content warning"
+            >
+              <AlertTriangle className="w-5 h-5" />
+            </button>
+            
+            <button
+              type="button"
+              onClick={toggleScheduled}
+              className={`p-2 rounded-full transition-colors ${
+                isScheduled 
+                  ? 'bg-blue-100 text-blue-600' 
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-blue-600'
+              }`}
+              title="Schedule post"
+            >
+              <Calendar className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Right side - Submit button */}
+          <button
+            type="submit"
+            disabled={!canSubmit || disabled}
+            className={`
+              flex items-center gap-2 px-6 py-2 rounded-full font-medium transition-all duration-200
+              ${canSubmit && !disabled
+                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:scale-105' 
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }
+            `}
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Posting...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>{isScheduled ? 'Schedule' : 'Post'}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }

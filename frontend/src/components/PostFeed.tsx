@@ -1,42 +1,41 @@
-// frontend/src/components/PostFeed.tsx
-// Feed component for displaying posts with pagination and real-time updates
-
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { ChevronLeft, ChevronRight, AlertTriangle, Clock, Verified, MoreHorizontal, Heart, MessageCircle, Share, Bookmark } from 'lucide-react'
 
-// Types for the post feed
-interface Author {
-  id: string
-  username: string
-  displayName: string
-  avatar: string | null
-  isVerified: boolean
-  verificationTier?: string
-}
-
-interface MediaAttachment {
-  id: string
-  url: string
-  altText: string | null
-  mimeType: string
-  width?: number
-  height?: number
-}
-
+/**
+ * Post data interface
+ */
 interface Post {
   id: string
   content: string
-  contentWarning: string | null
+  contentWarning?: string | null
   createdAt: string
-  publishedAt: string | null
-  author: Author
-  media: MediaAttachment[]
+  publishedAt?: string | null
+  author: {
+    id: string
+    username: string
+    displayName: string
+    avatar?: string | null
+    isVerified: boolean
+    verificationTier?: string
+  }
+  media?: Array<{
+    id: string
+    url: string
+    altText?: string | null
+    mimeType: string
+    width?: number | null
+    height?: number | null
+  }>
 }
 
+/**
+ * API response interface
+ */
 interface PostFeedResponse {
   success: boolean
-  data?: {
+  data: {
     posts: Post[]
     pagination: {
       currentPage: number
@@ -46,368 +45,395 @@ interface PostFeedResponse {
       hasPrev: boolean
     }
   }
-  error?: string
 }
 
+/**
+ * Props for PostFeed component
+ */
 interface PostFeedProps {
+  apiUrl?: string
   className?: string
   postsPerPage?: number
-  refreshTrigger?: number // Prop to trigger refresh from parent
-  onPostClick?: (post: Post) => void
 }
 
-export default function PostFeed({ 
-  className = '', 
-  postsPerPage = 20,
-  refreshTrigger = 0,
-  onPostClick 
-}: PostFeedProps) {
-  // State management
-  const [posts, setPosts] = useState<Post[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    totalPages: 0,
-    totalPosts: 0,
-    hasNext: false,
-    hasPrev: false
-  })
-  
-  // UI state
-  const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [error, setError] = useState('')
-  const [retryCount, setRetryCount] = useState(0)
+/**
+ * Individual post card component
+ */
+function PostCard({ post }: { post: Post }) {
+  const [showFullContent, setShowFullContent] = useState(!post.contentWarning)
+  const [isLiked, setIsLiked] = useState(false)
+  const [isBookmarked, setIsBookmarked] = useState(false)
 
-  // Configuration
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-  const MAX_RETRY_ATTEMPTS = 3
-
-  // Format relative time
-  const formatRelativeTime = useCallback((dateString: string): string => {
+  /**
+   * Format relative time (e.g., "2 hours ago")
+   */
+  const formatRelativeTime = (dateString: string) => {
     const date = new Date(dateString)
     const now = new Date()
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
 
-    if (diffInSeconds < 60) return 'just now'
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`
+    if (diffInSeconds < 60) return 'now'
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d`
     
-    return date.toLocaleDateString()
-  }, [])
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    })
+  }
 
-  // Fetch posts from API
-  const fetchPosts = useCallback(async (page: number = 1, append: boolean = false) => {
-    try {
-      if (!append) {
-        setIsLoading(true)
-      } else {
-        setIsLoadingMore(true)
-      }
-      setError('')
-
-      // Get auth token for optional authentication
-      const token = localStorage.getItem('auth_token')
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      }
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/posts?page=${page}&limit=${postsPerPage}`,
-        { headers }
+  /**
+   * Get user avatar or generate initials
+   */
+  const getAvatarContent = () => {
+    if (post.author.avatar) {
+      return (
+        <img 
+          src={post.author.avatar} 
+          alt={`${post.author.displayName}'s avatar`}
+          className="w-full h-full object-cover"
+        />
       )
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-
-      const result: PostFeedResponse = await response.json()
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Failed to fetch posts')
-      }
-
-      const { posts: newPosts, pagination: newPagination } = result.data
-
-      if (append) {
-        // Append new posts for "load more" functionality
-        setPosts(prevPosts => [...prevPosts, ...newPosts])
-      } else {
-        // Replace posts for fresh load or page change
-        setPosts(newPosts)
-      }
-
-      setPagination(newPagination)
-      setCurrentPage(page)
-      setRetryCount(0) // Reset retry count on success
-
-    } catch (error) {
-      console.error('Failed to fetch posts:', error)
-      setError(error instanceof Error ? error.message : 'Failed to load posts')
-      
-      // Don't show error immediately, allow for retry
-      if (retryCount < MAX_RETRY_ATTEMPTS) {
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1)
-          fetchPosts(page, append)
-        }, 1000 * Math.pow(2, retryCount)) // Exponential backoff
-      }
-    } finally {
-      setIsLoading(false)
-      setIsLoadingMore(false)
     }
-  }, [API_BASE_URL, postsPerPage, retryCount])
+    
+    const initials = post.author.displayName
+      .split(' ')
+      .map(name => name[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+    
+    return (
+      <span className="text-white font-semibold text-sm">
+        {initials}
+      </span>
+    )
+  }
 
-  // Load more posts
-  const loadMorePosts = useCallback(() => {
-    if (pagination.hasNext && !isLoadingMore) {
-      fetchPosts(currentPage + 1, true)
-    }
-  }, [pagination.hasNext, isLoadingMore, currentPage, fetchPosts])
-
-  // Refresh posts
-  const refreshPosts = useCallback(() => {
-    setCurrentPage(1)
-    fetchPosts(1, false)
-  }, [fetchPosts])
-
-  // Initial load and refresh trigger effect
-  useEffect(() => {
-    fetchPosts(1, false)
-  }, [refreshTrigger]) // Refresh when parent triggers it
-
-  // Initial load only
-  useEffect(() => {
-    fetchPosts(1, false)
-  }, []) // Only run once on mount
-
-  // Render individual post
-  const renderPost = useCallback((post: Post) => (
-    <article 
-      key={post.id}
-      onClick={() => onPostClick?.(post)}
-      className={`
-        bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 
-        p-6 shadow-sm hover:shadow-md transition-shadow duration-200
-        ${onPostClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750' : ''}
-      `}
-    >
-      {/* Author Info */}
-      <header className="flex items-center space-x-3 mb-4">
-        {/* Avatar */}
-        <div className="flex-shrink-0">
-          {post.author.avatar ? (
-            <img
-              src={post.author.avatar}
-              alt={`${post.author.displayName}'s avatar`}
-              className="w-10 h-10 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-              <span className="text-gray-600 dark:text-gray-300 font-medium text-sm">
-                {post.author.displayName.charAt(0).toUpperCase()}
-              </span>
+  return (
+    <article className="bg-white border-b border-gray-200 p-6 hover:bg-gray-50/50 transition-colors duration-200">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          {/* Avatar */}
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {getAvatarContent()}
+          </div>
+          
+          {/* User Info */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1">
+              <h3 className="font-semibold text-gray-900 truncate">
+                {post.author.displayName}
+              </h3>
+              {post.author.isVerified && (
+                <Verified className="w-4 h-4 text-blue-500 flex-shrink-0" />
+              )}
             </div>
-          )}
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span>@{post.author.username}</span>
+              <span>·</span>
+              <time dateTime={post.publishedAt || post.createdAt}>
+                {formatRelativeTime(post.publishedAt || post.createdAt)}
+              </time>
+            </div>
+          </div>
         </div>
 
-        {/* Author Details */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-              {post.author.displayName}
-            </h3>
-            {post.author.isVerified && (
-              <svg 
-                className="w-4 h-4 text-blue-500" 
-                fill="currentColor" 
-                viewBox="0 0 20 20"
-                aria-label="Verified account"
-              >
-                <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            )}
-          </div>
-          <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
-            <span>@{post.author.username}</span>
-            <span>•</span>
-            <time dateTime={post.publishedAt || post.createdAt}>
-              {formatRelativeTime(post.publishedAt || post.createdAt)}
-            </time>
-          </div>
-        </div>
-      </header>
+        {/* More Menu */}
+        <button className="p-2 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+          <MoreHorizontal className="w-5 h-5" />
+        </button>
+      </div>
 
       {/* Content Warning */}
-      {post.contentWarning && (
-        <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md">
-          <div className="flex items-center space-x-2">
-            <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-              Content Warning: {post.contentWarning}
-            </span>
+      {post.contentWarning && !showFullContent && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <span className="font-medium text-amber-800">Content Warning</span>
           </div>
+          <p className="text-amber-700 text-sm mb-3">{post.contentWarning}</p>
+          <button
+            onClick={() => setShowFullContent(true)}
+            className="text-amber-800 text-sm font-medium hover:text-amber-900 transition-colors"
+          >
+            Show content
+          </button>
         </div>
       )}
 
       {/* Post Content */}
-      <div className="prose dark:prose-invert max-w-none mb-4">
-        <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-          {post.content}
-        </p>
-      </div>
-
-      {/* Media Attachments */}
-      {post.media && post.media.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {post.media.map((media) => (
-            <div key={media.id} className="rounded-lg overflow-hidden">
-              {media.mimeType.startsWith('image/') ? (
-                <img
-                  src={media.url}
-                  alt={media.altText || 'Image attachment'}
-                  className="w-full max-h-96 object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Media attachment: {media.mimeType}
-                  </p>
+      {showFullContent && (
+        <div className="mb-4">
+          <p className="text-gray-900 text-base leading-relaxed whitespace-pre-wrap">
+            {post.content}
+          </p>
+          
+          {/* Media Attachments */}
+          {post.media && post.media.length > 0 && (
+            <div className="mt-4 grid gap-2">
+              {post.media.map((media) => (
+                <div key={media.id} className="relative rounded-xl overflow-hidden bg-gray-100">
+                  {media.mimeType.startsWith('image/') && (
+                    <img
+                      src={media.url}
+                      alt={media.altText || 'Post image'}
+                      className="w-full h-auto max-h-96 object-cover"
+                      loading="lazy"
+                    />
+                  )}
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </article>
-  ), [formatRelativeTime, onPostClick])
-
-  // Render loading skeleton
-  const renderLoadingSkeleton = () => (
-    <div className="space-y-6">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 animate-pulse">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-            <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/4"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-1/3"></div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4"></div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-
-  return (
-    <div className={`space-y-6 ${className}`}>
-      {/* Feed Header */}
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Latest Posts
-          </h2>
-          {pagination.totalPosts > 0 && (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {pagination.totalPosts} post{pagination.totalPosts !== 1 ? 's' : ''} total
-            </p>
           )}
         </div>
-        
-        <button
-          onClick={refreshPosts}
-          disabled={isLoading}
-          className="
-            px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 
-            rounded-md shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 
-            disabled:opacity-50 disabled:cursor-not-allowed
-            dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700
-          "
-        >
-          {isLoading ? 'Refreshing...' : 'Refresh'}
-        </button>
-      </header>
+      )}
 
-      {/* Error State */}
-      {error && retryCount >= MAX_RETRY_ATTEMPTS && (
-        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-md">
-          <div className="flex items-center justify-between">
-            <span>{error}</span>
+      {/* Engagement Bar */}
+      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        <div className="flex items-center gap-6">
+          {/* Like */}
+          <button
+            onClick={() => setIsLiked(!isLiked)}
+            className={`flex items-center gap-2 p-2 rounded-full transition-colors group ${
+              isLiked 
+                ? 'text-red-500' 
+                : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+            }`}
+          >
+            <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+            <span className="text-sm font-medium">0</span>
+          </button>
+
+          {/* Comment (disabled for ParaSocial) */}
+          <button className="flex items-center gap-2 p-2 rounded-full text-gray-300 cursor-not-allowed">
+            <MessageCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">0</span>
+          </button>
+
+          {/* Share */}
+          <button className="flex items-center gap-2 p-2 rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+            <Share className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Bookmark */}
+        <button
+          onClick={() => setIsBookmarked(!isBookmarked)}
+          className={`p-2 rounded-full transition-colors ${
+            isBookmarked 
+              ? 'text-blue-500' 
+              : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
+          }`}
+        >
+          <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
+/**
+ * Loading skeleton for posts
+ */
+function PostSkeleton() {
+  return (
+    <div className="bg-white border-b border-gray-200 p-6">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-12 h-12 bg-gray-200 rounded-full animate-pulse" />
+        <div className="flex-1">
+          <div className="h-4 bg-gray-200 rounded animate-pulse mb-1 w-32" />
+          <div className="h-3 bg-gray-200 rounded animate-pulse w-24" />
+        </div>
+      </div>
+      <div className="space-y-2 mb-4">
+        <div className="h-4 bg-gray-200 rounded animate-pulse w-full" />
+        <div className="h-4 bg-gray-200 rounded animate-pulse w-4/5" />
+        <div className="h-4 bg-gray-200 rounded animate-pulse w-3/5" />
+      </div>
+      <div className="flex items-center gap-6 pt-3 border-t border-gray-100">
+        <div className="h-8 bg-gray-200 rounded animate-pulse w-12" />
+        <div className="h-8 bg-gray-200 rounded animate-pulse w-12" />
+        <div className="h-8 bg-gray-200 rounded animate-pulse w-8" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Main PostFeed component
+ * Displays a feed of posts with pagination and modern styling
+ */
+export default function PostFeed({ 
+  apiUrl = '/api/posts',
+  className = '',
+  postsPerPage = 20
+}: PostFeedProps) {
+  const [posts, setPosts] = useState<Post[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalPosts, setTotalPosts] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  /**
+   * Fetch posts from API
+   */
+  const fetchPosts = async (page: number) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch(`${apiUrl}?page=${page}&limit=${postsPerPage}`)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch posts: ${response.statusText}`)
+      }
+
+      const data: PostFeedResponse = await response.json()
+      
+      if (!data.success) {
+        throw new Error('Failed to load posts')
+      }
+
+      setPosts(data.data.posts)
+      setCurrentPage(data.data.pagination.currentPage)
+      setTotalPages(data.data.pagination.totalPages)
+      setTotalPosts(data.data.pagination.totalPosts)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+      console.error('Error fetching posts:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * Handle page navigation
+   */
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages && !loading) {
+      setCurrentPage(newPage)
+      fetchPosts(newPage)
+      // Scroll to top of feed
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  // Initial load
+  useEffect(() => {
+    fetchPosts(1)
+  }, [])
+
+  return (
+    <div className={`max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${className}`}>
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10 backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">Latest Posts</h2>
+          {!loading && totalPosts > 0 && (
+            <span className="text-sm text-gray-500">
+              {totalPosts.toLocaleString()} posts
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="min-h-[400px]">
+        {/* Loading State */}
+        {loading && (
+          <div>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <PostSkeleton key={index} />
+            ))}
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Failed to load posts
+            </h3>
+            <p className="text-gray-600 mb-4">{error}</p>
             <button
-              onClick={() => {
-                setRetryCount(0)
-                refreshPosts()
-              }}
-              className="ml-4 text-sm font-medium text-red-800 hover:text-red-900"
+              onClick={() => fetchPosts(currentPage)}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
             >
-              Try Again
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && posts.length === 0 && (
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+              <Clock className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              No posts yet
+            </h3>
+            <p className="text-gray-600">
+              Be the first to share something with the community!
+            </p>
+          </div>
+        )}
+
+        {/* Posts List */}
+        {!loading && !error && posts.length > 0 && (
+          <div>
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {!loading && !error && totalPages > 1 && (
+        <div className="bg-gray-50 border-t border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentPage <= 1
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </button>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">
+                Page {currentPage} of {totalPages}
+              </span>
+            </div>
+
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentPage >= totalPages
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
-      )}
-
-      {/* Loading State */}
-      {isLoading && posts.length === 0 ? (
-        renderLoadingSkeleton()
-      ) : (
-        <>
-          {/* Posts List */}
-          {posts.length > 0 ? (
-            <div className="space-y-6">
-              {posts.map(renderPost)}
-            </div>
-          ) : (
-            /* Empty State */
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No posts yet</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Be the first to share something!
-              </p>
-            </div>
-          )}
-
-          {/* Load More Button */}
-          {pagination.hasNext && (
-            <div className="flex justify-center pt-6">
-              <button
-                onClick={loadMorePosts}
-                disabled={isLoadingMore}
-                className="
-                  px-6 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent 
-                  rounded-md shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                "
-              >
-                {isLoadingMore ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Loading...
-                  </span>
-                ) : (
-                  `Load More Posts (${pagination.totalPages - pagination.currentPage} more page${pagination.totalPages - pagination.currentPage !== 1 ? 's' : ''})`
-                )}
-              </button>
-            </div>
-          )}
-        </>
       )}
     </div>
   )
