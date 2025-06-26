@@ -124,6 +124,7 @@ export class User {
     this.actorId = data.actorId
     this.publicKey = data.publicKey
     this.privateKey = data.privateKey
+
   }
 
   /**
@@ -138,7 +139,9 @@ export class User {
       avatar: this.avatar,
       website: this.website,
       isVerified: this.isVerified,
-      verificationTier: this.verificationTier
+      verificationTier: this.verificationTier,
+      ...(this as any).followersCount !== undefined && { followersCount: (this as any).followersCount },
+      ...(this as any).postsCount !== undefined && { postsCount: (this as any).postsCount }
     }
   }
 

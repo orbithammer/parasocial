@@ -68,7 +68,7 @@ export class AuthController {
       const userData = {
         email,
         username,
-        password: hashedPassword,
+        passwordHash: hashedPassword,
         displayName: displayName || username
       }
 
@@ -122,14 +122,10 @@ export class AuthController {
       }
 
       // Verify password
-      const isValidPassword = await this.authService.verifyPassword(user.passwordHash || '', password)
-      if (!isValidPassword) {
-        res.status(401).json({
-          success: false,
-          error: 'Invalid email or password'
-        })
-        return
-      }
+      // Check if passwordHash exists
+      const isValidPassword = user.passwordHash 
+        ? await this.authService.verifyPassword(user.passwordHash, password)
+        : false
 
       // Generate token and return user data
       const token = this.authService.generateToken(user)

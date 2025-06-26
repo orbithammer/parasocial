@@ -7,7 +7,7 @@ import { User } from '../models/User'
 interface UserCreateData {
   email: string
   username: string
-  password: string
+  passwordHash: string
   displayName?: string
 }
 
@@ -43,7 +43,7 @@ export class UserRepository {
       data: {
         email: userData.email,
         username: userData.username,
-        passwordHash: userData.password,
+        passwordHash: userData.passwordHash,
         displayName: userData.displayName || userData.username
       }
     })

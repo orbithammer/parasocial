@@ -8,6 +8,7 @@ import UserProfile from '@/components/UserProfile'
 import FollowButton from '@/components/FollowButton'
 import { Code, Sparkles, TestTube, Users, MessageSquare, User } from 'lucide-react'
 
+
 /**
  * Mock data for testing components
  */
@@ -118,12 +119,75 @@ function ShowcaseSection({
 export default function TestPage() {
   const [currentUserId] = useState('user123') // Mock current user
 
-  // Mock handlers for component testing
+  const [authToken, setAuthToken] = useState<string | null>(null)
+const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+// Add login function
+const handleLogin = async () => {
+  try {
+    const response = await fetch('http://localhost:3001/api/v1/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'alice@example.com',  // Use our test user
+        password: 'password123'
+      })
+    })
+
+    if (response.ok) {
+      const result = await response.json()
+      setAuthToken(result.data.token)
+      setIsLoggedIn(true)
+      alert('Logged in successfully!')
+      console.log('Login result:', result)
+    } else {
+      const error = await response.json()
+      alert(`Login failed: ${error.error}`)
+    }
+  } catch (error) {
+    console.error('Login error:', error)
+    alert('Login failed - network error')
+  }
+}
+
+  // Update post creation to use token
   const handlePostSubmit = async (data: any) => {
-    console.log('Post submitted:', data)
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    alert('Post created successfully! (This is just a test)')
+    if (!authToken) {
+      alert('Please login first!')
+      return
+    }
+
+    try {
+      console.log('Post submitted:', data)
+      
+      const response = await fetch('http://localhost:3001/api/v1/posts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`  // Use the real token!
+        },
+        body: JSON.stringify({
+          content: data.content,
+          contentWarning: data.contentWarning || null,
+          isScheduled: data.isScheduled || false,
+          scheduledFor: data.scheduledFor || null
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert('Post created successfully!')
+        console.log('Created post:', result)
+      } else {
+        const error = await response.json()
+        alert(`Error: ${error.error || 'Failed to create post'}`)
+      }
+    } catch (error) {
+      console.error('Network error:', error)
+      alert('Network error!')
+    }
   }
 
   const handleFollow = async (username: string) => {
@@ -182,7 +246,20 @@ export default function TestPage() {
             beautifully styled with Tailwind CSS, and ready for production use.
           </p>
         </div>
-
+        <div className="mb-8 text-center">
+          {!isLoggedIn ? (
+            <button
+              onClick={handleLogin}
+              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+            >
+              🔐 Login as Alice (Test User)
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full">
+              ✅ Logged in as Alice
+            </div>
+          )}
+        </div>
         {/* PostCreationForm Showcase */}
         <ShowcaseSection
           title="PostCreationForm"
@@ -246,6 +323,7 @@ export default function TestPage() {
             <UserProfile
               username="testuser"
               currentUserId={currentUserId}
+              apiUrl="http://localhost:3001/api/v1" 
               onFollow={handleFollow}
               onUnfollow={handleUnfollow}
               onBlock={handleBlock}
@@ -387,32 +465,49 @@ export default function TestPage() {
         </ShowcaseSection>
 
         {/* PostFeed Showcase */}
-        // In your test page, replace the PostFeed section with:
-// Replace the UserProfile section with:
-<ShowcaseSection
-  title="UserProfile"
-  description="Complete user profile component with follow functionality."
-  icon={User}
->
-  <div className="max-w-2xl mx-auto">
-    {/* Create a static profile display instead of the API-fetching one */}
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      {/* Mock profile content here */}
-      <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
-      <div className="p-6">
-        <div className="flex items-center gap-4 -mt-12">
-          <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white">
-            TU
+        <ShowcaseSection
+          title="UserProfile"
+          description="Complete user profile component with follow functionality."
+          icon={User}
+        >
+          <div className="max-w-2xl mx-auto">
+            {/* Create a static profile display instead of the API-fetching one */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              {/* Mock profile content here */}
+              <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+              <div className="p-6">
+                <div className="flex items-center gap-4 -mt-12">
+                  <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white">
+                    TU
+                  </div>
+                  <div className="mt-8">
+                    <h2 className="text-2xl font-bold">Test User</h2>
+                    <p className="text-gray-600">@testuser</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="mt-8">
-            <h2 className="text-2xl font-bold">Test User</h2>
-            <p className="text-gray-600">@testuser</p>
+        </ShowcaseSection>
+
+        {/* PostFeed Showcase */}
+        <ShowcaseSection
+          title="PostFeed"
+          description="Live feed displaying all posts from your ParaSocial backend API with pagination and modern styling."
+          icon={Code}
+        >
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800 text-sm">
+                <strong>Live Data:</strong> This feed is connected to your real backend API and shows actual posts from the database!
+              </p>
+            </div>
+            <PostFeed 
+              apiUrl="http://localhost:3001/api/v1/posts"
+              className="shadow-lg"
+            />
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</ShowcaseSection>
+        </ShowcaseSection>
 
         {/* Footer */}
         <footer className="mt-16 pt-8 border-t border-gray-200">

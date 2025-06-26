@@ -18,7 +18,10 @@ import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
 import { UserController } from './controllers/UserController'
 
-import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleWare'
+// Import the real AuthService instead of mock
+import { AuthService } from './services/AuthService'
+
+import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
 
@@ -45,29 +48,17 @@ const postRepository = new PostRepository(prisma)
 const followRepository = new FollowRepository(prisma)
 const blockRepository = new BlockRepository(prisma)
 
-// Mock AuthService for now (you'll need to implement this)
-const mockAuthService = {
-  validateRegistrationData: (data: any) => ({ success: true, data }),
-  validateLoginData: (data: any) => ({ success: true, data }),
-  hashPassword: async (password: string) => `hashed_${password}`,
-  verifyPassword: async (hashedPassword: string, password: string) => true,
-  generateToken: (user: any) => `mock_token_${user.id}`,
-  extractTokenFromHeader: (header: string) => header?.replace('Bearer ', ''),
-  verifyToken: (token: string) => ({
-    userId: 'user123',
-    email: 'test@example.com',
-    username: 'testuser'
-  })
-}
+// Initialize the real AuthService
+const authService = new AuthService()
 
-// Initialize controllers
-const authController = new AuthController(mockAuthService, userRepository)
+// Initialize controllers with real AuthService
+const authController = new AuthController(authService, userRepository)
 const postController = new PostController(postRepository, userRepository)
 const userController = new UserController(userRepository, followRepository, blockRepository)
 
-// Initialize middleware
-const authMiddleware = createAuthMiddleware(mockAuthService)
-const optionalAuthMiddleware = createOptionalAuthMiddleware(mockAuthService)
+// Initialize middleware with real AuthService
+const authMiddleware = createAuthMiddleware(authService)
+const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -90,8 +81,26 @@ app.get('/api/v1/status', (req, res) => {
     }
   })
 })
-
-// Auth routes (basic placeholder)
+// Add this temporary debug endpoint BEFORE the auth routes
+app.get('/api/v1/debug/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        // Don't include passwordHash for security, but let's see if users exist
+      }
+    })
+    res.json({ users })
+  } catch (error) {
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    })
+  }
+})
+// Auth routes (now using real AuthService)
 app.post('/api/v1/auth/register', async (req, res) => {
   await authController.register(req, res)
 })
@@ -125,15 +134,15 @@ const usersRouter = createUsersRouter({
 app.use('/api/v1/posts', postsRouter)
 app.use('/api/v1/users', usersRouter)
 
-// Mock data creation endpoint for testing
+// Enhanced seed endpoint with better error handling
 app.post('/api/v1/dev/seed', async (req, res) => {
   try {
-    // Create mock users
+    // Create mock users with properly hashed passwords
     const mockUsers = [
       {
         email: 'alice@example.com',
         username: 'alice',
-        passwordHash: 'hashed_password',
+        passwordHash: await authService.hashPassword('password123'),
         displayName: 'Alice Johnson',
         bio: 'Content creator and designer',
         isVerified: true,
@@ -142,7 +151,7 @@ app.post('/api/v1/dev/seed', async (req, res) => {
       {
         email: 'bob@example.com',
         username: 'bob',
-        passwordHash: 'hashed_password',
+        passwordHash: await authService.hashPassword('password123'),
         displayName: 'Bob Smith',
         bio: 'Photographer and traveler',
         isVerified: false
@@ -150,7 +159,7 @@ app.post('/api/v1/dev/seed', async (req, res) => {
       {
         email: 'testuser@example.com',
         username: 'testuser',
-        passwordHash: 'hashed_password',
+        passwordHash: await authService.hashPassword('password123'),
         displayName: 'Test User',
         bio: 'This is a test account for development'
       }
@@ -162,6 +171,7 @@ app.post('/api/v1/dev/seed', async (req, res) => {
       try {
         const user = await prisma.user.create({ data: userData })
         createdUsers.push(user)
+        console.log(`✅ Created user: ${user.username}`)
       } catch (error) {
         // User probably already exists, try to find them
         const existingUser = await prisma.user.findUnique({
@@ -169,6 +179,7 @@ app.post('/api/v1/dev/seed', async (req, res) => {
         })
         if (existingUser) {
           createdUsers.push(existingUser)
+          console.log(`ℹ️  User already exists: ${existingUser.username}`)
         }
       }
     }
@@ -176,23 +187,29 @@ app.post('/api/v1/dev/seed', async (req, res) => {
     // Create some mock posts
     const mockPosts = [
       {
-        content: 'Welcome to ParaSocial! This is my first post on this amazing platform.',
+        content: 'Welcome to ParaSocial! This is my first post on this amazing platform. 🎉\n\nI\'m excited to share my content with everyone!',
         isPublished: true,
         publishedAt: new Date(),
         authorId: createdUsers[0]?.id
       },
       {
-        content: 'Just finished an amazing photo shoot! The lighting was perfect today. Can\'t wait to share the results with everyone.',
+        content: 'Just finished an amazing photo shoot! The lighting was perfect today. Can\'t wait to share the results with everyone. 📸✨',
         isPublished: true,
         publishedAt: new Date(),
         authorId: createdUsers[1]?.id
       },
       {
-        content: 'Testing the post creation functionality. This platform has great potential for content creators!',
-        contentWarning: 'Test content',
+        content: 'Testing the post creation functionality. This platform has great potential for content creators!\n\nThe API is working perfectly. 🚀',
+        contentWarning: 'Test content - may contain technical details',
         isPublished: true,
         publishedAt: new Date(),
         authorId: createdUsers[2]?.id
+      },
+      {
+        content: 'Another test post to demonstrate the feed functionality. This should appear in the timeline with proper formatting and styling.',
+        isPublished: true,
+        publishedAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+        authorId: createdUsers[0]?.id
       }
     ]
 
@@ -200,8 +217,19 @@ app.post('/api/v1/dev/seed', async (req, res) => {
     for (const postData of mockPosts) {
       if (postData.authorId) {
         try {
-          const post = await prisma.post.create({ data: postData })
+          const post = await prisma.post.create({ 
+            data: postData,
+            include: {
+              author: {
+                select: {
+                  username: true,
+                  displayName: true
+                }
+              }
+            }
+          })
           createdPosts.push(post)
+          console.log(`✅ Created post by ${post.author.username}`)
         } catch (error) {
           console.warn('Failed to create post:', error)
         }
@@ -213,7 +241,12 @@ app.post('/api/v1/dev/seed', async (req, res) => {
       message: 'Mock data created successfully',
       data: {
         users: createdUsers.length,
-        posts: createdPosts.length
+        posts: createdPosts.length,
+        userDetails: createdUsers.map(u => ({ 
+          username: u.username, 
+          email: u.email,
+          loginInfo: 'Password: password123'
+        }))
       }
     })
   } catch (error) {
@@ -264,6 +297,7 @@ async function startServer() {
       console.log(`📊 Health check: http://localhost:${PORT}/health`)
       console.log(`🔗 API status: http://localhost:${PORT}/api/v1/status`)
       console.log(`🌱 Seed data: POST http://localhost:${PORT}/api/v1/dev/seed`)
+      console.log(`🔐 Auth endpoints: POST /api/v1/auth/register, POST /api/v1/auth/login`)
     })
   } catch (error) {
     console.error('❌ Failed to start server:', error)
