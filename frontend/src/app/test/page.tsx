@@ -387,24 +387,32 @@ export default function TestPage() {
         </ShowcaseSection>
 
         {/* PostFeed Showcase */}
-        <ShowcaseSection
-          title="PostFeed"
-          description="Complete feed component with pagination, loading states, and error handling. Displays posts in a modern social media layout."
-          icon={Code}
-        >
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-yellow-800 text-sm">
-                <strong>Note:</strong> The PostFeed component will attempt to fetch from your API. 
-                Make sure your backend is running and the endpoints are available to see it in action.
-              </p>
-            </div>
-            <PostFeed 
-              apiUrl="/api/posts"
-              className="shadow-lg"
-            />
+        // In your test page, replace the PostFeed section with:
+// Replace the UserProfile section with:
+<ShowcaseSection
+  title="UserProfile"
+  description="Complete user profile component with follow functionality."
+  icon={User}
+>
+  <div className="max-w-2xl mx-auto">
+    {/* Create a static profile display instead of the API-fetching one */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* Mock profile content here */}
+      <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+      <div className="p-6">
+        <div className="flex items-center gap-4 -mt-12">
+          <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white">
+            TU
           </div>
-        </ShowcaseSection>
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold">Test User</h2>
+            <p className="text-gray-600">@testuser</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ShowcaseSection>
 
         {/* Footer */}
         <footer className="mt-16 pt-8 border-t border-gray-200">
