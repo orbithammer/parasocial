@@ -99,58 +99,60 @@ export default function LoginComponent({
   }
 
   /**
-   * Submit login form to backend AuthController
-   * Calls POST /auth/login endpoint with email and password
-   */
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    
-    // Prevent multiple submissions using ref for immediate checking
-    if (isLoading || isSubmittingRef.current) return
-    
-    // Set submitting flag immediately to prevent race conditions
-    isSubmittingRef.current = true
-    setIsLoading(true)
-    setError(null)
+ * Handle form submission for login
+ * Fixed to prevent race condition in multiple rapid submissions
+ */
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
 
-    try {
-      // Call backend AuthController login endpoint
-      const response = await fetch(`${apiBaseUrl}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        })
-      })
+  // Prevent duplicate submissions - check and set ref IMMEDIATELY
+  if (isSubmittingRef.current || isLoading) {
+    return
+  }
+  // CRITICAL FIX: Set ref immediately after check to prevent race condition
+  isSubmittingRef.current = true
 
-      const result: LoginResponse = await response.json()
+  // Set loading state and clear any previous errors
+  setIsLoading(true)
+  setError('')
 
-      if (result.success && result.data) {
-        // Login successful - store token and call success callback
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('authToken', result.data.token)
-        }
-        
-        onLoginSuccess?.(result.data)
-      } else {
-        // Login failed - show error message
-        const errorMessage = result.error || 'Login failed'
-        setError(errorMessage)
-        onLoginError?.(errorMessage)
-      }
-    } catch (networkError) {
-      // Network or parsing error
-      const errorMessage = 'Unable to connect to server. Please try again.'
+  try {
+    // Make API call to login endpoint
+    const response = await fetch(`${apiBaseUrl}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: formData.email.trim(),
+        password: formData.password,
+      }),
+    })
+
+    // Parse response as JSON
+    const result = await response.json()
+
+    if (result.success && result.data) {
+      // Login successful - store token and notify parent
+      localStorage.setItem('authToken', result.data.token)
+      onLoginSuccess?.(result.data)
+    } else {
+      // Login failed - show error message
+      const errorMessage = result.error || 'Login failed'
       setError(errorMessage)
       onLoginError?.(errorMessage)
-    } finally {
-      setIsLoading(false)
-      isSubmittingRef.current = false
     }
+  } catch (networkError) {
+    // Network or parsing error
+    const errorMessage = 'Unable to connect to server. Please try again.'
+    setError(errorMessage)
+    onLoginError?.(errorMessage)
+  } finally {
+    // Always reset loading state and submission flag
+    setIsLoading(false)
+    isSubmittingRef.current = false
   }
+}
 
   /**
    * Check if form is valid for submission

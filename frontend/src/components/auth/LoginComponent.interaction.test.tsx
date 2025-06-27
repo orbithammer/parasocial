@@ -186,25 +186,36 @@ describe('LoginComponent - User Interactions', () => {
     })
 
     it('should prevent multiple submissions while loading', async () => {
-      const user = userEvent.setup()
-      
-      // Mock slow API response
-      mockFetch.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)))
-      
-      render(<LoginComponent />)
+        const user = userEvent.setup()
+        
+        // FIXED: Mock slow API response that returns proper Response object
+        mockFetch.mockImplementationOnce(() => 
+            new Promise(resolve => 
+            setTimeout(() => resolve({
+                json: async () => ({ success: true, data: { user: {}, token: 'token' } })
+            }), 100)
+            )
+        )
+        
+        render(<LoginComponent />)
 
-      // Fill form
-      await user.type(screen.getByLabelText(/email address/i), 'test@example.com')
-      await user.type(screen.getByLabelText(/password/i), 'password123')
-      
-      // Submit form multiple times rapidly
-      const submitButton = screen.getByRole('button', { name: /sign in to your account/i })
-      await user.click(submitButton)
-      await user.click(submitButton) // Second click should be ignored
-      await user.click(submitButton) // Third click should be ignored
+        // Fill form
+        await user.type(screen.getByLabelText(/email address/i), 'test@example.com')
+        await user.type(screen.getByLabelText(/password/i), 'password123')
+        
+        // Submit form multiple times rapidly
+        const submitButton = screen.getByRole('button', { name: /sign in to your account/i })
+        await user.click(submitButton)
+        await user.click(submitButton) // Second click should be ignored
+        await user.click(submitButton) // Third click should be ignored
 
-      // API should only be called once
-      expect(mockFetch).toHaveBeenCalledTimes(1)
+        // API should only be called once
+        expect(mockFetch).toHaveBeenCalledTimes(1)
+        
+        // Wait for the slow response to complete
+        await waitFor(() => {
+            expect(screen.queryByText(/signing in/i)).not.toBeInTheDocument()
+        }, { timeout: 200 })
     })
   })
 
