@@ -617,4 +617,202 @@ export class PostRepository {
 
     return expiredPosts
   }
+
+  // Add these methods to your PostRepository class
+
+/**
+ * Find many posts with pagination for public feeds
+ * @param options - Pagination and filtering options
+ * @returns Promise<Object> Posts array and total count
+ */
+async findManyWithPagination(options: {
+  offset?: number
+  limit?: number
+  includeAuthor?: boolean
+  includeMedia?: boolean
+  onlyPublished?: boolean
+}) {
+  const { 
+    offset = 0, 
+    limit = 20, 
+    includeAuthor = true,
+    includeMedia = true,
+    onlyPublished = true
+  } = options
+
+  const where: any = {}
+  
+  if (onlyPublished) {
+    where.isPublished = true
+    where.publishedAt = { not: null }
+  }
+
+  const includeClause: any = {}
+  
+  if (includeAuthor) {
+    includeClause.author = {
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        actorId: true,
+        isVerified: true,
+        verificationTier: true
+      }
+    }
+  }
+  
+  if (includeMedia) {
+    includeClause.media = {
+      select: {
+        id: true,
+        filename: true,
+        url: true,
+        mimeType: true,
+        altText: true,
+        width: true,
+        height: true
+      }
+    }
+    includeClause._count = {
+      select: {
+        media: true
+      }
+    }
+  }
+
+  const [posts, totalCount] = await Promise.all([
+    this.prisma.post.findMany({
+      where,
+      include: includeClause,
+      orderBy: { publishedAt: 'desc' },
+      skip: offset,
+      take: limit
+    }),
+    this.prisma.post.count({ where })
+  ])
+
+  return { posts, totalCount }
+}
+
+/**
+ * Find posts by author ID with pagination
+ * @param authorId - Author's user ID
+ * @param options - Pagination and filtering options
+ * @returns Promise<Object> Posts array and total count
+ */
+async findManyByAuthorId(
+  authorId: string, 
+  options: {
+    offset?: number
+    limit?: number
+    includeAuthor?: boolean
+    includeMedia?: boolean
+    onlyPublished?: boolean
+  } = {}
+) {
+  const { 
+    offset = 0, 
+    limit = 20, 
+    includeAuthor = true,
+    includeMedia = true,
+    onlyPublished = true
+  } = options
+
+  const where: any = { authorId }
+  
+  if (onlyPublished) {
+    where.isPublished = true
+    where.publishedAt = { not: null }
+  }
+
+  const includeClause: any = {}
+  
+  if (includeAuthor) {
+    includeClause.author = {
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        actorId: true,
+        isVerified: true,
+        verificationTier: true
+      }
+    }
+  }
+  
+  if (includeMedia) {
+    includeClause.media = {
+      select: {
+        id: true,
+        filename: true,
+        url: true,
+        mimeType: true,
+        altText: true,
+        width: true,
+        height: true
+      }
+    }
+    includeClause._count = {
+      select: {
+        media: true
+      }
+    }
+  }
+
+  const [posts, totalCount] = await Promise.all([
+    this.prisma.post.findMany({
+      where,
+      include: includeClause,
+      orderBy: { publishedAt: 'desc' },
+      skip: offset,
+      take: limit
+    }),
+    this.prisma.post.count({ where })
+  ])
+
+  return { posts, totalCount }
+}
+
+/**
+   * Find post by ID with author and media relations
+   * @param id - Post ID
+   * @returns Promise<Object|null> Post with relations or null if not found
+   */
+  async findByIdWithAuthorAndMedia(id: string): Promise<PostWithRelations | null> {
+    return await this.prisma.post.findUnique({
+      where: { id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            actorId: true,
+            isVerified: true,
+            verificationTier: true
+          }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
+        }
+      }
+    })
+  }
 }
