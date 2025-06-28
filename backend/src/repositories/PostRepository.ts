@@ -192,18 +192,96 @@ export class PostRepository {
    * Find many posts by author ID
    * @param authorId - Author ID to filter by
    * @param options - Pagination and filtering options
-   * @returns Promise<Array> Array of posts
+   * @returns Promise<{posts: Array, totalCount: number}> Posts and count
    */
-  async findManyByAuthorId(authorId: string, options: PaginationOptions = {}) {
+  async findManyByAuthorId(authorId: string, options: {
+    offset?: number
+    limit?: number
+    orderBy?: 'publishedAt' | 'createdAt' | 'updatedAt'
+    orderDirection?: 'asc' | 'desc'
+    includeAuthor?: boolean
+    includeMedia?: boolean
+    onlyPublished?: boolean
+  } = {}) {
     const {
       offset = 0,
       limit = 20,
       orderBy = 'publishedAt',
-      orderDirection = 'desc'
+      orderDirection = 'desc',
+      includeAuthor = false,
+      includeMedia = false,
+      onlyPublished = false
     } = options
 
-    return await this.prisma.post.findMany({
-      where: { authorId },
+    // Build where clause
+    const where: any = { authorId }
+    if (onlyPublished) {
+      where.isPublished = true
+      where.publishedAt = { not: null }
+    }
+
+    // Build include clause based on options
+    const include: any = {}
+    
+    if (includeAuthor) {
+      include.author = {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          actorId: true,
+          isVerified: true,
+          verificationTier: true
+        }
+      }
+    }
+    
+    if (includeMedia) {
+      include.media = {
+        select: {
+          id: true,
+          filename: true,
+          url: true,
+          mimeType: true,
+          altText: true,
+          width: true,
+          height: true
+        }
+      }
+      include._count = {
+        select: {
+          media: true
+        }
+      }
+    }
+
+    // Execute queries in parallel for better performance
+    const [posts, totalCount] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        include,
+        orderBy: { [orderBy]: orderDirection },
+        skip: offset,
+        take: limit
+      }),
+      this.prisma.post.count({ where })
+    ])
+
+    return {
+      posts,
+      totalCount
+    }
+  }
+
+  /**
+   * Find a post by ID with author and media relations included
+   * @param id - Post ID to find
+   * @returns Promise<Object|null> Post object with author and media or null if not found
+   */
+  async findByIdWithAuthorAndMedia(id: string) {
+    return await this.prisma.post.findUnique({
+      where: { id },
       include: {
         author: {
           select: {
@@ -232,10 +310,7 @@ export class PostRepository {
             media: true
           }
         }
-      },
-      orderBy: { [orderBy]: orderDirection },
-      skip: offset,
-      take: limit
+      }
     })
   }
 
