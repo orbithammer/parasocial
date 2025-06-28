@@ -1,5 +1,5 @@
 // backend/src/controllers/PostController.ts
-// Fixed PostController with correct PostRepository method calls
+// Fixed PostController with correct publishedAt handling
 
 import { Request, Response } from 'express'
 import { PostRepository } from '../repositories/PostRepository'
@@ -71,22 +71,54 @@ export class PostController {
         return
       }
 
+      // Check content length limit
+      if (content.trim().length > 5000) {
+        res.status(400).json({
+          success: false,
+          error: 'Post content cannot exceed 5000 characters'
+        })
+        return
+      }
+
+      // Validate scheduled post requirements
+      if (isScheduled) {
+        if (!scheduledFor) {
+          res.status(400).json({
+            success: false,
+            error: 'Scheduled posts must include scheduledFor date'
+          })
+          return
+        }
+
+        const scheduledDate = new Date(scheduledFor)
+        if (scheduledDate <= new Date()) {
+          res.status(400).json({
+            success: false,
+            error: 'Scheduled date must be in the future'
+          })
+          return
+        }
+      }
+
+      // Determine if post should be published immediately
+      const willBePublished = !isScheduled
+
       const postData = {
         content: content.trim(),
         contentWarning: contentWarning || null,
         authorId: req.user.id,
         isScheduled: isScheduled || false,
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-        isPublished: !isScheduled
+        isPublished: willBePublished,
+        // Set publishedAt to current date if publishing immediately, null if scheduled
+        publishedAt: willBePublished ? new Date() : null
       }
 
       const newPost = await this.postRepository.create(postData)
 
       res.status(201).json({
         success: true,
-        data: {
-          post: newPost
-        }
+        data: newPost
       })
     } catch (error) {
       res.status(500).json({
@@ -203,49 +235,6 @@ export class PostController {
       res.status(500).json({
         success: false,
         error: 'Failed to delete post',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
-
-  /**
-   * Get posts by specific user
-   * GET /users/:username/posts
-   */
-  async getUserPosts(req: Request, res: Response): Promise<void> {
-    try {
-      const { username } = req.params
-
-      // Find user by username
-      const user = await this.userRepository.findByUsername(username)
-
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: 'User not found'
-        })
-        return
-      }
-
-      // For now, return a simple response until we know the correct PostRepository methods
-      res.json({
-        success: true,
-        data: {
-          posts: [],
-          user: {
-            id: user.id,
-            username: user.username,
-            displayName: user.displayName,
-            avatar: user.avatar,
-            isVerified: user.isVerified
-          },
-          message: "User posts endpoint temporarily disabled - PostRepository methods need to be verified"
-        }
-      })
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve user posts',
         message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
