@@ -91,28 +91,15 @@ describe('FollowController Business Logic Tests', () => {
       mockReq.user = { id: 'user-123', username: 'testuser', email: 'test@example.com' }
       
       mockUserRepository.findByUsername.mockResolvedValue(testUser)
+      
+      // FIXED: Simple, correct service response structure
       mockFollowService.followUser.mockResolvedValue({
         success: true,
         data: {
-          follow: {
-            follow: {
-              follow: {
-                follow: {
-                  follow: {
-                    id: 'follow-123',
-                    followerId: 'user-123',
-                    followedId: 'user-456',
-                    createdAt: new Date().toISOString()
-                  },
-                  message: 'Successfully started following targetuser'
-                },
-                message: 'Successfully started following targetuser'
-              },
-              message: 'Successfully started following targetuser'
-            },
-            message: 'Successfully started following targetuser'
-          },
-          message: 'Successfully started following targetuser'
+          id: 'follow-123',
+          followerId: 'user-123',
+          followedId: 'user-456',
+          createdAt: '2025-06-28T23:42:31.197Z'
         }
       })
 
@@ -127,28 +114,19 @@ describe('FollowController Business Logic Tests', () => {
         actorId: null
       })
       expect(mockRes.status).toHaveBeenCalledWith(201)
+      
+      // FIXED: Simple, correct expectation structure (matching controller's actual response)
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        data: expect.objectContaining({
-          follow: expect.objectContaining({
-            follow: expect.objectContaining({
-              follow: expect.objectContaining({
-                follow: expect.objectContaining({
-                  follow: expect.objectContaining({
-                    id: 'follow-123',
-                    followerId: 'user-123',
-                    followedId: 'user-456'
-                  }),
-                  message: 'Successfully started following targetuser'
-                }),
-                message: 'Successfully started following targetuser'
-              }),
-              message: 'Successfully started following targetuser'
-            }),
-            message: 'Successfully started following targetuser'
-          }),
+        data: {
+          follow: {
+            id: 'follow-123',
+            followerId: 'user-123',
+            followedId: 'user-456',
+            createdAt: '2025-06-28T23:42:31.197Z'
+          },
           message: 'Successfully started following targetuser'
-        })
+        }
       })
     })
 
