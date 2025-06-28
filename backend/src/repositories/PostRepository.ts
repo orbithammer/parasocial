@@ -178,13 +178,22 @@ export class PostRepository {
   }
 
   /**
-   * Delete a post by ID
+   * Delete a post by ID and return the deleted post with media info
    * @param id - Post ID to delete
-   * @returns Promise<Object> Deleted post object
+   * @returns Promise<Object> Deleted post object with media information
    */
   async delete(id: string) {
     return await this.prisma.post.delete({
-      where: { id }
+      where: { id },
+      include: {
+        media: {
+          select: {
+            id: true,
+            url: true,
+            filename: true
+          }
+        }
+      }
     })
   }
 
@@ -538,5 +547,88 @@ export class PostRepository {
       draftPosts,
       scheduledPosts
     }
+  }
+
+  /**
+   * Check if a post exists and belongs to the specified author
+   * @param id - Post ID to check
+   * @param authorId - Author ID to verify ownership
+   * @returns Promise<boolean> True if post exists and belongs to author, false otherwise
+   */
+  async existsByIdAndAuthor(id: string, authorId: string): Promise<boolean> {
+    const post = await this.prisma.post.findFirst({
+      where: { 
+        id: id, 
+        authorId: authorId 
+      },
+      select: { id: true }
+    })
+
+    return post !== null
+  }
+
+  /**
+   * Update a post by ID with proper publishedAt handling
+   * @param id - Post ID to update
+   * @param updateData - Data to update
+   * @returns Promise<Object> Updated post with full relations
+   */
+  async update(id: string, updateData: PostUpdateData) {
+    // First, get the current state of the post to handle publishedAt logic
+    const currentPost = await this.prisma.post.findUnique({
+      where: { id },
+      select: { isPublished: true, publishedAt: true }
+    })
+
+    if (!currentPost) {
+      throw new Error('Post not found')
+    }
+
+    const now = new Date()
+    
+    // Prepare update data
+    const dataToUpdate: any = {
+      ...updateData,
+      updatedAt: now
+    }
+
+    // Handle publishedAt logic - only set if transitioning to published for the first time
+    if (updateData.isPublished === true && !currentPost.isPublished && !currentPost.publishedAt) {
+      dataToUpdate.publishedAt = now
+    }
+
+    return await this.prisma.post.update({
+      where: { id },
+      data: dataToUpdate,
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            actorId: true,
+            isVerified: true,
+            verificationTier: true
+          }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
+        }
+      }
+    })
   }
 }
