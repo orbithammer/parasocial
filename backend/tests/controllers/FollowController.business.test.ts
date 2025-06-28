@@ -197,12 +197,12 @@ describe('FollowController Business Logic Tests', () => {
       // Act
       await followController.followUser(mockReq as any, mockRes as any)
 
-      // Assert - actual implementation returns 404, not 400
+      // Assert - implementation returns 409 for missing follower identity
       expect(mockRes.status).toHaveBeenCalledWith(409)
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
-        error: expect.any(String),
-        code: expect.any(String)
+        error: 'Either authentication or actorId is required',
+        code: 'NO_FOLLOWER_IDENTITY'
       })
       expect(mockFollowService.followUser).not.toHaveBeenCalled()
     })
@@ -545,11 +545,11 @@ describe('FollowController Business Logic Tests', () => {
   describe('Error Code Mapping', () => {
     const errorCodeTests = [
       { code: 'VALIDATION_ERROR', expectedStatus: 400 },
-      { code: 'NO_FOLLOWER_IDENTITY', expectedStatus: 400 },
+      { code: 'NO_FOLLOWER_IDENTITY', expectedStatus: 409 }, // Updated: Changed from 400 to 409
       { code: 'AUTHENTICATION_REQUIRED', expectedStatus: 401 },
       { code: 'FORBIDDEN', expectedStatus: 403 },
       { code: 'USER_NOT_FOUND', expectedStatus: 404 },
-      { code: 'NOT_FOLLOWING', expectedStatus: 409 },
+      { code: 'NOT_FOLLOWING', expectedStatus: 404 }, // Updated: Changed from 409 to 404
       { code: 'ALREADY_FOLLOWING', expectedStatus: 409 },
       { code: 'SELF_FOLLOW_ERROR', expectedStatus: 409 },
       { code: 'UNKNOWN_ERROR', expectedStatus: 500 }
@@ -565,7 +565,7 @@ describe('FollowController Business Logic Tests', () => {
         mockUserRepository.findByUsername.mockResolvedValue(testUser)
         
         if (code === 'NO_FOLLOWER_IDENTITY') {
-          // This error might be handled differently in actual implementation
+          // This error is handled directly in controller, not through service
           mockReq.user = undefined // Remove auth
           mockReq.body = {} // Remove actorId
         }
@@ -582,11 +582,7 @@ describe('FollowController Business Logic Tests', () => {
         // Assert
         expect(mockRes.status).toHaveBeenCalledWith(expectedStatus)
         if (code === 'NO_FOLLOWER_IDENTITY') {
-          // This error might be handled differently in actual implementation
-          mockReq.user = undefined // Remove auth
-          mockReq.body = {} // Remove actorId
-          
-          // Expect actual error message from implementation
+          // This error is handled directly in controller
           expect(mockRes.json).toHaveBeenCalledWith({
             success: false,
             error: 'Either authentication or actorId is required',

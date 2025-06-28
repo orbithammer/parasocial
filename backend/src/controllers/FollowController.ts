@@ -68,7 +68,7 @@ export class FollowController {
         followerId = actorId
         isExternalFollow = true
       } else {
-        res.status(400).json({
+        res.status(409).json({
           success: false,
           error: 'Either authentication or actorId is required',
           code: 'NO_FOLLOWER_IDENTITY'
@@ -670,13 +670,14 @@ export class FollowController {
       case 'USER_NOT_FOUND':
       case 'FOLLOWER_NOT_FOUND':
       case 'TARGET_USER_NOT_FOUND':
+      case 'NOT_FOLLOWING':
         return 404 // Not Found
 
       case 'SELF_FOLLOW_ERROR':
       case 'ALREADY_FOLLOWING':
-      case 'NOT_FOLLOWING':
       case 'USER_INACTIVE':
       case 'INVALID_ACTOR_ID':
+      case 'NO_FOLLOWER_IDENTITY': // Move to 409 group
         return 409 // Conflict
 
       case 'INTERNAL_ERROR':
