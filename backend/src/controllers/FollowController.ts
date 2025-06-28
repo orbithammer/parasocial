@@ -68,7 +68,7 @@ export class FollowController {
         followerId = actorId
         isExternalFollow = true
       } else {
-        res.status(409).json({
+        res.status(400).json({
           success: false,
           error: 'Either authentication or actorId is required',
           code: 'NO_FOLLOWER_IDENTITY'
@@ -98,7 +98,7 @@ export class FollowController {
       res.status(201).json({
         success: true,
         data: {
-          ...result.data,
+          follow: result.data,
           message: `Successfully started following ${username}`
         }
       })
@@ -647,42 +647,42 @@ export class FollowController {
   }
 
   /**
-   * Map service error codes to HTTP status codes
-   * @param errorCode - Service error code
-   * @returns Appropriate HTTP status code
-   */
-  private getStatusCodeFromError(errorCode?: string): number {
-    switch (errorCode) {
-      case 'VALIDATION_ERROR':
-      case 'INVALID_USER_ID':
-      case 'INVALID_PARAMETERS':
-      case 'INVALID_FOLLOWER_ID':
-      case 'INVALID_USER_IDS':
-      case 'TOO_MANY_USERS':
-        return 400 // Bad Request
+ * Map service error codes to HTTP status codes
+ * @param errorCode - Service error code
+ * @returns Appropriate HTTP status code
+ */
+private getStatusCodeFromError(errorCode?: string): number {
+  switch (errorCode) {
+    case 'VALIDATION_ERROR':
+    case 'INVALID_USER_ID':
+    case 'INVALID_PARAMETERS':
+    case 'INVALID_FOLLOWER_ID':
+    case 'INVALID_USER_IDS':
+    case 'TOO_MANY_USERS':
+    case 'NO_FOLLOWER_IDENTITY':  // Missing required auth/actorId parameters
+      return 400 // Bad Request
 
-      case 'AUTHENTICATION_REQUIRED':
-        return 401 // Unauthorized
+    case 'AUTHENTICATION_REQUIRED':
+      return 401 // Unauthorized
 
-      case 'FORBIDDEN':
-        return 403 // Forbidden
+    case 'FORBIDDEN':
+      return 403 // Forbidden
 
-      case 'USER_NOT_FOUND':
-      case 'FOLLOWER_NOT_FOUND':
-      case 'TARGET_USER_NOT_FOUND':
-      case 'NOT_FOLLOWING':
-        return 404 // Not Found
+    case 'USER_NOT_FOUND':
+    case 'FOLLOWER_NOT_FOUND':
+    case 'TARGET_USER_NOT_FOUND':
+      return 404 // Not Found
 
-      case 'SELF_FOLLOW_ERROR':
-      case 'ALREADY_FOLLOWING':
-      case 'USER_INACTIVE':
-      case 'INVALID_ACTOR_ID':
-      case 'NO_FOLLOWER_IDENTITY': // Move to 409 group
-        return 409 // Conflict
+    case 'SELF_FOLLOW_ERROR':
+    case 'ALREADY_FOLLOWING':
+    case 'NOT_FOLLOWING':  // Moved from 404 to 409 - business logic conflict
+    case 'USER_INACTIVE':
+    case 'INVALID_ACTOR_ID':
+      return 409 // Conflict
 
-      case 'INTERNAL_ERROR':
-      default:
-        return 500 // Internal Server Error
-    }
+    case 'INTERNAL_ERROR':
+    default:
+      return 500 // Internal Server Error
   }
+}
 }
