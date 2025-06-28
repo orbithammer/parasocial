@@ -1,16 +1,39 @@
-// backend/tests/middleware/authMiddleware.test.js
-// Fixed tests to match actual authMiddleware implementation
+// backend/tests/middleware/authMiddleware.test.ts
+// Fixed tests to match actual authMiddleware implementation with proper TypeScript types
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createAuthMiddleware, createOptionalAuthMiddleware } from '../../src/middleware/authMiddleware.js'
+import { createAuthMiddleware, createOptionalAuthMiddleware } from '../../src/middleware/authMiddleware'
+
+// Define the authenticated request interface that matches the middleware
+interface AuthenticatedRequest {
+  headers: {
+    authorization?: string
+    Authorization?: string
+    [key: string]: any
+  }
+  user?: {
+    id: string | number
+    email: string
+    username: string
+  }
+  customProperty?: string
+  [key: string]: any
+}
+
+// Define the response interface
+interface MockResponse {
+  status: any
+  json: any
+  send?: any
+}
 
 describe('Authentication Middleware', () => {
-  let mockAuthService
-  let mockReq
-  let mockRes
-  let mockNext
-  let authMiddleware
-  let optionalAuthMiddleware
+  let mockAuthService: any
+  let mockReq: AuthenticatedRequest
+  let mockRes: MockResponse
+  let mockNext: any
+  let authMiddleware: any
+  let optionalAuthMiddleware: any
 
   const validToken = 'valid.jwt.token'
   const invalidToken = 'invalid.jwt.token'
@@ -32,7 +55,7 @@ describe('Authentication Middleware', () => {
       verifyToken: vi.fn()
     }
 
-    // Mock Express request object
+    // Mock Express request object with proper typing
     mockReq = {
       headers: {}
     }
@@ -506,8 +529,8 @@ describe('Authentication Middleware', () => {
     })
 
     it('should handle concurrent requests independently', async () => {
-      const req1 = { headers: { authorization: `Bearer ${validToken}` } }
-      const req2 = { headers: { authorization: `Bearer ${invalidToken}` } }
+      const req1: AuthenticatedRequest = { headers: { authorization: `Bearer ${validToken}` } }
+      const req2: AuthenticatedRequest = { headers: { authorization: `Bearer ${invalidToken}` } }
       const res1 = { status: vi.fn().mockReturnThis(), json: vi.fn() }
       const res2 = { status: vi.fn().mockReturnThis(), json: vi.fn() }
       const next1 = vi.fn()

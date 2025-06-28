@@ -1,5 +1,5 @@
 // backend/src/repositories/FollowRepository.ts
-// Data access layer for Follow operations using Prisma with proper TypeScript types
+// Complete data access layer for Follow operations using Prisma with proper TypeScript types
 
 import { PrismaClient } from '@prisma/client'
 
@@ -14,9 +14,15 @@ interface PaginationOptions {
   limit?: number
 }
 
+interface FollowStats {
+  followerCount: number
+  followingCount: number
+}
+
 /**
  * Follow repository class
  * Handles database operations for follow relationships
+ * Supports both local and federated follow relationships via ActivityPub
  */
 export class FollowRepository {
   constructor(private prisma: PrismaClient) {}
@@ -24,20 +30,33 @@ export class FollowRepository {
   /**
    * Create a new follow relationship
    * @param followData - Follow data to create
-   * @returns Promise<Object> Created follow relationship
+   * @returns Promise<Object> Created follow relationship with included user data
    */
   async create(followData: FollowCreateData) {
     return await this.prisma.follow.create({
       data: {
         followerId: followData.followerId,
         followedId: followData.followedId,
-        actorId: followData.actorId || null
+        actorId: followData.actorId || null,
+        isAccepted: true // Default to accepted for Phase 2.3
+      },
+      include: {
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
       }
     })
   }
 
   /**
    * Find follow relationship by follower and followed user
+   * Handles both local user IDs and ActivityPub actor IDs
    * @param followerId - Follower ID or actor ID
    * @param followedId - Followed user ID
    * @returns Promise<Object|null> Follow relationship or null if not found
@@ -55,6 +74,50 @@ export class FollowRepository {
             followedId: followedId
           }
         ]
+      },
+      include: {
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   * Delete follow relationship
+   * @param followerId - Follower ID or actor ID
+   * @param followedId - Followed user ID
+   * @returns Promise<Object|null> Deleted follow relationship or null if not found
+   */
+  async deleteByFollowerAndFollowed(followerId: string, followedId: string) {
+    // First find the follow relationship to delete
+    const followToDelete = await this.findByFollowerAndFollowed(followerId, followedId)
+    
+    if (!followToDelete) {
+      return null
+    }
+
+    // Delete the found follow relationship
+    return await this.prisma.follow.delete({
+      where: {
+        id: followToDelete.id
+      },
+      include: {
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
       }
     })
   }
@@ -66,12 +129,24 @@ export class FollowRepository {
    */
   async findById(id: string) {
     return await this.prisma.follow.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
+      }
     })
   }
 
   /**
    * Get followers for a specific user with pagination
+   * Returns list of users/actors following the specified user
    * @param userId - User ID to get followers for
    * @param options - Pagination options
    * @returns Promise<Object> Followers array and total count
@@ -82,56 +157,22 @@ export class FollowRepository {
     const [followers, totalCount] = await Promise.all([
       this.prisma.follow.findMany({
         where: {
-          followedId: userId
+          followedId: userId,
+          isAccepted: true
         },
         select: {
           id: true,
           followerId: true,
           actorId: true,
-          createdAt: true
-        },
-        orderBy: {
-          createdAt: 'desc'
-        },
-        skip: offset,
-        take: limit
-      }),
-      this.prisma.follow.count({
-        where: {
-          followedId: userId
-        }
-      })
-    ])
-
-    return {
-      followers,
-      totalCount
-    }
-  }
-
-  /**
-   * Get users that a specific user is following
-   * @param userId - User ID to get following for
-   * @param options - Pagination options
-   * @returns Promise<Object> Following array and total count
-   */
-  async findFollowingByUserId(userId: string, options: PaginationOptions = {}) {
-    const { offset = 0, limit = 20 } = options
-
-    const [following, totalCount] = await Promise.all([
-      this.prisma.follow.findMany({
-        where: {
-          followerId: userId
-        },
-        include: {
+          createdAt: true,
+          // Include followed user data (the ParaSocial user being followed)
           followed: {
             select: {
               id: true,
               username: true,
               displayName: true,
               avatar: true,
-              isVerified: true,
-              verificationTier: true
+              isVerified: true
             }
           }
         },
@@ -143,107 +184,185 @@ export class FollowRepository {
       }),
       this.prisma.follow.count({
         where: {
-          followerId: userId
+          followedId: userId,
+          isAccepted: true
+        }
+      })
+    ])
+
+    return {
+      followers,
+      totalCount,
+      hasMore: offset + limit < totalCount
+    }
+  }
+
+  /**
+   * Get users that a specific user is following
+   * Note: For ParaSocial, this will mainly be empty since users are content creators,
+   * but included for completeness and potential future features
+   * @param followerId - Follower ID to get following list for
+   * @param options - Pagination options
+   * @returns Promise<Object> Following array and total count
+   */
+  async findFollowingByUserId(followerId: string, options: PaginationOptions = {}) {
+    const { offset = 0, limit = 20 } = options
+
+    const [following, totalCount] = await Promise.all([
+      this.prisma.follow.findMany({
+        where: {
+          OR: [
+            { followerId: followerId },
+            { actorId: followerId }
+          ],
+          isAccepted: true
+        },
+        select: {
+          id: true,
+          followerId: true,
+          actorId: true,
+          createdAt: true,
+          followed: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              isVerified: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip: offset,
+        take: limit
+      }),
+      this.prisma.follow.count({
+        where: {
+          OR: [
+            { followerId: followerId },
+            { actorId: followerId }
+          ],
+          isAccepted: true
         }
       })
     ])
 
     return {
       following,
-      totalCount
+      totalCount,
+      hasMore: offset + limit < totalCount
     }
   }
 
   /**
-   * Delete follow relationship by ID
-   * @param id - Follow relationship ID
-   * @returns Promise<Object> Deleted follow relationship
+   * Get follow statistics for a user
+   * @param userId - User ID to get stats for
+   * @returns Promise<FollowStats> Follower and following counts
    */
-  async delete(id: string) {
-    return await this.prisma.follow.delete({
-      where: { id }
-    })
+  async getFollowStats(userId: string): Promise<FollowStats> {
+    const [followerCount, followingCount] = await Promise.all([
+      this.prisma.follow.count({
+        where: {
+          followedId: userId,
+          isAccepted: true
+        }
+      }),
+      this.prisma.follow.count({
+        where: {
+          OR: [
+            { followerId: userId },
+            { actorId: userId }
+          ],
+          isAccepted: true
+        }
+      })
+    ])
+
+    return {
+      followerCount,
+      followingCount
+    }
   }
 
   /**
-   * Delete follow relationship by follower and followed
-   * @param followerId - Follower ID
+   * Check if one user follows another
+   * @param followerId - Follower ID or actor ID
    * @param followedId - Followed user ID
-   * @returns Promise<Object> Deleted follow relationship
-   */
-  async deleteByFollowerAndFollowed(followerId: string, followedId: string) {
-    return await this.prisma.follow.deleteMany({
-      where: {
-        OR: [
-          {
-            followerId: followerId,
-            followedId: followedId
-          },
-          {
-            actorId: followerId,
-            followedId: followedId
-          }
-        ]
-      }
-    })
-  }
-
-  /**
-   * Get follower count for a user
-   * @param userId - User ID to count followers for
-   * @returns Promise<number> Number of followers
-   */
-  async getFollowerCount(userId: string): Promise<number> {
-    return await this.prisma.follow.count({
-      where: {
-        followedId: userId
-      }
-    })
-  }
-
-  /**
-   * Get following count for a user
-   * @param userId - User ID to count following for
-   * @returns Promise<number> Number of users being followed
-   */
-  async getFollowingCount(userId: string): Promise<number> {
-    return await this.prisma.follow.count({
-      where: {
-        followerId: userId
-      }
-    })
-  }
-
-  /**
-   * Check if user A follows user B
-   * @param followerId - Potential follower ID
-   * @param followedId - Potential followed user ID
-   * @returns Promise<boolean> True if following, false otherwise
+   * @returns Promise<boolean> True if follow relationship exists
    */
   async isFollowing(followerId: string, followedId: string): Promise<boolean> {
     const follow = await this.findByFollowerAndFollowed(followerId, followedId)
-    return follow !== null
+    return follow !== null && follow.isAccepted
   }
 
   /**
-   * Get all followers for a user (for ActivityPub delivery)
-   * @param userId - User ID to get followers for
-   * @returns Promise<Array> Array of follower actor IDs
+   * Get recent followers for a user (useful for notifications)
+   * @param userId - User ID to get recent followers for
+   * @param limit - Number of recent followers to return
+   * @returns Promise<Array> Recent followers
    */
-  async getAllFollowerActorIds(userId: string): Promise<string[]> {
-    const follows = await this.prisma.follow.findMany({
+  async findRecentFollowers(userId: string, limit: number = 10) {
+    return await this.prisma.follow.findMany({
       where: {
-        followedId: userId
+        followedId: userId,
+        isAccepted: true
       },
       select: {
+        id: true,
         followerId: true,
-        actorId: true
+        actorId: true,
+        createdAt: true,
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: limit
+    })
+  }
+
+  /**
+   * Bulk check if user is following multiple other users
+   * Useful for marking follow status in user lists
+   * @param followerId - Follower ID or actor ID
+   * @param userIds - Array of user IDs to check
+   * @returns Promise<Record<string, boolean>> Map of userId -> isFollowing
+   */
+  async bulkCheckFollowing(followerId: string, userIds: string[]): Promise<Record<string, boolean>> {
+    const follows = await this.prisma.follow.findMany({
+      where: {
+        OR: [
+          { followerId: followerId },
+          { actorId: followerId }
+        ],
+        followedId: { in: userIds },
+        isAccepted: true
+      },
+      select: {
+        followedId: true
       }
     })
 
-    // Return actor IDs for federated followers, or follower IDs for local followers
-    return follows
-      .map(follow => follow.actorId || follow.followerId)
-      .filter((id): id is string => Boolean(id))
+    // Create a map with all userIds set to false, then set followed ones to true
+    const result: Record<string, boolean> = {}
+    userIds.forEach(userId => {
+      result[userId] = false
+    })
+    
+    follows.forEach(follow => {
+      result[follow.followedId] = true
+    })
+
+    return result
   }
 }

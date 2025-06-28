@@ -1,280 +1,201 @@
 // backend/src/app.ts
-// Main Express application that wires up all routes and middleware
+// Example Express app setup with all routes including follow functionality
 
-import express, { type Request, type Response, type NextFunction } from 'express'
+import express from 'express'
 import cors from 'cors'
-import helmet from 'helmet'
-import morgan from 'morgan'
-import rateLimit from 'express-rate-limit'
-import dotenv from 'dotenv'
-import container from './services/container'
+import { PrismaClient } from '@prisma/client'
 
-// Load environment variables
-dotenv.config()
+// Import route creators
+import { createAuthRouter } from './routes/auth'
+import { createPostsRouter } from './routes/posts'
+import { createUsersRouter } from './routes/users'
+// Optional: import { createFollowsRouter } from './routes/follows'
 
-/**
- * Error response interface
- */
-interface ErrorResponse {
-  success: false
-  error: string
-  message?: string
-  stack?: string
-}
+// Import controllers
+import { AuthController } from './controllers/AuthController'
+import { PostController } from './controllers/PostController'
+import { UserController } from './controllers/UserController'
+import { FollowController } from './controllers/FollowController'
 
-/**
- * Custom error class for API errors
- */
-class APIError extends Error {
-  constructor(
-    message: string,
-    public statusCode: number = 500,
-    public isOperational: boolean = true
-  ) {
-    super(message)
-    this.name = 'APIError'
-    Error.captureStackTrace(this, this.constructor)
-  }
-}
+// Import services
+import { AuthService } from './services/AuthService'
+import { FollowService } from './services/FollowService'
+
+// Import repositories
+import { UserRepository } from './repositories/UserRepository'
+import { PostRepository } from './repositories/PostRepository'
+import { FollowRepository } from './repositories/FollowRepository'
+import { BlockRepository } from './repositories/BlockRepository'
+
+// Import middleware
+import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
 
 /**
- * Create and configure Express application
+ * Create and configure Express application with all routes
  */
-async function createApp(): Promise<express.Application> {
-  // Initialize service container
-  console.log('🔄 Initializing application...')
-  await container.initialize()
-
-  // Create Express app
+export function createApp() {
   const app = express()
 
-  // Trust proxy (for rate limiting and IP detection)
-  app.set('trust proxy', 1)
+  // ============================================================================
+  // MIDDLEWARE SETUP
+  // ============================================================================
 
-  // Security middleware
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        upgradeInsecureRequests: [],
-      },
-    },
-    crossOriginEmbedderPolicy: false
-  }))
+  // Basic middleware
+  app.use(cors())
+  app.use(express.json())
+  app.use(express.urlencoded({ extended: true }))
 
-  // CORS configuration
-  app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  }))
+  // ============================================================================
+  // DEPENDENCY SETUP
+  // ============================================================================
 
-  // Logging middleware
-  if (process.env.NODE_ENV === 'development') {
-    app.use(morgan('dev'))
-  } else {
-    app.use(morgan('combined'))
-  }
+  // Database client
+  const prisma = new PrismaClient()
 
-  // Body parsing middleware
-  app.use(express.json({ limit: '10mb' }))
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+  // Repositories
+  const userRepository = new UserRepository(prisma)
+  const postRepository = new PostRepository(prisma)
+  const followRepository = new FollowRepository(prisma)
+  const blockRepository = new BlockRepository(prisma)
 
-  // Rate limiting
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Requests per window
-    message: {
-      success: false,
-      error: 'Too many requests from this IP, please try again later'
-    },
-    standardHeaders: true,
-    legacyHeaders: false
+  // Services
+  const authService = new AuthService()
+  const followService = new FollowService(followRepository, userRepository)
+
+  // Controllers
+  const authController = new AuthController(authService, userRepository)
+  const postController = new PostController(postRepository, userRepository)
+  // Fixed: UserController expects userRepository, followRepository, and blockRepository
+  const userController = new UserController(userRepository, followRepository, blockRepository)
+  const followController = new FollowController(followService, userRepository)
+
+  // Middleware functions
+  const authMiddleware = createAuthMiddleware(authService)
+  const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
+
+  // ============================================================================
+  // ROUTE REGISTRATION
+  // ============================================================================
+
+  // API base path
+  const apiPrefix = '/api/v1'
+
+  // Authentication routes
+  const authRouter = createAuthRouter({
+    authController,
+    authMiddleware
   })
-  app.use('/api/', limiter)
+  app.use(`${apiPrefix}/auth`, authRouter)
 
-  // Stricter rate limiting for auth endpoints
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.NODE_ENV === 'development' ? 100 : 5, // Requests per window
-    message: {
-      success: false,
-      error: 'Too many authentication attempts, please try again later'
-    }
+  // Post routes
+  const postsRouter = createPostsRouter({
+    postController,
+    authMiddleware,
+    optionalAuthMiddleware
   })
+  app.use(`${apiPrefix}/posts`, postsRouter)
 
-  // Health check endpoint (before other routes)
-  app.get('/health', async (req: Request, res: Response) => {
-    try {
-      const healthCheck = await container.healthCheck()
-      
-      if (healthCheck.healthy) {
-        res.status(200).json({
-          status: 'ok',
-          ...healthCheck
-        })
-      } else {
-        res.status(503).json({
-          status: 'error',
-          ...healthCheck
-        })
-      }
-    } catch (error) {
-      res.status(503).json({
-        status: 'error',
-        healthy: false,
-        error: error instanceof Error ? error.message : 'Health check failed',
-        timestamp: new Date().toISOString()
-      })
-    }
+  // User routes (includes all follow/unfollow functionality)
+  const usersRouter = createUsersRouter({
+    userController,
+    postController,
+    followController, // Added FollowController
+    authMiddleware,
+    optionalAuthMiddleware
   })
+  app.use(`${apiPrefix}/users`, usersRouter)
 
-  // API status endpoint
-  app.get('/api/status', (req: Request, res: Response) => {
+  // Optional: Dedicated follow routes (alternative approach)
+  // const followsRouter = createFollowsRouter({
+  //   followController,
+  //   authMiddleware,
+  //   optionalAuthMiddleware
+  // })
+  // app.use(`${apiPrefix}/follows`, followsRouter)
+
+  // ============================================================================
+  // API DOCUMENTATION ENDPOINT
+  // ============================================================================
+
+  /**
+   * GET /api/v1/routes
+   * Get available API routes (for development)
+   */
+  app.get(`${apiPrefix}/routes`, (req, res) => {
     res.json({
       success: true,
-      message: 'ParaSocial API is running',
-      version: '1.0.0',
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development'
+      data: {
+        auth: [
+          'POST /auth/register',
+          'POST /auth/login', 
+          'POST /auth/logout',
+          'GET /auth/me'
+        ],
+        posts: [
+          'GET /posts',
+          'POST /posts',
+          'GET /posts/:id',
+          'DELETE /posts/:id'
+        ],
+        users: [
+          'GET /users/:username',
+          'GET /users/:username/posts'
+        ],
+        follows: [
+          'POST /users/:username/follow',
+          'DELETE /users/:username/follow',
+          'GET /users/:username/followers',
+          'GET /users/:username/following',
+          'GET /users/:username/followers/recent',
+          'GET /users/:username/stats',
+          'GET /users/:username/following/:targetUsername',
+          'POST /users/:username/following/check'
+        ],
+        blocking: [
+          'POST /users/:username/block',
+          'DELETE /users/:username/block'
+        ]
+      }
     })
   })
 
-  // Get dependencies from container
-  const dependencies = container.getDependencies()
+  // ============================================================================
+  // ERROR HANDLING
+  // ============================================================================
 
-  // TODO: Setup API routes (will be added when route files are created)
-  // app.use('/api/auth', authLimiter, createAuthRoutes(dependencies))
-  // app.use('/api/posts', createPostsRouter(dependencies))
-  // app.use('/api/users', createUsersRouter(dependencies))
-
-  // Temporary placeholder for API routes
-  app.use('/api', (req: Request, res: Response) => {
-    res.json({
-      success: true,
-      message: 'API routes will be available once route files are created',
-      available_endpoints: {
-        auth: 'POST /api/auth/register, POST /api/auth/login',
-        posts: 'GET /api/posts, POST /api/posts',
-        users: 'GET /api/users/:username'
-      }
-    })
-  })
-
-  // Root endpoint
-  app.get('/', (req: Request, res: Response) => {
-    res.json({
-      success: true,
-      message: 'Welcome to ParaSocial API',
-      version: '1.0.0',
-      documentation: '/api/status',
-      health: '/health'
+  // 404 handler
+  app.use('*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'Route not found',
+      code: 'NOT_FOUND'
     })
   })
 
   // Global error handler
-  app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-    console.error('💥 Unhandled error:', error)
-
-    const errorResponse: ErrorResponse = {
+  app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled error:', error)
+    
+    res.status(500).json({
       success: false,
-      error: error instanceof APIError ? error.message : 'Internal server error'
-    }
-
-    // Add details in development
-    if (process.env.NODE_ENV === 'development') {
-      errorResponse.message = error.message
-      errorResponse.stack = error.stack
-    }
-
-    const statusCode = error instanceof APIError ? error.statusCode : 500
-    res.status(statusCode).json(errorResponse)
-  })
-
-  // 404 handler for non-API routes
-  app.use('*', (req: Request, res: Response) => {
-    res.status(404).json({
-      success: false,
-      error: 'Route not found',
-      path: req.path,
-      method: req.method,
-      suggestion: 'Check the API documentation for available endpoints'
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined
     })
   })
 
-  console.log('✅ Application initialized successfully')
   return app
 }
 
-/**
- * Start the server
- */
-async function startServer(): Promise<void> {
-  try {
-    const app = await createApp()
-    const PORT = process.env.PORT || 3001
-    
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 ParaSocial backend running on http://localhost:${PORT}`)
-      console.log(`📊 Health check: http://localhost:${PORT}/health`)
-      console.log(`📚 API status: http://localhost:${PORT}/api/status`)
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
-    })
+// ============================================================================
+// SERVER STARTUP (if running directly)
+// ============================================================================
 
-    // Graceful shutdown handling
-    const shutdown = async (signal: string) => {
-      console.log(`\n🔄 Received ${signal}, shutting down gracefully...`)
-      
-      server.close(async () => {
-        console.log('🔒 HTTP server closed')
-        
-        try {
-          await container.shutdown()
-          console.log('✅ Graceful shutdown completed')
-          process.exit(0)
-        } catch (error) {
-          console.error('❌ Error during shutdown:', error)
-          process.exit(1)
-        }
-      })
-
-      // Force shutdown after 10 seconds
-      setTimeout(() => {
-        console.error('⚠️  Forced shutdown after timeout')
-        process.exit(1)
-      }, 10000)
-    }
-
-    // Listen for termination signals
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
-    process.on('SIGINT', () => shutdown('SIGINT'))
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      console.error('💥 Uncaught Exception:', error)
-      shutdown('uncaughtException')
-    })
-
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason)
-      shutdown('unhandledRejection')
-    })
-
-  } catch (error) {
-    console.error('❌ Failed to start server:', error)
-    process.exit(1)
-  }
-}
-
-// Start the server if this file is run directly
 if (require.main === module) {
-  startServer()
-}
+  const app = createApp()
+  const PORT = process.env.PORT || 3001
 
-export { createApp, startServer, APIError }
-export type { ErrorResponse }
+  app.listen(PORT, () => {
+    console.log(`🚀 ParaSocial API server running on port ${PORT}`)
+    console.log(`📚 API routes available at http://localhost:${PORT}/api/v1/routes`)
+  })
+}

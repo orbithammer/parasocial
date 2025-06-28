@@ -214,7 +214,10 @@ export class UserController {
       }
 
       // Delete follow relationship
-      await this.followRepository.delete(existingFollow.id)
+      await this.followRepository.deleteByFollowerAndFollowed(
+        existingFollow.followerId, 
+        existingFollow.followedId
+      )
 
       res.json({
         success: true,
@@ -370,7 +373,10 @@ export class UserController {
       )
 
       if (existingFollow) {
-        await this.followRepository.delete(existingFollow.id)
+        await this.followRepository.deleteByFollowerAndFollowed(
+          existingFollow.followerId, 
+          existingFollow.followedId
+        )
       }
 
       res.status(201).json({
