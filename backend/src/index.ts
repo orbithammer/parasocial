@@ -1,23 +1,30 @@
 // backend/src/index.ts
-// Minimal debug version to isolate the route parsing error
+// Express 4.x server with refactored users router using FollowController
 
 import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
 
+// Import route creators
+import { createUsersRouter } from './routes/users'
+
 // Import controllers
+import { UserController } from './controllers/UserController'
+import { PostController } from './controllers/PostController'
 import { FollowController } from './controllers/FollowController'
 
 // Import services
+import { AuthService } from './services/AuthService'
 import { FollowService } from './services/FollowService'
 
 // Import repositories
 import { UserRepository } from './repositories/UserRepository'
+import { PostRepository } from './repositories/PostRepository'
 import { FollowRepository } from './repositories/FollowRepository'
+import { BlockRepository } from './repositories/BlockRepository'
 
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
-import { AuthService } from './services/AuthService'
 
 // ============================================================================
 // SERVER CONFIGURATION
@@ -42,13 +49,17 @@ const prisma = new PrismaClient()
 
 // Repositories
 const userRepository = new UserRepository(prisma)
+const postRepository = new PostRepository(prisma)
 const followRepository = new FollowRepository(prisma)
+const blockRepository = new BlockRepository(prisma)
 
 // Services
 const authService = new AuthService()
 const followService = new FollowService(followRepository, userRepository)
 
 // Controllers
+const userController = new UserController(userRepository, followRepository, blockRepository)
+const postController = new PostController(postRepository, userRepository)
 const followController = new FollowController(followService, userRepository)
 
 // Middleware
@@ -56,27 +67,28 @@ const authMiddleware = createAuthMiddleware(authService)
 const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
 // ============================================================================
-// MINIMAL ROUTES FOR TESTING
+// BASIC ROUTES
 // ============================================================================
 
 const apiPrefix = '/api/v1'
 
 /**
  * GET /
- * Health check
+ * Health check endpoint
  */
 app.get('/', (req: Request, res: Response) => {
   res.json({
     success: true,
-    message: 'ParaSocial API Server - Debug Mode',
+    message: 'ParaSocial API Server',
     version: '1.0.0',
+    express_version: '4.x',
     timestamp: new Date().toISOString()
   })
 })
 
 /**
  * GET /api/v1/health
- * Health check
+ * Database health check
  */
 app.get(`${apiPrefix}/health`, async (req: Request, res: Response) => {
   try {
@@ -84,72 +96,36 @@ app.get(`${apiPrefix}/health`, async (req: Request, res: Response) => {
     res.json({
       success: true,
       status: 'healthy',
-      database: 'connected'
+      database: 'connected',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     res.status(503).json({
       success: false,
       status: 'unhealthy',
-      database: 'disconnected'
+      database: 'disconnected',
+      error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 })
 
 // ============================================================================
-// FOLLOW ROUTES (Test one by one)
+// ROUTER MOUNTING WITH REFACTORED FOLLOW CONTROLLER
 // ============================================================================
 
-// Define the authenticated request interface
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string
-    email: string
-    username: string
-  }
-}
-
 /**
- * Test basic follow route
+ * Mount users router with FollowController for consistent follow operations
  */
-app.post(`${apiPrefix}/test/follow`, optionalAuthMiddleware, async (req: AuthenticatedRequest, res) => {
-  res.json({
-    success: true,
-    message: 'Follow endpoint working',
-    authenticated: !!req.user
-  })
+const usersRouter = createUsersRouter({
+  userController,
+  postController,
+  followController,  // Now properly integrated for all follow operations
+  authMiddleware,
+  optionalAuthMiddleware
 })
 
-/**
- * GET /api/v1/users/:username/stats
- * Test user stats route
- */
-app.get(`${apiPrefix}/users/:username/stats`, async (req: Request, res: Response) => {
-  await followController.getUserFollowStats(req, res)
-})
-
-/**
- * POST /api/v1/users/:username/follow
- * Test follow user route
- */
-app.post(`${apiPrefix}/users/:username/follow`, optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  await followController.followUser(req, res)
-})
-
-/**
- * DELETE /api/v1/users/:username/follow
- * Test unfollow user route
- */
-app.delete(`${apiPrefix}/users/:username/follow`, authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  await followController.unfollowUser(req, res)
-})
-
-/**
- * GET /api/v1/users/:username/followers
- * Test get followers route
- */
-app.get(`${apiPrefix}/users/:username/followers`, async (req: Request, res: Response) => {
-  await followController.getUserFollowers(req, res)
-})
+// Mount the users router
+app.use(`${apiPrefix}/users`, usersRouter)
 
 // ============================================================================
 // DEBUG ROUTES
@@ -157,21 +133,38 @@ app.get(`${apiPrefix}/users/:username/followers`, async (req: Request, res: Resp
 
 /**
  * GET /api/v1/debug/routes
- * List all registered routes for debugging
+ * List all available routes
  */
 app.get(`${apiPrefix}/debug/routes`, (req: Request, res: Response) => {
   res.json({
     success: true,
-    message: 'Debug mode - minimal routes only',
-    routes: [
-      'GET / - Health check',
-      'GET /api/v1/health - Database health',
-      'POST /api/v1/test/follow - Test endpoint',
-      'GET /api/v1/users/:username/stats - Follow stats',
-      'POST /api/v1/users/:username/follow - Follow user',
-      'DELETE /api/v1/users/:username/follow - Unfollow user',
-      'GET /api/v1/users/:username/followers - Get followers'
-    ]
+    message: 'ParaSocial API Routes',
+    express_version: '4.x',
+    available_routes: {
+      health: [
+        'GET / - Health check',
+        'GET /api/v1/health - Database health'
+      ],
+      users: [
+        'GET /api/v1/users/:username - Get user profile',
+        'GET /api/v1/users/:username/posts - Get user posts',
+        'POST /api/v1/users/:username/follow - Follow user (FollowController)',
+        'DELETE /api/v1/users/:username/follow - Unfollow user (FollowController)',
+        'GET /api/v1/users/:username/followers - Get followers (FollowController)',
+        'GET /api/v1/users/:username/following - Get following (FollowController)',
+        'GET /api/v1/users/:username/stats - Follow statistics (FollowController)',
+        'POST /api/v1/users/:username/block - Block user (UserController)',
+        'DELETE /api/v1/users/:username/block - Unblock user (UserController)'
+      ],
+      debug: [
+        'GET /api/v1/debug/routes - This endpoint'
+      ]
+    },
+    refactoring_notes: {
+      follow_operations: 'Now consistently use FollowController',
+      user_management: 'Block/unblock still use UserController',
+      separation_of_concerns: 'Follow logic separated from user management'
+    }
   })
 })
 
@@ -179,23 +172,28 @@ app.get(`${apiPrefix}/debug/routes`, (req: Request, res: Response) => {
 // ERROR HANDLING
 // ============================================================================
 
-// 404 handler
+/**
+ * 404 handler for undefined routes
+ */
 app.use('*', (req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     error: 'Route not found',
     path: req.originalUrl,
-    method: req.method
+    method: req.method,
+    suggestion: `Visit ${req.protocol}://${req.get('host')}${apiPrefix}/debug/routes to see available routes`
   })
 })
 
-// Global error handler
+/**
+ * Global error handler
+ */
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('Error:', error)
+  console.error('Unhandled error:', error)
   res.status(500).json({
     success: false,
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   })
 })
 
@@ -203,24 +201,28 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
 // SERVER STARTUP
 // ============================================================================
 
+/**
+ * Start the server
+ */
 app.listen(PORT, () => {
-  console.log('🚀 ParaSocial API server started (DEBUG MODE)')
-  console.log(`📍 Server: http://localhost:${PORT}`)
-  console.log(`🔍 Health: http://localhost:${PORT}${apiPrefix}/health`)
-  console.log(`📋 Routes: http://localhost:${PORT}${apiPrefix}/debug/routes`)
-  console.log('\n🧪 Testing Follow Routes:')
-  console.log(`  Follow user: POST ${apiPrefix}/users/testuser/follow`)
-  console.log(`  Get stats: GET ${apiPrefix}/users/testuser/stats`)
-  console.log(`  Get followers: GET ${apiPrefix}/users/testuser/followers`)
+  console.log(`🚀 ParaSocial API server running on port ${PORT}`)
+  console.log(`📝 Express version: 4.x (downgraded from 5.x)`)
+  console.log(`📚 API routes: http://localhost:${PORT}${apiPrefix}/debug/routes`)
+  console.log(`❤️  Health check: http://localhost:${PORT}${apiPrefix}/health`)
+  console.log(`✅ Refactored: Follow operations now use FollowController consistently`)
 })
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
+/**
+ * Graceful shutdown handling
+ */
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down gracefully...')
   await prisma.$disconnect()
   process.exit(0)
 })
 
-process.on('SIGINT', async () => {
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Shutting down gracefully...')
   await prisma.$disconnect()
   process.exit(0)
 })
