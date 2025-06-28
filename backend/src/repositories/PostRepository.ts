@@ -401,4 +401,142 @@ export class PostRepository {
       totalCount
     }
   }
+
+  /**
+   * Publish expired scheduled posts in batch
+   * Finds posts that are scheduled but whose scheduled time has passed,
+   * then updates them to be published
+   * @param limit - Maximum number of posts to publish (default: 50)
+   * @returns Promise<Array> Array of posts that were published
+   */
+  async publishExpiredScheduled(limit: number = 50) {
+    const now = new Date()
+    
+    // Find expired scheduled posts that haven't been published yet
+    const expiredPosts = await this.prisma.post.findMany({
+      where: {
+        isScheduled: true,
+        isPublished: false,
+        scheduledFor: { lte: now }
+      },
+      take: limit,
+      orderBy: { scheduledFor: 'asc' }
+    })
+    
+    // If no expired posts found, return empty array
+    if (expiredPosts.length === 0) {
+      return []
+    }
+    
+    // Extract post IDs for batch update
+    const postIds = expiredPosts.map(post => post.id)
+    
+    // Update all expired posts to be published
+    await this.prisma.post.updateMany({
+      where: { id: { in: postIds } },
+      data: {
+        isPublished: true,
+        publishedAt: now,
+        updatedAt: now
+      }
+    })
+    
+    // Return the posts that were published
+    return expiredPosts
+  }
+
+  /**
+   * Find a post by its ActivityPub activity ID
+   * Used for ActivityPub federation to locate posts by their federated identifiers
+   * @param activityId - The ActivityPub activity ID to search for
+   * @returns Promise<Object|null> Post object with relations or null if not found
+   */
+  async findByActivityId(activityId: string) {
+    return await this.prisma.post.findUnique({
+      where: { activityId },
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            actorId: true,
+            isVerified: true,
+            verificationTier: true
+          }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   * Get comprehensive post statistics for an author
+   * Returns counts for total, published, draft, and scheduled posts
+   * @param authorId - The author ID to get statistics for
+   * @returns Promise<Object> Statistics object with post counts
+   */
+  async getAuthorStats(authorId: string) {
+    const now = new Date()
+    
+    // Execute all count queries in parallel for better performance
+    const [
+      totalPosts,
+      publishedPosts, 
+      draftPosts,
+      scheduledPosts
+    ] = await Promise.all([
+      // Count all posts by this author
+      this.prisma.post.count({
+        where: { authorId }
+      }),
+      
+      // Count published posts
+      this.prisma.post.count({
+        where: { authorId, isPublished: true }
+      }),
+      
+      // Count draft posts (not published and not scheduled)
+      this.prisma.post.count({
+        where: { 
+          authorId, 
+          isPublished: false, 
+          isScheduled: false 
+        }
+      }),
+      
+      // Count scheduled posts (scheduled but not yet published, with future scheduled date)
+      this.prisma.post.count({
+        where: { 
+          authorId, 
+          isScheduled: true, 
+          isPublished: false,
+          scheduledFor: { gt: now }
+        }
+      })
+    ])
+    
+    return {
+      totalPosts,
+      publishedPosts,
+      draftPosts,
+      scheduledPosts
+    }
+  }
 }
