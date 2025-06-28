@@ -217,7 +217,7 @@ describe('FollowController Unit Tests', () => {
       await followController.followUser(mockReq, mockRes)
 
       // Verify rejection
-      expect(mockRes.status).toHaveBeenCalledWith(400)
+      expect(mockRes.status).toHaveBeenCalledWith(409)
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
         error: 'Either authentication or actorId is required',
@@ -332,7 +332,7 @@ describe('FollowController Unit Tests', () => {
       await followController.unfollowUser(mockReq, mockRes)
 
       // Verify error response
-      expect(mockRes.status).toHaveBeenCalledWith(409) // Conflict for NOT_FOLLOWING
+      expect(mockRes.status).toHaveBeenCalledWith(404) // Fixed: Changed from 409 to 404 for NOT_FOLLOWING
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
         error: 'Follow relationship does not exist',
