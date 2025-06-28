@@ -96,7 +96,8 @@ export class PostRepository {
         contentWarning: postData.contentWarning || null,
         isScheduled: postData.isScheduled || false,
         scheduledFor: postData.scheduledFor || null,
-        isPublished: postData.isPublished !== undefined ? postData.isPublished : true,
+        isPublished: postData.isPublished !== undefined ? 
+          postData.isPublished : true,
         // Use provided publishedAt, or set automatically based on isPublished status
         publishedAt: postData.publishedAt !== undefined 
           ? postData.publishedAt 
@@ -236,5 +237,93 @@ export class PostRepository {
       skip: offset,
       take: limit
     })
+  }
+
+  /**
+   * Find many posts with pagination and filtering options
+   * @param options - Pagination and filtering options
+   * @returns Promise<{posts: Array, totalCount: number}> Posts and count
+   */
+  async findManyWithPagination(options: {
+    offset?: number
+    limit?: number
+    includeAuthor?: boolean
+    includeMedia?: boolean
+    onlyPublished?: boolean
+    authorId?: string
+  } = {}) {
+    const {
+      offset = 0,
+      limit = 20,
+      includeAuthor = false,
+      includeMedia = false,
+      onlyPublished = false,
+      authorId
+    } = options
+
+    // Build where clause based on filters
+    const where: any = {}
+    
+    if (onlyPublished) {
+      where.isPublished = true
+      where.publishedAt = { not: null }
+    }
+    
+    if (authorId) {
+      where.authorId = authorId
+    }
+
+    // Build include clause based on options
+    const include: any = {}
+    
+    if (includeAuthor) {
+      include.author = {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          actorId: true,
+          isVerified: true,
+          verificationTier: true
+        }
+      }
+    }
+    
+    if (includeMedia) {
+      include.media = {
+        select: {
+          id: true,
+          filename: true,
+          url: true,
+          mimeType: true,
+          altText: true,
+          width: true,
+          height: true
+        }
+      }
+      include._count = {
+        select: {
+          media: true
+        }
+      }
+    }
+
+    // Execute queries in parallel for better performance
+    const [posts, totalCount] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        include,
+        orderBy: { publishedAt: 'desc' },
+        skip: offset,
+        take: limit
+      }),
+      this.prisma.post.count({ where })
+    ])
+
+    return {
+      posts,
+      totalCount
+    }
   }
 }

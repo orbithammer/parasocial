@@ -1,5 +1,5 @@
 // backend/src/controllers/PostController.ts
-// Fixed PostController with correct publishedAt handling
+// Fixed PostController with correct method calls and response formats
 
 import { Request, Response } from 'express'
 import { PostRepository } from '../repositories/PostRepository'
@@ -30,18 +30,55 @@ export class PostController {
    */
   async getPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // For now, return a simple response until we know the correct PostRepository methods
+      // Parse pagination parameters from query string
+      const page = parseInt(req.query.page as string) || 1
+      const limitParam = parseInt(req.query.limit as string) || 20
+      
+      // Cap limit at 50 to prevent excessive data requests
+      const limit = Math.min(limitParam, 50)
+      
+      // Calculate offset for database query
+      const offset = (page - 1) * limit
+
+      // Call repository to get posts with pagination
+      const result = await this.postRepository.findManyWithPagination({
+        offset,
+        limit,
+        includeAuthor: true,
+        includeMedia: true,
+        onlyPublished: true
+      })
+
+      let { posts } = result
+      const { totalCount } = result
+
+      // Filter out current user's own posts if authenticated
+      if (req.user) {
+        posts = posts.filter(post => post.authorId !== req.user!.id)
+      }
+
+      // Calculate pagination information
+      const totalPages = Math.ceil(totalCount / limit)
+      const hasNext = page < totalPages
+      const hasPrev = page > 1
+
       res.json({
         success: true,
         data: {
-          posts: [],
-          message: "Posts endpoint temporarily disabled - PostRepository methods need to be verified"
+          posts,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalPosts: totalCount,
+            hasNext,
+            hasPrev
+          }
         }
       })
     } catch (error) {
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve posts',
+        error: 'Failed to fetch posts',
         message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
@@ -145,8 +182,8 @@ export class PostController {
         return
       }
 
-      // Use existing findById method
-      const post = await this.postRepository.findById(id)
+      // Use findByIdWithAuthorAndMedia method as expected by tests
+      const post = await this.postRepository.findByIdWithAuthorAndMedia(id)
 
       if (!post) {
         res.status(404).json({
@@ -167,9 +204,7 @@ export class PostController {
 
       res.json({
         success: true,
-        data: {
-          post
-        }
+        data: post  // Return post directly as expected by tests
       })
     } catch (error) {
       res.status(500).json({
@@ -218,7 +253,7 @@ export class PostController {
       if (post.authorId !== req.user.id) {
         res.status(403).json({
           success: false,
-          error: 'Can only delete your own posts'
+          error: 'You can only delete your own posts'
         })
         return
       }
@@ -227,14 +262,69 @@ export class PostController {
 
       res.json({
         success: true,
-        data: {
-          message: 'Post deleted successfully'
-        }
+        message: 'Post deleted successfully'
       })
     } catch (error) {
       res.status(500).json({
         success: false,
         error: 'Failed to delete post',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
+  /**
+   * Get user's posts by username
+   * GET /users/:username/posts
+   */
+  async getUserPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { username } = req.params
+      const page = parseInt(req.query.page as string) || 1
+      const limitParam = parseInt(req.query.limit as string) || 20
+      const limit = Math.min(limitParam, 50)
+      const offset = (page - 1) * limit
+
+      // Find user by username
+      const user = await this.userRepository.findByUsername(username)
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: 'User not found'
+        })
+        return
+      }
+
+      // Get user's posts
+      const result = await this.postRepository.findManyByAuthorId(user.id, {
+        offset,
+        limit,
+        includeAuthor: true,
+        includeMedia: true,
+        onlyPublished: true
+      })
+
+      const totalPages = Math.ceil(result.totalCount / limit)
+      const hasNext = page < totalPages
+      const hasPrev = page > 1
+
+      res.json({
+        success: true,
+        data: {
+          posts: result.posts,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalPosts: result.totalCount,
+            hasNext,
+            hasPrev
+          }
+        }
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve user posts',
         message: error instanceof Error ? error.message : 'Unknown error'
       })
     }
