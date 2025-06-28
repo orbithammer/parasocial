@@ -98,7 +98,7 @@ export class FollowController {
       res.status(201).json({
         success: true,
         data: {
-          follow: result.data,
+          ...result.data,
           message: `Successfully started following ${username}`
         }
       })
