@@ -9,6 +9,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   test: {
+    
     // Use jsdom environment for DOM testing
     environment: 'jsdom',
     

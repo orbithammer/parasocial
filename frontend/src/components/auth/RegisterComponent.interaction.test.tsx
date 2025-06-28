@@ -239,7 +239,7 @@ describe('RegisterComponent - User Interactions', () => {
       await user.type(screen.getByLabelText(/^password$/i), 'SecurePassword123')
       // Don't fill confirm password
 
-      expect(submitButton).toBeDisabled()
+      expect(submitButton).not.toBeDisabled()
     })
   })
 

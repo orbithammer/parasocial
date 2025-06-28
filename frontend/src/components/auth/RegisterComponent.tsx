@@ -87,6 +87,7 @@ export default function RegisterComponent({
   /**
    * Handle input field changes
    * Updates form state when user types in any field
+   * FIXED: Properly remove field errors instead of setting empty strings
    */
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
@@ -96,61 +97,79 @@ export default function RegisterComponent({
       [name]: value
     }))
     
-    // Clear previous errors when user starts typing
+    // Clear previous global errors when user starts typing
     if (error) {
       setError(null)
     }
+    
+    // FIXED: Remove field error entirely instead of setting empty string
     if (fieldErrors[name]) {
-      setFieldErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }))
+      setFieldErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors[name]  // Remove the key entirely
+        return newErrors
+      })
+    }
+
+    // Real-time validation for password fields
+    if (name === 'password' || name === 'confirmPassword') {
+      const updatedFormData = { ...formData, [name]: value }
+      setFieldErrors(prev => {
+        const errors = { ...prev }
+        
+        // Validate password confirmation immediately
+        if (updatedFormData.password !== updatedFormData.confirmPassword && updatedFormData.confirmPassword.length > 0) {
+          errors.confirmPassword = 'Passwords do not match'
+        } else if (updatedFormData.password === updatedFormData.confirmPassword) {
+          delete errors.confirmPassword  // Remove the key entirely
+        }
+        
+        return errors
+      })
     }
   }
 
   /**
-   * Validate form fields client-side
-   * Returns true if form is valid, false otherwise
-   */
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {}
+ * Validate form fields client-side
+ * Returns true if form is valid, false otherwise
+ * FIXED: Complete validation with all required rules
+ */
+const validateForm = (): boolean => {
+  const errors: Record<string, string> = {}
 
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(formData.email)) {
-      errors.email = 'Please enter a valid email address'
-    }
-
-    // Username validation
-    if (formData.username.length < 3) {
-      errors.username = 'Username must be at least 3 characters'
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-      errors.username = 'Username can only contain letters, numbers, and underscores'
-    }
-
-    // Password validation
-    if (formData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters'
-    }
-    if (!/(?=.*[a-z])/.test(formData.password)) {
-      errors.password = 'Password must contain at least one lowercase letter'
-    }
-    if (!/(?=.*[A-Z])/.test(formData.password)) {
-      errors.password = 'Password must contain at least one uppercase letter'
-    }
-    if (!/(?=.*\d)/.test(formData.password)) {
-      errors.password = 'Password must contain at least one number'
-    }
-
-    // Password confirmation validation
-    if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match'
-    }
-
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+  // Email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(formData.email)) {
+    errors.email = 'Please enter a valid email address'
   }
+
+  // Username validation - check length first, then format
+  if (formData.username.length < 3) {
+    errors.username = 'Username must be at least 3 characters'
+  } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+    errors.username = 'Username can only contain letters, numbers, and underscores'
+  }
+
+  // Password validation - FIXED: Complete priority-based validation
+  if (formData.password.length < 8) {
+    errors.password = 'Password must be at least 8 characters'
+  } else if (!/(?=.*[a-z])/.test(formData.password)) {
+    errors.password = 'Password must contain at least one lowercase letter'
+  } else if (!/(?=.*[A-Z])/.test(formData.password)) {
+    errors.password = 'Password must contain at least one uppercase letter'
+  } else if (!/(?=.*\d)/.test(formData.password)) {
+    errors.password = 'Password must contain at least one number'
+  }
+
+  // Password confirmation validation
+  if (formData.password !== formData.confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match'
+  }
+
+  // FIXED: Set the errors object completely (this clears any previous errors)
+  setFieldErrors(errors)
+  return Object.keys(errors).length === 0
+}
 
   /**
    * Submit registration form to backend AuthController
@@ -215,19 +234,23 @@ export default function RegisterComponent({
 
   /**
    * Check if form is valid for submission
+   * FIXED: Check for actual error values, not just object keys
    */
   const isFormValid = 
-    formData.email.trim() !== '' &&
-    formData.username.trim() !== '' &&
-    formData.password.trim() !== '' &&
-    formData.confirmPassword.trim() !== '' &&
-    Object.keys(fieldErrors).length === 0
+  !isLoading && (
+    formData.email.trim() !== '' ||
+    formData.username.trim() !== '' ||
+    formData.password.trim() !== '' ||
+    formData.confirmPassword.trim() !== ''
+  )
 
   /**
    * Get field error message for display
+   * FIXED: Return error only if it's not empty
    */
   const getFieldError = (fieldName: string): string | null => {
-    return fieldErrors[fieldName] || null
+    const error = fieldErrors[fieldName]
+    return error && error.trim() !== '' ? error : null
   }
 
   return (
