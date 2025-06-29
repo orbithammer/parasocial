@@ -365,51 +365,131 @@ describe('Follow Integration Tests', () => {
   })
 
   /**
-   * Test recent followers functionality
-   */
-  describe('Recent Followers', () => {
-    beforeEach(async () => {
-      // Create followers with slight delays to ensure different timestamps
-      await followRepository.create({ followerId: 'recent-1', followedId: testCreator1.id })
-      await new Promise(resolve => setTimeout(resolve, 10)) // Small delay
-      await followRepository.create({ followerId: 'recent-2', followedId: testCreator1.id })
-      await new Promise(resolve => setTimeout(resolve, 10)) // Small delay
-      await followRepository.create({ followerId: 'recent-3', followedId: testCreator1.id })
+ * Test recent followers functionality
+ * Creates dedicated test user to avoid foreign key constraint violations
+ * from other test sections that may delete shared test users
+ */
+describe('Recent Followers', () => {
+  // Dedicated test user for this test section only
+  let recentFollowersTestUser: any
+
+  beforeEach(async () => {
+    // Create a dedicated test user specifically for recent followers tests
+    // This prevents foreign key constraint violations when other tests delete shared users
+    recentFollowersTestUser = await prisma.user.create({
+      data: {
+        email: 'recent-followers-test@example.com',
+        username: 'recentfollowerstestuser',
+        displayName: 'Recent Followers Test User',
+        passwordHash: 'hashedpassword-recent',
+        bio: 'Dedicated user for recent followers integration tests',
+        avatar: 'https://example.com/recent-followers-avatar.jpg',
+        isVerified: true,
+        verificationTier: 'email'
+      }
     })
 
-    it('should get recent followers in correct order', async () => {
-      const recentFollowers = await followRepository.findRecentFollowers(testCreator1.id, 5)
-
-      expect(recentFollowers).toHaveLength(3)
-
-      // Verify ordering (most recent first)
-      expect(recentFollowers[0].followerId).toBe('recent-3') // Most recent
-      expect(recentFollowers[1].followerId).toBe('recent-2') // Middle
-      expect(recentFollowers[2].followerId).toBe('recent-1') // Oldest
-
-      // Verify timestamps are in descending order
-      expect(recentFollowers[0].createdAt.getTime()).toBeGreaterThanOrEqual(
-        recentFollowers[1].createdAt.getTime()
-      )
-      expect(recentFollowers[1].createdAt.getTime()).toBeGreaterThanOrEqual(
-        recentFollowers[2].createdAt.getTime()
-      )
+    // Create followers with slight delays to ensure different timestamps
+    // Using the dedicated test user to avoid foreign key constraint violations
+    await followRepository.create({ 
+      followerId: 'recent-1', 
+      followedId: recentFollowersTestUser.id 
     })
-
-    it('should respect custom limit', async () => {
-      const limitedFollowers = await followRepository.findRecentFollowers(testCreator1.id, 2)
-
-      expect(limitedFollowers).toHaveLength(2)
-      expect(limitedFollowers[0].followerId).toBe('recent-3') // Most recent
-      expect(limitedFollowers[1].followerId).toBe('recent-2') // Second most recent
+    
+    // Small delay to ensure different timestamps for ordering tests
+    await new Promise(resolve => setTimeout(resolve, 10))
+    
+    await followRepository.create({ 
+      followerId: 'recent-2', 
+      followedId: recentFollowersTestUser.id 
     })
-
-    it('should return empty array for user with no followers', async () => {
-      const recentFollowers = await followRepository.findRecentFollowers(testCreator2.id, 5)
-
-      expect(recentFollowers).toHaveLength(0)
+    
+    // Small delay to ensure different timestamps for ordering tests
+    await new Promise(resolve => setTimeout(resolve, 10))
+    
+    await followRepository.create({ 
+      followerId: 'recent-3', 
+      followedId: recentFollowersTestUser.id 
     })
   })
+
+  afterEach(async () => {
+    // Clean up follows first due to foreign key constraints
+    // Delete all follows for our dedicated test user
+    await prisma.follow.deleteMany({
+      where: {
+        followedId: recentFollowersTestUser.id
+      }
+    })
+    
+    // Then delete the dedicated test user
+    await prisma.user.delete({
+      where: {
+        id: recentFollowersTestUser.id
+      }
+    })
+  })
+
+  it('should get recent followers in correct order', async () => {
+    // Test that recent followers are returned in descending chronological order
+    const recentFollowers = await followRepository.findRecentFollowers(recentFollowersTestUser.id, 5)
+
+    expect(recentFollowers).toHaveLength(3)
+
+    // Verify ordering - most recent follower should be first
+    expect(recentFollowers[0].followerId).toBe('recent-3') // Most recent
+    expect(recentFollowers[1].followerId).toBe('recent-2') // Middle
+    expect(recentFollowers[2].followerId).toBe('recent-1') // Oldest
+
+    // Verify timestamps are in descending order (newest first)
+    expect(recentFollowers[0].createdAt.getTime()).toBeGreaterThanOrEqual(
+      recentFollowers[1].createdAt.getTime()
+    )
+    expect(recentFollowers[1].createdAt.getTime()).toBeGreaterThanOrEqual(
+      recentFollowers[2].createdAt.getTime()
+    )
+  })
+
+  it('should respect custom limit', async () => {
+    // Test that the limit parameter correctly restricts the number of results
+    const limitedFollowers = await followRepository.findRecentFollowers(recentFollowersTestUser.id, 2)
+
+    expect(limitedFollowers).toHaveLength(2)
+    
+    // Should return the 2 most recent followers
+    expect(limitedFollowers[0].followerId).toBe('recent-3') // Most recent
+    expect(limitedFollowers[1].followerId).toBe('recent-2') // Second most recent
+  })
+
+  it('should return empty array for user with no followers', async () => {
+    // Create another test user with no followers to test empty result
+    const userWithNoFollowers = await prisma.user.create({
+      data: {
+        email: 'no-followers-test@example.com',
+        username: 'nofollowerstestuser',
+        displayName: 'No Followers Test User',
+        passwordHash: 'hashedpassword-no-followers',
+        bio: 'User with no followers for testing',
+        isVerified: false,
+        verificationTier: 'none'
+      }
+    })
+
+    try {
+      // Test that a user with no followers returns empty array
+      const recentFollowers = await followRepository.findRecentFollowers(userWithNoFollowers.id, 5)
+
+      expect(recentFollowers).toHaveLength(0)
+    } finally {
+      // Clean up the temporary test user
+      await prisma.user.delete({
+        where: {
+          id: userWithNoFollowers.id
+        }
+      })
+    }
+  })
+})
 
   /**
    * Test follow statistics
