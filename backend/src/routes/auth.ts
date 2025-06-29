@@ -1,6 +1,6 @@
 // backend/src/routes/auth.ts
-// Fixed login route implementation with explicit field selection
-// This resolves the failing test and improves security
+// Authentication routes with both controller-based and direct service injection approaches
+// Includes register, login, logout, and me endpoints with proper error handling
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -26,6 +26,7 @@ interface AuthRouterDependencies {
   authController: AuthController
   authMiddleware: MiddlewareFunction
 }
+
 
 // Input validation schemas using Zod
 const registerSchema = z.object({
@@ -66,9 +67,10 @@ interface AuthResponse {
       avatar: string | null
       isVerified: boolean
       verificationTier: string | null
-      createdAt: Date
+      createdAt: string  // Changed from Date to string since we use toISOString()
     }
     token: string
+    message?: string  // Add optional message field for logout
   }
   error?: {
     code: string
@@ -134,22 +136,144 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
   const authMiddleware = createAuthMiddleware(authService)
 
   /**
-   * POST /auth/login
-   * Authenticate user with email and password
-   * FIXED: Now uses explicit field selection for security and performance
+   * POST /auth/register
+   * Register a new user account with direct service access for testing
+   * Validates input, checks for existing users, hashes password, creates user, and returns token
    */
-  router.post('/login', async (req: Request, res: Response): Promise<void> => {
+  router.post('/register', async (req: Request, res: Response): Promise<void> => {
     try {
-      // Validate input data
-      const validation = loginSchema.safeParse(req.body)
-      
-      if (!validation.success) {
+      // Input validation using AuthService (for test compatibility)
+      const validation = authService.validateRegistrationData(req.body)
+      if (!validation.success || !validation.data) {
         res.status(400).json({
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Invalid input data',
-            details: validation.error.errors
+            message: 'Invalid registration data',
+            details: validation.error?.errors || validation.error
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // TypeScript now knows validation.data exists and is RegistrationData
+      const validatedData = validation.data
+      const { username, email, password, displayName } = validatedData
+      
+      // Handle bio separately since it's not in the RegistrationData interface
+      // but might be present in the request body for database storage
+      const bio = typeof req.body.bio === 'string' ? req.body.bio : null
+
+      // Check if username already exists
+      const existingUsername = await prisma.user.findUnique({
+        where: { username }
+      })
+
+      if (existingUsername) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'USERNAME_EXISTS',
+            message: 'Username is already taken',
+            details: {
+              field: 'username',
+              value: username
+            }
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // Check if email already exists
+      const existingEmail = await prisma.user.findUnique({
+        where: { email }
+      })
+
+      if (existingEmail) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'EMAIL_EXISTS',
+            message: 'Email is already registered',
+            details: {
+              field: 'email',
+              value: email
+            }
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // Hash password
+      const passwordHash = await authService.hashPassword(password)
+
+      // Create new user
+      const newUser = await prisma.user.create({
+        data: {
+          username,
+          email,
+          passwordHash,
+          displayName: displayName || username,
+          bio: bio || null,
+          isVerified: false,
+          verificationTier: 'none'
+        }
+      })
+
+      // Generate JWT token
+      const token = authService.generateToken({
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username
+      })
+
+      // Return successful registration response
+      res.status(201).json({
+        success: true,
+        data: {
+          user: {
+            id: newUser.id,
+            username: newUser.username,
+            email: newUser.email,
+            displayName: newUser.displayName,
+            bio: newUser.bio,
+            avatar: newUser.avatar,
+            isVerified: newUser.isVerified,
+            verificationTier: newUser.verificationTier,
+            createdAt: newUser.createdAt.toISOString()
+          },
+          token
+        }
+      } as AuthResponse)
+
+    } catch (error) {
+      console.error('Registration error:', error)
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'SERVER_ERROR',
+          message: 'Internal server error during registration'
+        }
+      } as AuthResponse)
+    }
+  })
+
+  /**
+   * POST /auth/login
+   * Authenticate user with email and password
+   * Uses explicit field selection to exclude passwordHash from response
+   */
+  router.post('/login', async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Input validation using AuthService
+      const validation = authService.validateLoginData(req.body)
+      if (!validation.success || !validation.data) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid login data',
+            details: validation.error?.errors
           }
         } as AuthResponse)
         return
@@ -157,15 +281,14 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
 
       const { email, password } = validation.data
 
-      // FIXED: Use explicit field selection instead of fetching all fields
-      // This improves security by only fetching needed data and satisfies the test expectation
+      // Find user by email with all required fields
       const user = await prisma.user.findUnique({
         where: { email },
         select: {
           id: true,
           username: true,
           email: true,
-          passwordHash: true, // Only needed for password verification
+          passwordHash: true,
           displayName: true,
           bio: true,
           avatar: true,
@@ -175,27 +298,12 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
         }
       })
 
-      // Check if user exists
       if (!user) {
         res.status(401).json({
           success: false,
           error: {
             code: 'INVALID_CREDENTIALS',
             message: 'Invalid email or password'
-          }
-        } as AuthResponse)
-        return
-      }
-
-      // Validate user data structure from database
-      // This handles cases where database returns malformed/incomplete user data
-      if (!user.passwordHash || !user.username || !user.email || !user.id) {
-        console.error('Malformed user data from database:', { userId: user.id })
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'SERVER_ERROR',
-            message: 'Internal server error during login'
           }
         } as AuthResponse)
         return
@@ -229,7 +337,10 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       res.status(200).json({
         success: true,
         data: {
-          user: userWithoutPassword,
+          user: {
+            ...userWithoutPassword,
+            createdAt: userWithoutPassword.createdAt.toISOString()  // Convert Date to string
+          },
           token
         }
       } as AuthResponse)
@@ -327,7 +438,10 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       res.status(200).json({
         success: true,
         data: {
-          user,
+          user: {
+            ...user,
+            createdAt: user.createdAt.toISOString()  // Convert Date to string
+          },
           token: req.headers.authorization?.replace('Bearer ', '') || '' // Return current token
         }
       } as AuthResponse)
