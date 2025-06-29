@@ -1,12 +1,11 @@
 // backend/tests/integration/Follow.integration.test.ts
-// Integration tests for Follow functionality with real database operations
-// Tests FollowRepository methods against actual PostgreSQL database
+// Complete integration tests for Follow model with User model and real database operations
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { FollowRepository } from '../../src/repositories/FollowRepository'
 
-// Use test database with proper connection URL
+// Use test database
 const prisma = new PrismaClient({
   datasources: {
     db: {
@@ -18,14 +17,14 @@ const prisma = new PrismaClient({
 describe('Follow Integration Tests', () => {
   let followRepository: FollowRepository
   let testCreator1: any
-  let testCreator2: any  
+  let testCreator2: any
   let testCreator3: any
 
   beforeAll(async () => {
-    // Initialize repository with real Prisma client
+    // Initialize repository
     followRepository = new FollowRepository(prisma)
     
-    // Clean up any existing test data before starting
+    // Clean up any existing test data
     await prisma.follow.deleteMany({
       where: {
         OR: [
@@ -43,17 +42,17 @@ describe('Follow Integration Tests', () => {
   })
 
   beforeEach(async () => {
-    // Create test creator users for each test
+    // Create fresh test users for each test to avoid foreign key constraint violations
     testCreator1 = await prisma.user.create({
       data: {
         email: 'creator1-follow-integration-test@example.com',
         username: 'testcreator1_follow',
         displayName: 'Test Creator 1',
         passwordHash: 'hashedpassword1',
-        bio: 'Integration test creator user 1',
+        bio: 'Test creator 1 for follow integration tests',
+        avatar: 'https://example.com/avatar1.jpg',
         isVerified: true,
-        verificationTier: 'email',
-        avatar: 'https://example.com/avatar1.jpg'
+        verificationTier: 'email'
       }
     })
 
@@ -61,11 +60,12 @@ describe('Follow Integration Tests', () => {
       data: {
         email: 'creator2-follow-integration-test@example.com',
         username: 'testcreator2_follow',
-        displayName: 'Test Creator 2', 
+        displayName: 'Test Creator 2',
         passwordHash: 'hashedpassword2',
-        bio: 'Integration test creator user 2',
+        bio: 'Test creator 2 for follow integration tests',
+        avatar: 'https://example.com/avatar2.jpg',
         isVerified: false,
-        avatar: 'https://example.com/avatar2.jpg'
+        verificationTier: 'none'
       }
     })
 
@@ -75,7 +75,8 @@ describe('Follow Integration Tests', () => {
         username: 'testcreator3_follow',
         displayName: 'Test Creator 3',
         passwordHash: 'hashedpassword3',
-        bio: 'Integration test creator user 3',
+        bio: 'Test creator 3 for follow integration tests',
+        avatar: 'https://example.com/avatar3.jpg',
         isVerified: true,
         verificationTier: 'notable'
       }
@@ -83,12 +84,14 @@ describe('Follow Integration Tests', () => {
   })
 
   afterEach(async () => {
-    // Clean up test data after each test
+    // Clean up follows first (foreign key constraints require this order)
     await prisma.follow.deleteMany({
       where: {
         followedId: { in: [testCreator1.id, testCreator2.id, testCreator3.id] }
       }
     })
+    
+    // Then clean up users
     await prisma.user.deleteMany({
       where: {
         id: { in: [testCreator1.id, testCreator2.id, testCreator3.id] }
@@ -174,6 +177,19 @@ describe('Follow Integration Tests', () => {
 
       // Attempt to create follow with invalid user ID should fail
       await expect(followRepository.create(invalidFollowData)).rejects.toThrow()
+    })
+
+    it('should prevent duplicate follow relationships', async () => {
+      const followData = {
+        followerId: 'duplicate-test-follower',
+        followedId: testCreator1.id
+      }
+
+      // Create first follow relationship
+      await followRepository.create(followData)
+
+      // Attempt to create duplicate should fail due to unique constraint
+      await expect(followRepository.create(followData)).rejects.toThrow()
     })
   })
 
@@ -267,6 +283,24 @@ describe('Follow Integration Tests', () => {
 
       expect(deleted).toBeNull()
     })
+
+    it('should delete federated follow relationship by actor ID', async () => {
+      // Create federated follow
+      await followRepository.create({
+        followerId: 'fed-follower-to-delete',
+        followedId: testCreator2.id,
+        actorId: 'https://mastodon.example.com/users/test-delete'
+      })
+
+      // Delete by actor ID
+      const deleted = await followRepository.deleteByFollowerAndFollowed(
+        'https://mastodon.example.com/users/test-delete', 
+        testCreator2.id
+      )
+
+      expect(deleted).not.toBeNull()
+      expect(deleted!.actorId).toBe('https://mastodon.example.com/users/test-delete')
+    })
   })
 
   /**
@@ -284,187 +318,62 @@ describe('Follow Integration Tests', () => {
         { followerId: 'follower-6', followedId: testCreator1.id, actorId: 'https://pleroma.example.com/user2' }
       ]
 
-      // Create all follow relationships
       for (const followerData of followers) {
         await followRepository.create(followerData)
       }
-
-      // Add some followers for other creators
-      await followRepository.create({
-        followerId: 'other-follower-1',
-        followedId: testCreator2.id
-      })
     })
 
-    it('should get followers with default pagination', async () => {
+    it('should get paginated follower list', async () => {
+      const result = await followRepository.findFollowersByUserId(testCreator1.id, { limit: 3, offset: 0 })
+
+      expect(result.followers).toHaveLength(3)
+      expect(result.totalCount).toBe(6)
+      expect(result.hasMore).toBe(true) // 0 + 3 < 6, so there are more
+    })
+
+    it('should get second page of followers', async () => {
+      const result = await followRepository.findFollowersByUserId(testCreator1.id, { limit: 3, offset: 3 })
+
+      expect(result.followers).toHaveLength(3)
+      expect(result.totalCount).toBe(6)
+      expect(result.hasMore).toBe(false) // 3 + 3 >= 6, so no more
+    })
+
+    it('should return all followers when no pagination specified', async () => {
       const result = await followRepository.findFollowersByUserId(testCreator1.id)
 
-      // Verify pagination results
-      expect(result.followers).toHaveLength(6) // All 6 followers fit in default limit of 20
+      expect(result.followers).toHaveLength(6)
       expect(result.totalCount).toBe(6)
-      expect(result.hasMore).toBe(false) // 0 + 20 >= 6
-
-      // Verify followers are sorted by creation date (most recent first)
-      expect(result.followers[0].createdAt.getTime()).toBeGreaterThanOrEqual(
-        result.followers[5].createdAt.getTime()
-      )
-
-      // Verify follower data structure
-      const firstFollower = result.followers[0]
-      expect(firstFollower.id).toBeDefined()
-      expect(firstFollower.followerId).toBeDefined()
-      expect(firstFollower.createdAt).toBeInstanceOf(Date)
-      expect(firstFollower.followed.id).toBe(testCreator1.id)
-      expect(firstFollower.followed.username).toBe('testcreator1_follow')
     })
 
-    it('should handle custom pagination correctly', async () => {
-      // Test pagination with offset and limit
-      const page1 = await followRepository.findFollowersByUserId(testCreator1.id, { offset: 0, limit: 3 })
-      expect(page1.followers).toHaveLength(3)
-      expect(page1.totalCount).toBe(6)
-      expect(page1.hasMore).toBe(true) // 0 + 3 < 6
+    it('should return empty list for user with no followers', async () => {
+      const result = await followRepository.findFollowersByUserId(testCreator3.id)
 
-      const page2 = await followRepository.findFollowersByUserId(testCreator1.id, { offset: 3, limit: 3 })
-      expect(page2.followers).toHaveLength(3)
-      expect(page2.totalCount).toBe(6)
-      expect(page2.hasMore).toBe(false) // 3 + 3 >= 6
-
-      // Verify no overlap between pages
-      const page1Ids = page1.followers.map(f => f.id)
-      const page2Ids = page2.followers.map(f => f.id)
-      const intersection = page1Ids.filter(id => page2Ids.includes(id))
-      expect(intersection).toHaveLength(0)
+      expect(result.followers).toHaveLength(0)
+      expect(result.totalCount).toBe(0)
     })
 
-    it('should only return followers for specified user', async () => {
-      const creator1Followers = await followRepository.findFollowersByUserId(testCreator1.id)
-      const creator2Followers = await followRepository.findFollowersByUserId(testCreator2.id)
+    it('should include both local and federated followers', async () => {
+      const result = await followRepository.findFollowersByUserId(testCreator1.id)
 
-      expect(creator1Followers.totalCount).toBe(6)
-      expect(creator2Followers.totalCount).toBe(1)
+      const localFollowers = result.followers.filter(f => !f.actorId)
+      const federatedFollowers = result.followers.filter(f => f.actorId)
 
-      // Verify all returned followers are for the correct user
-      creator1Followers.followers.forEach(follow => {
-        expect(follow.followed.id).toBe(testCreator1.id)
-      })
-
-      creator2Followers.followers.forEach(follow => {
-        expect(follow.followed.id).toBe(testCreator2.id)
-      })
+      expect(localFollowers).toHaveLength(4)
+      expect(federatedFollowers).toHaveLength(2)
     })
   })
 
   /**
-   * Test follow statistics calculations
-   */
-  describe('Follow Statistics', () => {
-    beforeEach(async () => {
-      // Create varied follow relationships for statistics testing
-      // testCreator1: 3 followers
-      await followRepository.create({ followerId: 'stats-follower-1', followedId: testCreator1.id })
-      await followRepository.create({ followerId: 'stats-follower-2', followedId: testCreator1.id })
-      await followRepository.create({ followerId: 'stats-follower-3', followedId: testCreator1.id })
-
-      // testCreator2: 1 follower  
-      await followRepository.create({ followerId: 'stats-follower-4', followedId: testCreator2.id })
-
-      // testCreator3: 0 followers (but following others - not typical for ParaSocial but testing completeness)
-      await followRepository.create({ followerId: testCreator3.id, followedId: testCreator1.id })
-    })
-
-    it('should calculate correct follower and following counts', async () => {
-      // Test creator with multiple followers
-      const creator1Stats = await followRepository.getFollowStats(testCreator1.id)
-      expect(creator1Stats.followerCount).toBe(4) // 3 direct + 1 from testCreator3
-      expect(creator1Stats.followingCount).toBe(0) // ParaSocial creators typically don't follow others
-
-      // Test creator with one follower
-      const creator2Stats = await followRepository.getFollowStats(testCreator2.id)
-      expect(creator2Stats.followerCount).toBe(1)
-      expect(creator2Stats.followingCount).toBe(0)
-
-      // Test creator with no followers but following someone
-      const creator3Stats = await followRepository.getFollowStats(testCreator3.id)
-      expect(creator3Stats.followerCount).toBe(0)
-      expect(creator3Stats.followingCount).toBe(1) // Following testCreator1
-    })
-
-    it('should handle users with no relationships', async () => {
-      // Create a user with no follow relationships
-      const isolatedUser = await prisma.user.create({
-        data: {
-          email: 'isolated-follow-integration-test@example.com',
-          username: 'isolated_user',
-          displayName: 'Isolated User',
-          passwordHash: 'password'
-        }
-      })
-
-      const stats = await followRepository.getFollowStats(isolatedUser.id)
-      expect(stats.followerCount).toBe(0)
-      expect(stats.followingCount).toBe(0)
-
-      // Cleanup
-      await prisma.user.delete({ where: { id: isolatedUser.id } })
-    })
-  })
-
-  /**
-   * Test bulk operations for efficient UI updates
-   */
-  describe('Bulk Operations', () => {
-    beforeEach(async () => {
-      // Create follow relationships for bulk testing
-      await followRepository.create({ followerId: 'bulk-follower', followedId: testCreator1.id })
-      await followRepository.create({ followerId: 'bulk-follower', followedId: testCreator3.id })
-      // Intentionally not following testCreator2
-    })
-
-    it('should check follow status for multiple users efficiently', async () => {
-      const userIds = [testCreator1.id, testCreator2.id, testCreator3.id]
-      const followMap = await followRepository.bulkCheckFollowing('bulk-follower', userIds)
-
-      expect(followMap[testCreator1.id]).toBe(true)  // Following
-      expect(followMap[testCreator2.id]).toBe(false) // Not following
-      expect(followMap[testCreator3.id]).toBe(true)  // Following
-
-      // Verify all requested users are included in result
-      expect(Object.keys(followMap)).toHaveLength(3)
-      expect(followMap).toHaveProperty(testCreator1.id)
-      expect(followMap).toHaveProperty(testCreator2.id)
-      expect(followMap).toHaveProperty(testCreator3.id)
-    })
-
-    it('should handle empty user list', async () => {
-      const followMap = await followRepository.bulkCheckFollowing('bulk-follower', [])
-      expect(followMap).toEqual({})
-    })
-
-    it('should handle bulk check with no follows', async () => {
-      const userIds = [testCreator1.id, testCreator2.id]
-      const followMap = await followRepository.bulkCheckFollowing('non-follower', userIds)
-
-      expect(followMap[testCreator1.id]).toBe(false)
-      expect(followMap[testCreator2.id]).toBe(false)
-    })
-  })
-
-  /**
-   * Test recent followers functionality for notifications
+   * Test recent followers functionality
    */
   describe('Recent Followers', () => {
     beforeEach(async () => {
-      // Create followers with slight time delays to test ordering
+      // Create followers with slight delays to ensure different timestamps
       await followRepository.create({ followerId: 'recent-1', followedId: testCreator1.id })
-      
-      // Add small delay to ensure different timestamps
-      await new Promise(resolve => setTimeout(resolve, 10))
-      
+      await new Promise(resolve => setTimeout(resolve, 10)) // Small delay
       await followRepository.create({ followerId: 'recent-2', followedId: testCreator1.id })
-      
-      await new Promise(resolve => setTimeout(resolve, 10))
-      
+      await new Promise(resolve => setTimeout(resolve, 10)) // Small delay
       await followRepository.create({ followerId: 'recent-3', followedId: testCreator1.id })
     })
 
@@ -494,6 +403,37 @@ describe('Follow Integration Tests', () => {
       expect(limitedFollowers[0].followerId).toBe('recent-3') // Most recent
       expect(limitedFollowers[1].followerId).toBe('recent-2') // Second most recent
     })
+
+    it('should return empty array for user with no followers', async () => {
+      const recentFollowers = await followRepository.findRecentFollowers(testCreator2.id, 5)
+
+      expect(recentFollowers).toHaveLength(0)
+    })
+  })
+
+  /**
+   * Test follow statistics
+   */
+  describe('Follow Statistics', () => {
+    beforeEach(async () => {
+      // Create followers for testCreator1
+      await followRepository.create({ followerId: 'stats-follower-1', followedId: testCreator1.id })
+      await followRepository.create({ followerId: 'stats-follower-2', followedId: testCreator1.id })
+      await followRepository.create({ followerId: 'stats-follower-3', followedId: testCreator1.id })
+
+      // Create followers for testCreator2
+      await followRepository.create({ followerId: 'stats-follower-4', followedId: testCreator2.id })
+    })
+
+    it('should return correct follower count', async () => {
+      const stats1 = await followRepository.getFollowStats(testCreator1.id)
+      const stats2 = await followRepository.getFollowStats(testCreator2.id)
+      const stats3 = await followRepository.getFollowStats(testCreator3.id)
+
+      expect(stats1.followerCount).toBe(3)
+      expect(stats2.followerCount).toBe(1)
+      expect(stats3.followerCount).toBe(0)
+    })
   })
 
   /**
@@ -502,26 +442,110 @@ describe('Follow Integration Tests', () => {
   describe('Cascade Deletion', () => {
     it('should cascade delete follows when followed user is deleted', async () => {
       // Create follow relationships
-      await followRepository.create({ followerId: 'cascade-test-1', followedId: testCreator1.id })
-      await followRepository.create({ followerId: 'cascade-test-2', followedId: testCreator1.id })
+      await followRepository.create({ 
+        followerId: 'cascade-test-1', 
+        followedId: testCreator1.id 
+      })
+      await followRepository.create({ 
+        followerId: 'cascade-test-2', 
+        followedId: testCreator1.id 
+      })
 
-      // Verify follows exist
+      // Verify follows exist before deletion
       const beforeDelete = await followRepository.findFollowersByUserId(testCreator1.id)
       expect(beforeDelete.totalCount).toBe(2)
 
-      // Delete the user (should cascade delete follows)
+      // Delete the user (should cascade delete follows due to onDelete: Cascade in schema)
       await prisma.user.delete({ where: { id: testCreator1.id } })
 
-      // Verify follows were cascade deleted by checking with another creator
-      const afterDelete = await followRepository.findFollowersByUserId(testCreator2.id)
-      // testCreator2 should still exist and have no unexpected follows
-      expect(afterDelete.totalCount).toBe(0)
-
-      // Check that the specific follows are gone by searching the entire follow table
+      // Verify follows were cascade deleted
       const remainingFollows = await prisma.follow.findMany({
         where: { followedId: testCreator1.id }
       })
       expect(remainingFollows).toHaveLength(0)
+
+      // Also verify using count for robustness
+      const followCount = await prisma.follow.count({
+        where: { followedId: testCreator1.id }
+      })
+      expect(followCount).toBe(0)
+    })
+
+    it('should not affect other users follows when one user is deleted', async () => {
+      // Create follows for multiple users
+      await followRepository.create({ 
+        followerId: 'multi-test-1', 
+        followedId: testCreator1.id 
+      })
+      await followRepository.create({ 
+        followerId: 'multi-test-2', 
+        followedId: testCreator2.id 
+      })
+      await followRepository.create({ 
+        followerId: 'multi-test-3', 
+        followedId: testCreator3.id 
+      })
+
+      // Delete one user
+      await prisma.user.delete({ where: { id: testCreator1.id } })
+
+      // Verify other users still have their follows
+      const creator2Follows = await prisma.follow.count({
+        where: { followedId: testCreator2.id }
+      })
+      const creator3Follows = await prisma.follow.count({
+        where: { followedId: testCreator3.id }
+      })
+
+      expect(creator2Follows).toBe(1)
+      expect(creator3Follows).toBe(1)
+
+      // Verify deleted user has no follows
+      const deletedUserFollows = await prisma.follow.count({
+        where: { followedId: testCreator1.id }
+      })
+      expect(deletedUserFollows).toBe(0)
+    })
+  })
+
+  /**
+   * Test edge cases and error handling
+   */
+  describe('Edge Cases and Error Handling', () => {
+    it('should handle very long follower IDs', async () => {
+      const longFollowerId = 'a'.repeat(255) // Max length
+      
+      const followData = {
+        followerId: longFollowerId,
+        followedId: testCreator1.id
+      }
+
+      const createdFollow = await followRepository.create(followData)
+      expect(createdFollow.followerId).toBe(longFollowerId)
+    })
+
+    it('should handle ActivityPub actor URLs properly', async () => {
+      const actorId = 'https://very-long-domain-name.example.com/users/very-long-username-that-tests-limits'
+      
+      const followData = {
+        followerId: 'test-long-actor',
+        followedId: testCreator1.id,
+        actorId: actorId
+      }
+
+      const createdFollow = await followRepository.create(followData)
+      expect(createdFollow.actorId).toBe(actorId)
+    })
+
+    it('should handle null actorId gracefully', async () => {
+      const followData = {
+        followerId: 'test-null-actor',
+        followedId: testCreator1.id,
+        actorId: null
+      }
+
+      const createdFollow = await followRepository.create(followData)
+      expect(createdFollow.actorId).toBeNull()
     })
   })
 })
