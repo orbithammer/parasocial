@@ -27,7 +27,6 @@ interface AuthRouterDependencies {
   authMiddleware: MiddlewareFunction
 }
 
-
 // Input validation schemas using Zod
 const registerSchema = z.object({
   username: z.string()
@@ -77,6 +76,11 @@ interface AuthResponse {
     message: string
     details?: any
   }
+}
+
+// Helper function to safely convert createdAt to string
+function formatCreatedAt(createdAt: Date | string): string {
+  return createdAt instanceof Date ? createdAt.toISOString() : createdAt
 }
 
 /**
@@ -164,41 +168,23 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       // but might be present in the request body for database storage
       const bio = typeof req.body.bio === 'string' ? req.body.bio : null
 
-      // Check if username already exists
-      const existingUsername = await prisma.user.findUnique({
-        where: { username }
+      // Check if user already exists
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            { username }
+          ]
+        }
       })
 
-      if (existingUsername) {
+      if (existingUser) {
+        const conflictField = existingUser.email === email ? 'email' : 'username'
         res.status(409).json({
           success: false,
           error: {
-            code: 'USERNAME_EXISTS',
-            message: 'Username is already taken',
-            details: {
-              field: 'username',
-              value: username
-            }
-          }
-        } as AuthResponse)
-        return
-      }
-
-      // Check if email already exists
-      const existingEmail = await prisma.user.findUnique({
-        where: { email }
-      })
-
-      if (existingEmail) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: 'EMAIL_EXISTS',
-            message: 'Email is already registered',
-            details: {
-              field: 'email',
-              value: email
-            }
+            code: 'USER_EXISTS',
+            message: `User with this ${conflictField} already exists`
           }
         } as AuthResponse)
         return
@@ -214,20 +200,21 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
           email,
           passwordHash,
           displayName: displayName || username,
-          bio: bio || null,
+          bio,
           isVerified: false,
           verificationTier: 'none'
         }
       })
 
-      // Generate JWT token
-      const token = authService.generateToken({
+      // Generate token
+      const userForToken = {
         id: newUser.id,
-        email: newUser.email,
-        username: newUser.username
-      })
+        username: newUser.username,
+        email: newUser.email
+      }
+      const token = authService.generateToken(userForToken)
 
-      // Return successful registration response
+      // Return success response without password hash
       res.status(201).json({
         success: true,
         data: {
@@ -240,7 +227,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
             avatar: newUser.avatar,
             isVerified: newUser.isVerified,
             verificationTier: newUser.verificationTier,
-            createdAt: newUser.createdAt.toISOString()
+            createdAt: formatCreatedAt(newUser.createdAt)
           },
           token
         }
@@ -339,7 +326,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
         data: {
           user: {
             ...userWithoutPassword,
-            createdAt: userWithoutPassword.createdAt.toISOString()  // Convert Date to string
+            createdAt: formatCreatedAt(userWithoutPassword.createdAt)
           },
           token
         }
@@ -440,7 +427,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
         data: {
           user: {
             ...user,
-            createdAt: user.createdAt.toISOString()  // Convert Date to string
+            createdAt: formatCreatedAt(user.createdAt)
           },
           token: req.headers.authorization?.replace('Bearer ', '') || '' // Return current token
         }
