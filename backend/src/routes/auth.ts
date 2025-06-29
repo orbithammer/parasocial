@@ -1,11 +1,12 @@
 // backend/src/routes/auth.ts
 // Authentication route handlers for user registration, login, logout, and profile retrieval
-// Uses existing AuthService and follows API documentation structure
+// Provides both controller-based and service-based routing approaches
 
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { PrismaClient } from '@prisma/client'
 import { AuthService } from '../services/AuthService'
+import { AuthController } from '../controllers/AuthController'
 import { createAuthMiddleware } from '../middleware/authMiddleware'
 
 // Extend Express Request to include user from auth middleware
@@ -15,6 +16,15 @@ interface AuthenticatedRequest extends Request {
     email: string
     username: string
   }
+}
+
+// Middleware function type
+type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
+
+// Dependencies interface for controller-based routing
+interface AuthRouterDependencies {
+  authController: AuthController
+  authMiddleware: MiddlewareFunction
 }
 
 // Input validation schemas using Zod
@@ -68,7 +78,53 @@ interface AuthResponse {
 }
 
 /**
- * Creates authentication routes with dependency injection for better testability
+ * Creates authentication router using controller-based approach
+ * This is the function that app.ts uses for dependency injection
+ * @param dependencies - Injected AuthController and middleware
+ * @returns Express router with authentication endpoints
+ */
+export function createAuthRouter(dependencies: AuthRouterDependencies): Router {
+  const { authController, authMiddleware } = dependencies
+  const router = Router()
+
+  /**
+   * POST /auth/register
+   * Register a new user account using AuthController
+   */
+  router.post('/register', async (req: Request, res: Response) => {
+    await authController.register(req, res)
+  })
+
+  /**
+   * POST /auth/login  
+   * Login to existing account using AuthController
+   */
+  router.post('/login', async (req: Request, res: Response) => {
+    await authController.login(req, res)
+  })
+
+  /**
+   * POST /auth/logout
+   * Logout current session using AuthController
+   */
+  router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
+    await authController.logout(req, res)
+  })
+
+  /**
+   * GET /auth/me
+   * Get current authenticated user's profile using AuthController
+   */
+  router.get('/me', authMiddleware, async (req: Request, res: Response) => {
+    await authController.getCurrentUser(req, res)
+  })
+
+  return router
+}
+
+/**
+ * Creates authentication routes with direct service injection for testing
+ * This function is used by tests that mock Prisma and AuthService directly
  * @param prisma - Prisma client instance for database operations
  * @param authService - Authentication service for password hashing and JWT operations
  * @returns Express router with authentication endpoints
@@ -86,108 +142,115 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
    * - email: string (valid email)
    * - password: string (8-128 chars)
    * - displayName?: string (1-100 chars)
-   * - bio?: string (max 500 chars)
+   * - bio?: string (0-500 chars)
    */
-  router.post('/login', async (req: Request, res: Response): Promise<void> => {
-  try {
-    // Validate input data
-    const validatedData = loginSchema.parse(req.body)
-
-    // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email: validatedData.email },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        passwordHash: true, // Need passwordHash for verification
-        displayName: true,
-        bio: true,
-        avatar: true,
-        isVerified: true,
-        verificationTier: true,
-        createdAt: true
+  router.post('/register', async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Validate input data using Zod
+      const validationResult = registerSchema.safeParse(req.body)
+      if (!validationResult.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid input data',
+            details: validationResult.error.errors
+          }
+        } as AuthResponse)
+        return
       }
-    })
 
-    if (!user) {
-      res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_CREDENTIALS',
-          message: 'Invalid email or password'
+      const { username, email, password, displayName, bio } = validationResult.data
+
+      // Check if username is already taken
+      const existingUsername = await prisma.user.findUnique({
+        where: { username }
+      })
+
+      if (existingUsername) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'USERNAME_EXISTS',
+            message: 'Username is already taken',
+            details: {
+              field: 'username',
+              value: username
+            }
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // Check if email is already registered
+      const existingEmail = await prisma.user.findUnique({
+        where: { email }
+      })
+
+      if (existingEmail) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'EMAIL_EXISTS',
+            message: 'Email is already registered',
+            details: {
+              field: 'email',
+              value: email
+            }
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // Hash password and create user
+      const passwordHash = await authService.hashPassword(password)
+
+      const newUser = await prisma.user.create({
+        data: {
+          username,
+          email,
+          passwordHash,
+          displayName: displayName || username,
+          bio: bio || null,
+          isVerified: false,
+          verificationTier: 'none'
+        }
+      })
+
+      // Generate JWT token
+      const userForToken = {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email
+      }
+      const token = authService.generateToken(userForToken)
+
+      // Return user data without passwordHash
+      const { passwordHash: _, ...userWithoutPassword } = newUser
+
+      res.status(201).json({
+        success: true,
+        data: {
+          user: userWithoutPassword,
+          token
         }
       } as AuthResponse)
-      return
-    }
 
-    // Check if passwordHash exists
-    if (!user.passwordHash) {
-      throw new Error('Malformed user data: passwordHash missing')
-    }
-
-    // Verify password using AuthService
-    const isValidPassword = await authService.verifyPassword(user.passwordHash, validatedData.password)
-
-    if (!isValidPassword) {
-      res.status(401).json({
+    } catch (error) {
+      console.error('Registration error:', error)
+      res.status(500).json({
         success: false,
         error: {
-          code: 'INVALID_CREDENTIALS',
-          message: 'Invalid email or password'
+          code: 'SERVER_ERROR',
+          message: 'Internal server error during registration'
         }
       } as AuthResponse)
-      return
     }
-
-    // Generate JWT token
-    const userForToken = {
-      id: user.id,
-      username: user.username,
-      email: user.email
-    }
-    const token = authService.generateToken(userForToken)
-
-    // Return user data without passwordHash
-    const { passwordHash, ...userWithoutPassword } = user
-
-    res.status(200).json({
-      success: true,
-      data: {
-        user: userWithoutPassword,
-        token
-      }
-    } as AuthResponse)
-
-  } catch (error) {
-    // Handle Zod validation errors
-    if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid input data',
-          details: error.errors
-        }
-      } as AuthResponse)
-      return
-    }
-
-    // Handle other errors
-    console.error('Login error:', error)
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'Internal server error during login'
-      }
-    } as AuthResponse)
-  }
-})
+  })
 
   /**
    * POST /auth/login
-   * Authenticate user and return JWT token
+   * Login to existing user account
    * 
    * Request Body:
    * - email: string (valid email)
@@ -195,24 +258,25 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
    */
   router.post('/login', async (req: Request, res: Response): Promise<void> => {
     try {
-      // Validate input data
-      const validatedData = loginSchema.parse(req.body)
+      // Validate input data using Zod
+      const validationResult = loginSchema.safeParse(req.body)
+      if (!validationResult.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid input data',
+            details: validationResult.error.errors
+          }
+        } as AuthResponse)
+        return
+      }
+
+      const { email, password } = validationResult.data
 
       // Find user by email
       const user = await prisma.user.findUnique({
-        where: { email: validatedData.email },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          passwordHash: true, // Need passwordHash for verification
-          displayName: true,
-          bio: true,
-          avatar: true,
-          isVerified: true,
-          verificationTier: true,
-          createdAt: true
-        }
+        where: { email }
       })
 
       if (!user) {
@@ -226,10 +290,10 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
         return
       }
 
-      // Verify password using AuthService
-      const isValidPassword = await authService.verifyPassword(user.passwordHash, validatedData.password)
+      // Verify password
+      const isPasswordValid = await authService.verifyPassword(user.passwordHash, password)
 
-      if (!isValidPassword) {
+      if (!isPasswordValid) {
         res.status(401).json({
           success: false,
           error: {
@@ -249,7 +313,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       const token = authService.generateToken(userForToken)
 
       // Return user data without passwordHash
-      const { passwordHash, ...userWithoutPassword } = user
+      const { passwordHash: _, ...userWithoutPassword } = user
 
       res.status(200).json({
         success: true,
@@ -260,20 +324,6 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       } as AuthResponse)
 
     } catch (error) {
-      // Handle Zod validation errors
-      if (error instanceof z.ZodError) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid input data',
-            details: error.errors
-          }
-        } as AuthResponse)
-        return
-      }
-
-      // Handle other errors
       console.error('Login error:', error)
       res.status(500).json({
         success: false,
@@ -311,7 +361,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
           code: 'SERVER_ERROR',
           message: 'Internal server error during logout'
         }
-      })
+      } as AuthResponse)
     }
   })
 
@@ -386,5 +436,5 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
   return router
 }
 
-// Default export for easy importing
-export default createAuthRoutes
+// Default export for easy importing (controller-based approach)
+export default createAuthRouter
