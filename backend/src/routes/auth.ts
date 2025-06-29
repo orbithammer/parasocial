@@ -1,6 +1,6 @@
 // backend/src/routes/auth.ts
 // Authentication routes with both controller-based and direct service injection approaches
-// Includes register, login, logout, and me endpoints with proper error handling
+// Fixed to match test expectations and proper error handling
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -70,6 +70,27 @@ interface AuthResponse {
     }
     token: string
     message?: string  // Add optional message field for logout
+  }
+  error?: {
+    code: string
+    message: string
+    details?: any
+  }
+}
+
+// User profile response for /me endpoint
+interface UserProfileResponse {
+  success: boolean
+  data?: {
+    id: string
+    username: string
+    email: string
+    displayName: string | null
+    bio: string | null
+    avatar: string | null
+    isVerified: boolean
+    verificationTier: string | null
+    createdAt: string
   }
   error?: {
     code: string
@@ -168,67 +189,86 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       // but might be present in the request body for database storage
       const bio = typeof req.body.bio === 'string' ? req.body.bio : null
 
-      // Check if user already exists
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email },
-            { username }
-          ]
-        }
+      // Check if user already exists - first check username, then email
+      const existingUserByUsername = await prisma.user.findUnique({
+        where: { username }
       })
 
-      if (existingUser) {
-        const conflictField = existingUser.email === email ? 'email' : 'username'
+      if (existingUserByUsername) {
         res.status(409).json({
           success: false,
           error: {
-            code: 'USER_EXISTS',
-            message: `User with this ${conflictField} already exists`
+            code: 'USERNAME_EXISTS',
+            message: 'Username is already taken',
+            details: {
+              field: 'username',
+              value: username
+            }
           }
         } as AuthResponse)
         return
       }
 
-      // Hash password
-      const passwordHash = await authService.hashPassword(password)
-
-      // Create new user
-      const newUser = await prisma.user.create({
-        data: {
-          username,
-          email,
-          passwordHash,
-          displayName: displayName || username,
-          bio,
-          isVerified: false,
-          verificationTier: 'none'
-        }
+      const existingUserByEmail = await prisma.user.findUnique({
+        where: { email }
       })
 
-      // Generate token
-      const userForToken = {
+      if (existingUserByEmail) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'EMAIL_EXISTS',
+            message: 'Email is already registered',
+            details: {
+              field: 'email',
+              value: email
+            }
+          }
+        } as AuthResponse)
+        return
+      }
+
+      // Hash password and create user
+      const hashedPassword = await authService.hashPassword(password)
+      const userData = {
+        username,
+        email,
+        passwordHash: hashedPassword,
+        displayName: displayName || username,
+        bio: bio,
+        isVerified: false,
+        verificationTier: 'none'
+      }
+
+      const newUser = await prisma.user.create({
+        data: userData
+      })
+
+      // Generate token for user authentication
+      const tokenPayload = {
         id: newUser.id,
         username: newUser.username,
         email: newUser.email
       }
-      const token = authService.generateToken(userForToken)
+      const token = authService.generateToken(tokenPayload)
 
-      // Return success response without password hash
+      // Return user data and token (excluding password hash)
+      const responseUser = {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        displayName: newUser.displayName,
+        bio: newUser.bio,
+        avatar: newUser.avatar,
+        isVerified: newUser.isVerified,
+        verificationTier: newUser.verificationTier,
+        createdAt: formatCreatedAt(newUser.createdAt)
+      }
+
       res.status(201).json({
         success: true,
         data: {
-          user: {
-            id: newUser.id,
-            username: newUser.username,
-            email: newUser.email,
-            displayName: newUser.displayName,
-            bio: newUser.bio,
-            avatar: newUser.avatar,
-            isVerified: newUser.isVerified,
-            verificationTier: newUser.verificationTier,
-            createdAt: formatCreatedAt(newUser.createdAt)
-          },
+          user: responseUser,
           token
         }
       } as AuthResponse)
@@ -247,8 +287,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
 
   /**
    * POST /auth/login
-   * Authenticate user with email and password
-   * Uses explicit field selection to exclude passwordHash from response
+   * Authenticate user and return JWT token
    */
   router.post('/login', async (req: Request, res: Response): Promise<void> => {
     try {
@@ -260,7 +299,7 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid login data',
-            details: validation.error?.errors
+            details: validation.error?.errors || validation.error
           }
         } as AuthResponse)
         return
@@ -268,21 +307,9 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
 
       const { email, password } = validation.data
 
-      // Find user by email with all required fields
+      // Find user by email
       const user = await prisma.user.findUnique({
-        where: { email },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          passwordHash: true,
-          displayName: true,
-          bio: true,
-          avatar: true,
-          isVerified: true,
-          verificationTier: true,
-          createdAt: true
-        }
+        where: { email }
       })
 
       if (!user) {
@@ -297,9 +324,8 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
       }
 
       // Verify password
-      const isPasswordValid = await authService.verifyPassword(user.passwordHash, password)
-
-      if (!isPasswordValid) {
+      const isValidPassword = await authService.verifyPassword(user.passwordHash, password)
+      if (!isValidPassword) {
         res.status(401).json({
           success: false,
           error: {
@@ -310,24 +336,31 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
         return
       }
 
-      // Generate JWT token
-      const userForToken = {
+      // Generate token for authenticated user
+      const tokenPayload = {
         id: user.id,
         username: user.username,
         email: user.email
       }
-      const token = authService.generateToken(userForToken)
+      const token = authService.generateToken(tokenPayload)
 
-      // Return user data without passwordHash
-      const { passwordHash: _, ...userWithoutPassword } = user
+      // Return user data and token (excluding password hash)
+      const responseUser = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        displayName: user.displayName,
+        bio: user.bio,
+        avatar: user.avatar,
+        isVerified: user.isVerified,
+        verificationTier: user.verificationTier,
+        createdAt: formatCreatedAt(user.createdAt)
+      }
 
-      res.status(200).json({
+      res.json({
         success: true,
         data: {
-          user: {
-            ...userWithoutPassword,
-            createdAt: formatCreatedAt(userWithoutPassword.createdAt)
-          },
+          user: responseUser,
           token
         }
       } as AuthResponse)
@@ -346,22 +379,18 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
 
   /**
    * POST /auth/logout
-   * Logout user (client-side token removal, server acknowledges)
-   * Protected route - requires valid JWT token
+   * Logout current user session (JWT-based - handled client-side)
    */
   router.post('/logout', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      // For JWT tokens, logout is primarily client-side (remove token)
-      // Server just acknowledges the logout request
-      // In the future, this could be enhanced with token blacklisting
-      
-      res.status(200).json({
+      // For JWT-based auth, logout is typically handled client-side
+      // Server can maintain a blacklist of tokens if needed
+      res.json({
         success: true,
         data: {
-          message: 'Successfully logged out'
+          message: 'Logged out successfully'
         }
-      })
-
+      } as AuthResponse)
     } catch (error) {
       console.error('Logout error:', error)
       res.status(500).json({
@@ -377,38 +406,23 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
   /**
    * GET /auth/me
    * Get current authenticated user's profile
-   * Protected route - requires valid JWT token
    */
   router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      // User data is available from auth middleware
-      const userId = req.user?.id
-
-      if (!userId) {
+      if (!req.user) {
         res.status(401).json({
           success: false,
           error: {
             code: 'AUTHENTICATION_REQUIRED',
-            message: 'Valid authentication token required'
+            message: 'Authentication required'
           }
-        } as AuthResponse)
+        } as UserProfileResponse)
         return
       }
 
-      // Fetch current user data from database with explicit field selection
+      // Find user by ID from token
       const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          displayName: true,
-          bio: true,
-          avatar: true,
-          isVerified: true,
-          verificationTier: true,
-          createdAt: true
-        }
+        where: { id: req.user.id }
       })
 
       if (!user) {
@@ -416,37 +430,41 @@ export function createAuthRoutes(prisma: PrismaClient, authService: AuthService)
           success: false,
           error: {
             code: 'USER_NOT_FOUND',
-            message: 'User account not found'
+            message: 'User not found'
           }
-        } as AuthResponse)
+        } as UserProfileResponse)
         return
       }
 
-      res.status(200).json({
+      // Return user profile data
+      const responseUser = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        displayName: user.displayName,
+        bio: user.bio,
+        avatar: user.avatar,
+        isVerified: user.isVerified,
+        verificationTier: user.verificationTier,
+        createdAt: formatCreatedAt(user.createdAt)
+      }
+
+      res.json({
         success: true,
-        data: {
-          user: {
-            ...user,
-            createdAt: formatCreatedAt(user.createdAt)
-          },
-          token: req.headers.authorization?.replace('Bearer ', '') || '' // Return current token
-        }
-      } as AuthResponse)
+        data: responseUser
+      } as UserProfileResponse)
 
     } catch (error) {
-      console.error('Get user profile error:', error)
+      console.error('Get current user error:', error)
       res.status(500).json({
         success: false,
         error: {
           code: 'SERVER_ERROR',
-          message: 'Internal server error retrieving user profile'
+          message: 'Internal server error while fetching user'
         }
-      } as AuthResponse)
+      } as UserProfileResponse)
     }
   })
 
   return router
 }
-
-// Default export for easy importing (controller-based approach)
-export default createAuthRouter
