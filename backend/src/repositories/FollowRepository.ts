@@ -170,7 +170,17 @@ export class FollowRepository {
         id: true,
         followerId: true,
         actorId: true,
-        createdAt: true
+        createdAt: true,
+        // Include followed user details
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
@@ -179,7 +189,7 @@ export class FollowRepository {
       take: limit
     })
 
-    // Get total count for pagination
+    // Get total count for pagination metadata
     const totalCount = await this.prisma.follow.count({
       where: {
         followedId: userId,
@@ -217,6 +227,7 @@ export class FollowRepository {
         id: true,
         followedId: true,
         createdAt: true,
+        // Include followed user data
         followed: {
           select: {
             id: true,
@@ -234,7 +245,7 @@ export class FollowRepository {
       take: limit
     })
 
-    // Get total count for pagination
+    // Get total count for pagination metadata
     const totalCount = await this.prisma.follow.count({
       where: {
         OR: [
@@ -295,19 +306,18 @@ export class FollowRepository {
         OR: [
           {
             followerId: followerId,
-            followedId: followedId,
-            isAccepted: true
+            followedId: followedId
           },
           {
             actorId: followerId,
-            followedId: followedId,
-            isAccepted: true
+            followedId: followedId
           }
         ]
       }
     })
-    
-    return follow !== null
+
+    // Return true only if follow exists AND is accepted
+    return follow !== null && follow.isAccepted === true
   }
 
   /**
@@ -321,17 +331,11 @@ export class FollowRepository {
     const follows = await this.prisma.follow.findMany({
       where: {
         OR: [
-          {
-            followerId: followerId,
-            followedId: { in: userIds },
-            isAccepted: true
-          },
-          {
-            actorId: followerId,
-            followedId: { in: userIds },
-            isAccepted: true
-          }
-        ]
+          { followerId: followerId },
+          { actorId: followerId }
+        ],
+        followedId: { in: userIds },
+        isAccepted: true
       },
       select: {
         followedId: true
@@ -354,7 +358,7 @@ export class FollowRepository {
    * Get recent followers for a user (for notifications/activity feed)
    * @param userId - User ID to get recent followers for
    * @param limit - Maximum number of followers to return
-   * @returns Promise<Array> Array of recent follow relationships
+   * @returns Promise<Array> Array of recent follow relationships with follower details
    */
   async findRecentFollowers(userId: string, limit: number = 10) {
     return await this.prisma.follow.findMany({
@@ -366,7 +370,17 @@ export class FollowRepository {
         id: true,
         followerId: true,
         actorId: true,
-        createdAt: true
+        createdAt: true,
+        // Include follower user details for notifications
+        followed: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isVerified: true
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
