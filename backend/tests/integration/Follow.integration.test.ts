@@ -1,8 +1,6 @@
 // backend/tests/integration/Follow.integration.test.ts
 // Complete integration tests for Follow model with User model and real database operations
 
-//temp
-
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { FollowRepository } from '../../src/repositories/FollowRepository'
