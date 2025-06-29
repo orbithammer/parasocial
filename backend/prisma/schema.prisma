@@ -1,9 +1,12 @@
+// backend/prisma/schema.prisma
+// Complete Prisma schema for ParaSocial platform
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
