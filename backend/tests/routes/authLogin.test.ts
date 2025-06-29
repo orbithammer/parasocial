@@ -119,7 +119,14 @@ describe('Authentication Routes - User Login', () => {
         'hashed_password_from_db',
         'SecurePassword123'
       )
-      expect(mockAuthService.generateToken).toHaveBeenCalledWith(mockUserFromDatabase)
+      // FIXED: generateToken is called with a simplified user object for security
+      expect(mockAuthService.generateToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user_123456789',
+          email: 'test@example.com',
+          username: 'testuser123'
+        })
+      )
     })
 
     it('should handle user with different data successfully', async () => {
@@ -172,7 +179,10 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'INVALID_CREDENTIALS',
+          message: expect.any(String)
+        }
       })
 
       expect(mockAuthService.verifyPassword).not.toHaveBeenCalled()
@@ -190,7 +200,10 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'INVALID_CREDENTIALS',
+          message: expect.any(String)
+        }
       })
 
       expect(mockAuthService.verifyPassword).toHaveBeenCalledWith(
@@ -222,16 +235,20 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: expect.any(String),
+          details: expect.any(Object)
+        }
       })
 
       expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
     })
 
     it('should return 400 for missing password', async () => {
-      const incompleteData = {
+      const incompleteLoginData = {
         email: 'test@example.com'
-        // password is missing
+        // password missing
       }
 
       mockAuthService.validateLoginData.mockReturnValue({
@@ -243,20 +260,59 @@ describe('Authentication Routes - User Login', () => {
 
       const response = await request(app)
         .post('/auth/login')
-        .send(incompleteData)
+        .send(incompleteLoginData)
         .expect(400)
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: expect.any(String),
+          details: expect.any(Object)
+        }
       })
+
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
+    })
+
+    it('should return 400 for missing email', async () => {
+      const incompleteLoginData = {
+        password: 'ValidPassword123'
+        // email missing
+      }
+
+      mockAuthService.validateLoginData.mockReturnValue({
+        success: false,
+        error: {
+          errors: [{ message: 'Email is required', path: ['email'] }]
+        }
+      })
+
+      const response = await request(app)
+        .post('/auth/login')
+        .send(incompleteLoginData)
+        .expect(400)
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: expect.any(String),
+          details: expect.any(Object)
+        }
+      })
+
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
     })
 
     it('should return 400 for empty request body', async () => {
       mockAuthService.validateLoginData.mockReturnValue({
         success: false,
         error: {
-          errors: [{ message: 'Email and password are required' }]
+          errors: [
+            { message: 'Email is required', path: ['email'] },
+            { message: 'Password is required', path: ['password'] }
+          ]
         }
       })
 
@@ -267,13 +323,19 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: expect.any(String),
+          details: expect.any(Object)
+        }
       })
+
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
     })
   })
 
-  describe('POST /auth/login - Server Errors', () => {
-    it('should return 500 for database connection errors', async () => {
+  describe('POST /auth/login - Database Errors', () => {
+    it('should handle database connection errors gracefully', async () => {
       mockPrisma.user.findUnique.mockRejectedValue(new Error('Database connection failed'))
 
       const response = await request(app)
@@ -283,13 +345,16 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'SERVER_ERROR',
+          message: expect.any(String)
+        }
       })
     })
 
-    it('should return 500 for password verification errors', async () => {
+    it('should handle AuthService errors gracefully', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(mockUserFromDatabase)
-      mockAuthService.verifyPassword.mockRejectedValue(new Error('Crypto library error'))
+      mockAuthService.verifyPassword.mockRejectedValue(new Error('Password verification failed'))
 
       const response = await request(app)
         .post('/auth/login')
@@ -298,7 +363,10 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'SERVER_ERROR',
+          message: expect.any(String)
+        }
       })
     })
 
@@ -316,7 +384,10 @@ describe('Authentication Routes - User Login', () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'SERVER_ERROR',
+          message: expect.any(String)
+        }
       })
     })
   })
@@ -399,6 +470,17 @@ describe('Authentication Routes - User Login', () => {
 
   describe('POST /auth/login - Content-Type Handling', () => {
     it('should require JSON content type', async () => {
+      // Override the default mock to return validation failure for empty/malformed data
+      mockAuthService.validateLoginData.mockReturnValue({
+        success: false,
+        error: {
+          errors: [
+            { message: 'Email is required', path: ['email'] },
+            { message: 'Password is required', path: ['password'] }
+          ]
+        }
+      })
+
       const response = await request(app)
         .post('/auth/login')
         .send('email=test@example.com&password=SecurePassword123')
@@ -407,7 +489,11 @@ describe('Authentication Routes - User Login', () => {
       // Should reject non-JSON data
       expect(response.body).toMatchObject({
         success: false,
-        error: expect.any(String)
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: expect.any(String),
+          details: expect.any(Array)
+        }
       })
     })
 
@@ -418,7 +504,9 @@ describe('Authentication Routes - User Login', () => {
         .send('{"email": "test@example.com", "password": "missing closing brace"')
         .expect(400)
 
-      // Express should handle malformed JSON and return 400
+      // Express handles malformed JSON and returns a different error format
+      // The exact format may vary, but it should be a 400 status
+      // We're mainly testing that it doesn't crash the server
     })
   })
 
@@ -442,8 +530,9 @@ describe('Authentication Routes - User Login', () => {
         .send(validLoginData)
         .expect(401)
 
-      // Both should return similar error messages for security
-      expect(nonExistentResponse.body.error).toBe(wrongPasswordResponse.body.error)
+      // FIXED: Both should return similar error messages for security
+      // Changed from .toBe() to .toStrictEqual() for object comparison
+      expect(nonExistentResponse.body.error).toStrictEqual(wrongPasswordResponse.body.error)
     })
 
     it('should handle concurrent login attempts', async () => {
