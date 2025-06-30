@@ -173,6 +173,16 @@ export const sanitizeInput = (req: Request, res: Response, next: NextFunction): 
       return obj.map(sanitizeObject)
     }
     
+    // Handle special object types that should be preserved
+    if (obj instanceof Date || obj instanceof RegExp || obj instanceof Buffer) {
+      return obj
+    }
+    
+    // Handle null and undefined
+    if (obj === null || obj === undefined) {
+      return obj
+    }
+    
     if (obj && typeof obj === 'object') {
       const sanitized: any = {}
       for (const [key, value] of Object.entries(obj)) {
@@ -264,17 +274,19 @@ export const validatePagination = (req: Request, res: Response, next: NextFuncti
  */
 interface ExtendedRequest extends Request {
   clientIP?: string
+  connection?: any
+  socket?: any
 }
 
 /**
  * IP address validation and logging
  */
 export const validateAndLogIP = (req: ExtendedRequest, res: Response, next: NextFunction): void => {
-  // Get real IP address (considering proxies)
+  // Get real IP address (considering proxies) with safe property access
   const ip = req.headers['x-forwarded-for'] || 
              req.headers['x-real-ip'] || 
-             req.connection.remoteAddress || 
-             req.socket.remoteAddress ||
+             req.connection?.remoteAddress || 
+             req.socket?.remoteAddress ||
              req.ip ||
              'unknown'
 
