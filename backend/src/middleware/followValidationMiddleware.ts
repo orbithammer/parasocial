@@ -1,6 +1,6 @@
 // backend/src/middleware/followValidationMiddleware.ts
-// Version: 1.0
-// Validation middleware for follow/unfollow operations and follower management
+// Version: 1.1
+// Fixed validation middleware for follow/unfollow operations and follower management
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -62,7 +62,9 @@ const usernameParamSchema = z.object({
  * Validation schema for ActivityPub actor discovery
  */
 const actorDiscoverySchema = z.object({
-  resource: z.string()
+  resource: z.string({
+    required_error: 'Resource parameter is required'
+  })
     .min(1, 'Resource parameter is required')
     .refine(resource => {
       // Check for acct: format (acct:username@domain.com)
@@ -245,12 +247,12 @@ export const validateActivityPubInbox = (req: Request, res: Response, next: Next
       return
     }
 
-    // Validate username parameter
+    // Validate username parameter first
     const validatedParams = usernameParamSchema.parse(req.params)
     req.params = validatedParams
 
-    // Basic ActivityPub activity structure validation
-    if (!req.body || typeof req.body !== 'object') {
+    // Check if request body is a valid object FIRST before checking ActivityPub fields
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       res.status(400).json({
         success: false,
         error: {
@@ -261,7 +263,7 @@ export const validateActivityPubInbox = (req: Request, res: Response, next: Next
       return
     }
 
-    // Validate required ActivityPub fields
+    // Validate required ActivityPub fields AFTER confirming it's an object
     const requiredFields = ['@context', 'type', 'actor']
     const missingFields = requiredFields.filter(field => !(field in req.body))
     
