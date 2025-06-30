@@ -1,5 +1,5 @@
 // backend/src/repositories/UserRepository.ts
-// Enhanced user repository with methods for posts and follows using proper TypeScript types
+// Enhanced user repository with methods for authentication and user management using proper TypeScript types
 
 import { PrismaClient } from '@prisma/client'
 import { User } from '../models/User'
@@ -9,6 +9,9 @@ interface UserCreateData {
   username: string
   passwordHash: string
   displayName?: string
+  bio?: string | null
+  isVerified?: boolean
+  verificationTier?: string
 }
 
 interface UserUpdateData {
@@ -44,7 +47,10 @@ export class UserRepository {
         email: userData.email,
         username: userData.username,
         passwordHash: userData.passwordHash,
-        displayName: userData.displayName || userData.username
+        displayName: userData.displayName || userData.username,
+        bio: userData.bio || '',
+        isVerified: userData.isVerified ?? false,
+        verificationTier: userData.verificationTier || 'none'
       }
     })
 
@@ -121,181 +127,137 @@ export class UserRepository {
         _count: {
           select: {
             followers: true,
-            posts: {
-              where: {
-                isPublished: true
-              }
-            }
+            posts: true
           }
         }
       }
     })
 
-    if (!dbUser) {
-      return null
+    if (!dbUser) return null
+
+    // Add counts to user data
+    const userData = {
+      ...dbUser,
+      followersCount: dbUser._count.followers,
+      postsCount: dbUser._count.posts
     }
 
-    // Create User instance and add count properties
-    const user = new User(dbUser)
-    // Add dynamic properties for counts
-    ;(user as any).followersCount = dbUser._count.followers
-    ;(user as any).postsCount = dbUser._count.posts
-
-    return user
+    return new User(userData)
   }
 
   /**
-   * Update user by ID
+   * Update user data
    * @param id - User ID
-   * @param updateData - Data to update
-   * @returns Promise<User> Updated user instance
+   * @param userData - Data to update
+   * @returns Promise<User|null> Updated user instance or null if not found
    */
-  async update(id: string, updateData: UserUpdateData): Promise<User> {
-    const dbUser = await this.prisma.user.update({
-      where: { id },
-      data: updateData
-    })
+  async update(id: string, userData: UserUpdateData): Promise<User | null> {
+    try {
+      const dbUser = await this.prisma.user.update({
+        where: { id },
+        data: {
+          ...userData,
+          updatedAt: new Date()
+        }
+      })
 
-    return new User(dbUser)
+      return new User(dbUser)
+    } catch (error) {
+      // User not found or other error
+      return null
+    }
   }
 
   /**
-   * Delete user by ID (soft delete by setting isActive to false)
+   * Delete user (soft delete by setting isActive to false)
    * @param id - User ID
-   * @returns Promise<User> Updated user instance
+   * @returns Promise<boolean> True if user was deactivated
    */
-  async delete(id: string): Promise<User> {
-    const dbUser = await this.prisma.user.update({
-      where: { id },
-      data: { isActive: false }
-    })
+  async delete(id: string): Promise<boolean> {
+    try {
+      await this.prisma.user.update({
+        where: { id },
+        data: {
+          isActive: false,
+          updatedAt: new Date()
+        }
+      })
+      return true
+    } catch (error) {
+      return false
+    }
+  }
 
-    return new User(dbUser)
+  /**
+   * Hard delete user (permanently remove from database)
+   * @param id - User ID
+   * @returns Promise<boolean> True if user was deleted
+   */
+  async hardDelete(id: string): Promise<boolean> {
+    try {
+      await this.prisma.user.delete({
+        where: { id }
+      })
+      return true
+    } catch (error) {
+      return false
+    }
   }
 
   /**
    * Search users by username or display name
    * @param query - Search query
-   * @param options - Search options
-   * @returns Promise<Object> Users array and total count
+   * @param options - Search options (pagination)
+   * @returns Promise<User[]> Array of matching users
    */
-  async searchUsers(query: string, options: SearchOptions = {}) {
+  async search(query: string, options: SearchOptions = {}): Promise<User[]> {
     const { offset = 0, limit = 20 } = options
 
-    const searchCondition = {
-      AND: [
-        { isActive: true },
-        {
-          OR: [
-            {
-              username: {
-                contains: query,
-                mode: 'insensitive' as const
-              }
-            },
-            {
-              displayName: {
-                contains: query,
-                mode: 'insensitive' as const
-              }
-            }
-          ]
-        }
-      ]
-    }
-
-    const [dbUsers, totalCount] = await Promise.all([
-      this.prisma.user.findMany({
-        where: searchCondition,
-        include: {
-          _count: {
-            select: {
-              followers: true,
-              posts: {
-                where: {
-                  isPublished: true
-                }
-              }
-            }
+    const dbUsers = await this.prisma.user.findMany({
+      where: {
+        AND: [
+          { isActive: true },
+          {
+            OR: [
+              { username: { contains: query } },
+              { displayName: { contains: query } }
+            ]
           }
-        },
-        orderBy: [
-          { isVerified: 'desc' },
-          { followers: { _count: 'desc' } }
-        ],
-        skip: offset,
-        take: limit
-      }),
-      this.prisma.user.count({ where: searchCondition })
-    ])
-
-    // Convert to User instances with counts
-    const users = dbUsers.map(dbUser => {
-      const user = new User(dbUser)
-      ;(user as any).followersCount = dbUser._count.followers
-      ;(user as any).postsCount = dbUser._count.posts
-      return user
+        ]
+      },
+      skip: offset,
+      take: limit,
+      orderBy: {
+        username: 'asc'
+      }
     })
 
-    return {
-      users,
-      totalCount
-    }
+    return dbUsers.map(dbUser => new User(dbUser))
   }
 
   /**
-   * Get all verified users
-   * @param options - Query options
-   * @returns Promise<Object> Verified users array and total count
+   * Get user count (for admin/stats purposes)
+   * @returns Promise<number> Total number of active users
    */
-  async findVerifiedUsers(options: SearchOptions = {}) {
-    const { offset = 0, limit = 20 } = options
+  async getActiveUserCount(): Promise<number> {
+    return await this.prisma.user.count({
+      where: { isActive: true }
+    })
+  }
 
-    const [dbUsers, totalCount] = await Promise.all([
-      this.prisma.user.findMany({
-        where: {
-          isActive: true,
-          isVerified: true
-        },
-        include: {
-          _count: {
-            select: {
-              followers: true,
-              posts: {
-                where: {
-                  isPublished: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: [
-          { followers: { _count: 'desc' } },
-          { createdAt: 'asc' }
-        ],
-        skip: offset,
-        take: limit
-      }),
-      this.prisma.user.count({
-        where: {
-          isActive: true,
-          isVerified: true
-        }
-      })
-    ])
-
-    // Convert to User instances with counts
-    const users = dbUsers.map(dbUser => {
-      const user = new User(dbUser)
-      ;(user as any).followersCount = dbUser._count.followers
-      ;(user as any).postsCount = dbUser._count.posts
-      return user
+  /**
+   * Get recently registered users
+   * @param limit - Number of users to return
+   * @returns Promise<User[]> Array of recently registered users
+   */
+  async getRecentUsers(limit: number = 10): Promise<User[]> {
+    const dbUsers = await this.prisma.user.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit
     })
 
-    return {
-      users,
-      totalCount
-    }
+    return dbUsers.map(dbUser => new User(dbUser))
   }
 
   /**
@@ -305,13 +267,13 @@ export class UserRepository {
    * @returns Promise<boolean> True if username is available
    */
   async isUsernameAvailable(username: string, excludeUserId?: string): Promise<boolean> {
-    const where: any = { username }
-    if (excludeUserId) {
-      where.id = { not: excludeUserId }
-    }
+    const existingUser = await this.prisma.user.findUnique({
+      where: { username }
+    })
 
-    const user = await this.prisma.user.findFirst({ where })
-    return user === null
+    if (!existingUser) return true
+    if (excludeUserId && existingUser.id === excludeUserId) return true
+    return false
   }
 
   /**
@@ -321,40 +283,41 @@ export class UserRepository {
    * @returns Promise<boolean> True if email is available
    */
   async isEmailAvailable(email: string, excludeUserId?: string): Promise<boolean> {
-    const where: any = { email }
-    if (excludeUserId) {
-      where.id = { not: excludeUserId }
-    }
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email }
+    })
 
-    const user = await this.prisma.user.findFirst({ where })
-    return user === null
+    if (!existingUser) return true
+    if (excludeUserId && existingUser.id === excludeUserId) return true
+    return false
   }
 
   /**
-   * Get user statistics
-   * @param userId - User ID
-   * @returns Promise<Object> User statistics
+   * Get users by verification tier
+   * @param tier - Verification tier to filter by
+   * @param options - Search options (pagination)
+   * @returns Promise<User[]> Array of users with specified verification tier
    */
-  async getUserStats(userId: string) {
-    const stats = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        _count: {
-          select: {
-            posts: {
-              where: {
-                isPublished: true
-              }
-            },
-            followers: true
-          }
-        }
-      }
+  async getByVerificationTier(tier: string, options: SearchOptions = {}): Promise<User[]> {
+    const { offset = 0, limit = 20 } = options
+
+    const dbUsers = await this.prisma.user.findMany({
+      where: {
+        verificationTier: tier,
+        isActive: true
+      },
+      skip: offset,
+      take: limit,
+      orderBy: { createdAt: 'desc' }
     })
 
-    return {
-      postsCount: stats?._count?.posts || 0,
-      followersCount: stats?._count?.followers || 0
-    }
+    return dbUsers.map(dbUser => new User(dbUser))
   }
+}
+
+// Export types for use in other files
+export type {
+  UserCreateData,
+  UserUpdateData,
+  SearchOptions
 }

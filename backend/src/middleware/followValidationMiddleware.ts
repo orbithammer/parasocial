@@ -10,12 +10,23 @@ import { z } from 'zod'
  */
 const followRequestSchema = z.object({
   actorId: z.string()
-    .url('Actor ID must be a valid URL')
     .refine(url => {
+      // First check if it's a valid URL
       try {
         const parsed = new URL(url)
         // Must be HTTPS for security in ActivityPub
-        return parsed.protocol === 'https:' && parsed.hostname.length > 0
+        if (parsed.protocol !== 'https:') {
+          return false
+        }
+        // Must have a proper domain
+        if (!parsed.hostname || parsed.hostname.length < 3) {
+          return false
+        }
+        // Must have a path (ActivityPub actors have paths like /users/username)
+        if (!parsed.pathname || parsed.pathname === '/') {
+          return false
+        }
+        return true
       } catch {
         return false
       }

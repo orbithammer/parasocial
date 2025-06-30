@@ -1,16 +1,18 @@
 // backend/src/index.ts
-// Express 4.x server with refactored users router using FollowController
+// Main application entry point with complete route setup including authentication
 
 import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
 
 // Import route creators
+import { createAuthRouter } from './routes/auth'
 import { createUsersRouter } from './routes/users'
 
 // Import controllers
-import { UserController } from './controllers/UserController'
+import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
+import { UserController } from './controllers/UserController'
 import { FollowController } from './controllers/FollowController'
 
 // Import services
@@ -27,16 +29,13 @@ import { BlockRepository } from './repositories/BlockRepository'
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
 
 // ============================================================================
-// SERVER CONFIGURATION
+// APPLICATION SETUP
 // ============================================================================
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// ============================================================================
-// MIDDLEWARE SETUP
-// ============================================================================
-
+// Basic middleware
 app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
@@ -45,6 +44,7 @@ app.use(express.urlencoded({ extended: true }))
 // DEPENDENCY SETUP
 // ============================================================================
 
+// Database client
 const prisma = new PrismaClient()
 
 // Repositories
@@ -58,11 +58,12 @@ const authService = new AuthService()
 const followService = new FollowService(followRepository, userRepository)
 
 // Controllers
-const userController = new UserController(userRepository, followRepository, blockRepository)
+const authController = new AuthController(authService, userRepository)
 const postController = new PostController(postRepository, userRepository)
+const userController = new UserController(userRepository, followRepository, blockRepository)
 const followController = new FollowController(followService, userRepository)
 
-// Middleware
+// Middleware functions
 const authMiddleware = createAuthMiddleware(authService)
 const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
@@ -110,7 +111,22 @@ app.get(`${apiPrefix}/health`, async (req: Request, res: Response) => {
 })
 
 // ============================================================================
-// ROUTER MOUNTING WITH REFACTORED FOLLOW CONTROLLER
+// AUTHENTICATION ROUTES
+// ============================================================================
+
+/**
+ * Mount authentication router with AuthController
+ */
+const authRouter = createAuthRouter({
+  authController,
+  authMiddleware
+})
+
+// Mount the auth router
+app.use(`${apiPrefix}/auth`, authRouter)
+
+// ============================================================================
+// USER ROUTES (INCLUDING FOLLOW FUNCTIONALITY)
 // ============================================================================
 
 /**
@@ -145,6 +161,12 @@ app.get(`${apiPrefix}/debug/routes`, (req: Request, res: Response) => {
         'GET / - Health check',
         'GET /api/v1/health - Database health'
       ],
+      authentication: [
+        'POST /api/v1/auth/register - User registration',
+        'POST /api/v1/auth/login - User login',
+        'POST /api/v1/auth/logout - User logout (requires auth)',
+        'GET /api/v1/auth/me - Get current user (requires auth)'
+      ],
       users: [
         'GET /api/v1/users/:username - Get user profile',
         'GET /api/v1/users/:username/posts - Get user posts',
@@ -160,9 +182,10 @@ app.get(`${apiPrefix}/debug/routes`, (req: Request, res: Response) => {
         'GET /api/v1/debug/routes - This endpoint'
       ]
     },
-    refactoring_notes: {
-      follow_operations: 'Now consistently use FollowController',
-      user_management: 'Block/unblock still use UserController',
+    notes: {
+      authentication: 'All auth endpoints use AuthController',
+      follow_operations: 'Follow operations use FollowController consistently',
+      user_management: 'Block/unblock operations use UserController',
       separation_of_concerns: 'Follow logic separated from user management'
     }
   })
@@ -205,24 +228,31 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
  * Start the server
  */
 app.listen(PORT, () => {
-  console.log(`🚀 ParaSocial API server running on port ${PORT}`)
-  console.log(`📝 Express version: 4.x (downgraded from 5.x)`)
-  console.log(`📚 API routes: http://localhost:${PORT}${apiPrefix}/debug/routes`)
-  console.log(`❤️  Health check: http://localhost:${PORT}${apiPrefix}/health`)
-  console.log(`✅ Refactored: Follow operations now use FollowController consistently`)
+  console.log('🚀 ParaSocial API server running on port', PORT)
+  console.log('📝 Express version: 4.x (downgraded from 5.x)')
+  console.log('📚 API routes:', `http://localhost:${PORT}${apiPrefix}/debug/routes`)
+  console.log('❤️  Health check:', `http://localhost:${PORT}${apiPrefix}/health`)
+  console.log('🔐 Auth endpoints:', `http://localhost:${PORT}${apiPrefix}/auth/*`)
+  console.log('✅ Refactored: Follow operations now use FollowController consistently')
 })
 
+// ============================================================================
+// GRACEFUL SHUTDOWN
+// ============================================================================
+
 /**
- * Graceful shutdown handling
+ * Handle graceful shutdown
  */
 process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down gracefully...')
+  console.log('\n🔄 Shutting down gracefully...')
   await prisma.$disconnect()
+  console.log('✅ Database disconnected')
   process.exit(0)
 })
 
 process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down gracefully...')
+  console.log('\n🔄 Shutting down gracefully...')
   await prisma.$disconnect()
+  console.log('✅ Database disconnected')
   process.exit(0)
 })
