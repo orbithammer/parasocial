@@ -1,3 +1,7 @@
+// frontend/src/test/setup.ts
+// Test setup file for React Testing Library and Jest DOM matchers  
+// Version: 1.1.0 - Fixed toHaveTextContent to support both strings and regular expressions
+
 import '@testing-library/jest-dom'
 import { beforeAll, afterEach, afterAll } from 'vitest'
 import { cleanup } from '@testing-library/react'
@@ -46,10 +50,20 @@ expect.extend({
       pass,
     }
   },
+  /**
+   * FIXED: toHaveTextContent matcher that supports both strings and regular expressions
+   * Handles the case where text parameter can be either a string or RegExp object
+   */
   toHaveTextContent: (received, text) => {
-    const pass = received.textContent.includes(text)
+    const textContent = received.textContent || ''
+    
+    // Check if text is a regular expression
+    const pass = text instanceof RegExp 
+      ? text.test(textContent)  // Use regex.test() for RegExp objects
+      : textContent.includes(text)  // Use includes() for strings
+    
     return {
-      message: () => `expected element ${pass ? 'not ' : ''}to have text content "${text}"`,
+      message: () => `expected element ${pass ? 'not ' : ''}to have text content ${text instanceof RegExp ? `matching ${text}` : `"${text}"`}`,
       pass,
     }
   }
