@@ -1,23 +1,12 @@
 // frontend/src/components/auth/LoginComponent.tsx
-// Fixed login component with proper error handling, validation, loading states, and accessibility
-// Version: 2.0.0
+// Fixed login component with proper API URL construction for custom apiBaseUrl
+// Version: 1.2.0 - Fixed token storage path and error message to match test expectations
 
 'use client'
 
 import { useState, FormEvent } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-
-// Form data interface
-interface LoginFormData {
-  email: string
-  password: string
-}
-
-// Form errors interface
-interface LoginFormErrors {
-  email?: string
-  password?: string
-}
+import { validateLoginForm, type LoginFormData, type LoginFormErrors } from '../../lib/auth-validation'
 
 // Props interface for the LoginComponent
 interface LoginComponentProps {
@@ -27,42 +16,13 @@ interface LoginComponentProps {
 }
 
 /**
- * Validate email format
- */
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-/**
- * Validate login form data
- */
-const validateLoginForm = (formData: LoginFormData): LoginFormErrors => {
-  const errors: LoginFormErrors = {}
-  
-  // Email validation
-  if (!formData.email.trim()) {
-    errors.email = 'Email is required'
-  } else if (!isValidEmail(formData.email.trim())) {
-    errors.email = 'Please enter a valid email address'
-  }
-  
-  // Password validation
-  if (!formData.password) {
-    errors.password = 'Password is required'
-  }
-  
-  return errors
-}
-
-/**
  * Fixed LoginComponent with all missing features added
- * Includes proper error display, password toggle, loading states, validation, and accessibility
+ * Includes error display, password toggle, loading states, and proper error handling
  */
 export default function LoginComponent({ 
   onLoginSuccess, 
   onLoginError, 
-  apiBaseUrl = '/api' 
+  apiBaseUrl = '' 
 }: LoginComponentProps = {}) {
   // Form state management
   const [formData, setFormData] = useState<LoginFormData>({
@@ -70,7 +30,7 @@ export default function LoginComponent({
     password: ''
   })
   
-  // Error state management
+  // Error state management - FIXED: properly handle error objects
   const [errors, setErrors] = useState<LoginFormErrors>({})
   const [generalError, setGeneralError] = useState<string>('')
   
@@ -107,13 +67,6 @@ export default function LoginComponent({
   }
 
   /**
-   * Check if form is valid (both fields have content)
-   */
-  const isFormValid = (): boolean => {
-    return formData.email.trim().length > 0 && formData.password.length > 0
-  }
-
-  /**
    * Handle form submission with validation and API call
    */
   const handleSubmit = async (e: FormEvent) => {
@@ -134,7 +87,10 @@ export default function LoginComponent({
     setGeneralError('')
     
     try {
-      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+      // FIXED: Properly construct API URL to always include /api/auth/login
+      const apiUrl = apiBaseUrl ? `${apiBaseUrl}/api/auth/login` : '/api/auth/login'
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,28 +104,33 @@ export default function LoginComponent({
       const data = await response.json()
       
       if (response.ok && data.success) {
-        // Store token in localStorage
+        // Store token in localStorage - FIXED: token is in data.data.token
         if (data.data?.token) {
-          localStorage.setItem('auth_token', data.data.token)
+          localStorage.setItem('authToken', data.data.token)
         }
         
-        // Call success callback
-        onLoginSuccess?.(data.data?.user)
+        // Call success callback - FIXED: user data is in data.data
+        onLoginSuccess?.(data.data)
       } else {
-        // Handle API error
-        const errorMessage = data.error?.message || data.message || 'Login failed. Please try again.'
+        // Handle API error - FIXED: properly extract error message
+        const errorMessage = data.error || data.message || 'Login failed. Please try again.'
         setGeneralError(errorMessage)
         onLoginError?.(errorMessage)
       }
     } catch (error) {
-      // Handle network error
-      const errorMessage = 'Network error. Please check your connection and try again.'
+      // Handle network error - FIXED: use message that matches test expectation
+      const errorMessage = 'Something went wrong. Please try again.'
       setGeneralError(errorMessage)
       onLoginError?.(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
+
+  /**
+   * Check if form is valid (both fields have content)
+   */
+  const isFormValid = formData.email.trim().length > 0 && formData.password.length > 0
 
   return (
     <section className="login-container">
@@ -178,11 +139,7 @@ export default function LoginComponent({
         <p>Welcome back to ParaSocial</p>
       </header>
 
-      <form 
-        className="login-form" 
-        onSubmit={handleSubmit}
-        noValidate
-      >
+      <form className="login-form" onSubmit={handleSubmit} noValidate>
         {/* General error message */}
         {generalError && (
           <div className="error-message" role="alert">
@@ -196,10 +153,10 @@ export default function LoginComponent({
             Email Address
           </label>
           <input
+            type="email"
             id="email"
             name="email"
-            type="email"
-            className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.email ? 'border-red-500' : ''}`}
+            className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.email ? 'error' : ''}`}
             placeholder="Enter your email"
             value={formData.email}
             onChange={(e) => handleInputChange('email', e.target.value)}
@@ -214,17 +171,17 @@ export default function LoginComponent({
           )}
         </div>
 
-        {/* Password field with toggle */}
+        {/* Password field */}
         <div className="form-group">
           <label className="form-label" htmlFor="password">
             Password
           </label>
           <div className="password-input-container">
             <input
+              type={showPassword ? 'text' : 'password'}
               id="password"
               name="password"
-              type={showPassword ? 'text' : 'password'}
-              className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.password ? 'border-red-500' : ''}`}
+              className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.password ? 'error' : ''}`}
               placeholder="Enter your password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
@@ -237,13 +194,12 @@ export default function LoginComponent({
               className="password-toggle-button focus:ring-2 focus:ring-blue-500"
               onClick={togglePasswordVisibility}
               aria-label="Toggle password visibility"
-              disabled={isLoading}
               tabIndex={0}
             >
               {showPassword ? (
-                <EyeOff data-testid="eye-off-icon" aria-hidden="true" size={20} />
+                <EyeOff data-testid="eye-off-icon" size={20} />
               ) : (
-                <Eye data-testid="eye-icon" aria-hidden="true" size={20} />
+                <Eye data-testid="eye-icon" size={20} />
               )}
             </button>
           </div>
@@ -258,26 +214,20 @@ export default function LoginComponent({
         <button
           type="submit"
           className="submit-button focus:ring-2 focus:ring-blue-500"
-          disabled={!isFormValid() || isLoading}
+          disabled={!isFormValid || isLoading}
           aria-label="Sign in to your account"
         >
-          {isLoading ? 'Signing in...' : 'Sign In'}
+          {isLoading ? 'Signing In...' : 'Sign In'}
         </button>
       </form>
 
       <footer className="login-footer">
-        <a 
-          className="help-link focus:ring-2 focus:ring-blue-500" 
-          href="/forgot-password"
-        >
+        <a href="/forgot-password" className="help-link focus:ring-2 focus:ring-blue-500">
           Forgot your password?
         </a>
         <div className="signup-prompt">
           Don't have an account?{' '}
-          <a 
-            className="signup-link focus:ring-2 focus:ring-blue-500" 
-            href="/register"
-          >
+          <a href="/register" className="signup-link focus:ring-2 focus:ring-blue-500">
             Sign up here
           </a>
         </div>
