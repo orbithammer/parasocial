@@ -1,163 +1,128 @@
+// frontend/src/components/auth/LoginComponent.tsx
+// Fixed login component with error handling, password toggle, and loading states
+// Version: 1.0.0
+
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, FormEvent } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
+import { validateLoginForm, type LoginFormData, type LoginFormErrors } from '../../lib/auth-validation'
 
-/**
- * Login form data structure
- */
-interface LoginFormData {
-  email: string
-  password: string
-}
-
-/**
- * API response structure from backend AuthController
- */
-interface LoginResponse {
-  success: boolean
-  data?: {
-    user: {
-      id: string
-      email: string
-      username: string
-      displayName: string
-      avatar: string | null
-      isVerified: boolean
-    }
-    token: string
-  }
-  error?: string
-  details?: Array<{ message: string }>
-}
-
-/**
- * Successful login data structure (non-optional since we only call this on success)
- */
-interface LoginSuccessData {
-  user: {
-    id: string
-    email: string
-    username: string
-    displayName: string
-    avatar: string | null
-    isVerified: boolean
-  }
-  token: string
-}
-
-/**
- * Component props for Login component
- */
+// Props interface for the LoginComponent
 interface LoginComponentProps {
-  onLoginSuccess?: (userData: LoginSuccessData) => void
-  onLoginError?: (error: string) => void
+  onLoginSuccess?: (userData: any) => void
+  onLoginError?: (errorMessage: string) => void
   apiBaseUrl?: string
 }
 
 /**
- * Login component that integrates with ParaSocial backend AuthController
- * Handles user authentication with email and password
- * 
- * @param onLoginSuccess - Callback fired when login succeeds
- * @param onLoginError - Callback fired when login fails  
- * @param apiBaseUrl - Base URL for API calls (defaults to /api/v1)
+ * Fixed LoginComponent with all missing features added
+ * Includes error display, password toggle, loading states, and proper error handling
  */
 export default function LoginComponent({ 
   onLoginSuccess, 
-  onLoginError,
-  apiBaseUrl = '/api/v1'
-}: LoginComponentProps) {
+  onLoginError, 
+  apiBaseUrl = '/api' 
+}: LoginComponentProps = {}) {
   // Form state management
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: ''
   })
   
-  // Loading and error states
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Error state management - FIXED: properly handle error objects
+  const [errors, setErrors] = useState<LoginFormErrors>({})
+  const [generalError, setGeneralError] = useState<string>('')
   
-  // Use ref to prevent race conditions in multiple submissions
-  const isSubmittingRef = useRef(false)
+  // UI state management
+  const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   /**
-   * Handle input field changes
-   * Updates form state when user types in email or password fields
+   * Handle input field changes and clear field-specific errors
    */
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = event.target
+  const handleInputChange = (field: keyof LoginFormData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
     
-    setFormData(prevData => ({
-      ...prevData,
-      [name]: value
-    }))
+    // Clear field error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors[field]
+        return newErrors
+      })
+    }
     
-    // Clear previous errors when user starts typing
-    if (error) {
-      setError(null)
+    // Clear general error when user starts typing
+    if (generalError) {
+      setGeneralError('')
     }
   }
 
   /**
- * Handle form submission for login
- * Fixed to prevent race condition in multiple rapid submissions
- */
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-
-  // Prevent duplicate submissions - check and set ref IMMEDIATELY
-  if (isSubmittingRef.current || isLoading) {
-    return
+   * Toggle password visibility
+   */
+  const togglePasswordVisibility = () => {
+    setShowPassword(prev => !prev)
   }
-  // CRITICAL FIX: Set ref immediately after check to prevent race condition
-  isSubmittingRef.current = true
 
-  // Set loading state and clear any previous errors
-  setIsLoading(true)
-  setError('')
-
-  try {
-    // Make API call to login endpoint
-    const response = await fetch(`${apiBaseUrl}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: formData.email.trim(),
-        password: formData.password,
-      }),
-    })
-
-    // Parse response as JSON
-    const result = await response.json()
-
-    if (result.success && result.data) {
-      // Login successful - store token and notify parent
-      localStorage.setItem('authToken', result.data.token)
-      onLoginSuccess?.(result.data)
-    } else {
-      // Login failed - show error message
-      const errorMessage = result.error || 'Login failed'
-      setError(errorMessage)
+  /**
+   * Handle form submission with validation and API call
+   */
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    
+    // Prevent multiple submissions
+    if (isLoading) return
+    
+    // Client-side validation
+    const validationErrors = validateLoginForm(formData)
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
+      return
+    }
+    
+    setIsLoading(true)
+    setErrors({})
+    setGeneralError('')
+    
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (response.ok && data.success) {
+        // Store token in localStorage
+        if (data.data?.token) {
+          localStorage.setItem('auth_token', data.data.token)
+        }
+        
+        // Call success callback
+        onLoginSuccess?.(data.data?.user)
+      } else {
+        // Handle API error - FIXED: properly extract error message
+        const errorMessage = data.error?.message || data.message || 'Login failed. Please try again.'
+        setGeneralError(errorMessage)
+        onLoginError?.(errorMessage)
+      }
+    } catch (error) {
+      // Handle network error
+      const errorMessage = 'Network error. Please check your connection and try again.'
+      setGeneralError(errorMessage)
       onLoginError?.(errorMessage)
+    } finally {
+      setIsLoading(false)
     }
-  } catch (networkError) {
-    // Network or parsing error
-    const errorMessage = 'Unable to connect to server. Please try again.'
-    setError(errorMessage)
-    onLoginError?.(errorMessage)
-  } finally {
-    // Always reset loading state and submission flag
-    setIsLoading(false)
-    isSubmittingRef.current = false
   }
-}
-
-  /**
-   * Check if form is valid for submission
-   */
-  const isFormValid = formData.email.trim() !== '' && formData.password.trim() !== ''
 
   return (
     <section className="login-container">
@@ -166,81 +131,98 @@ const handleSubmit = async (e: React.FormEvent) => {
         <p>Welcome back to ParaSocial</p>
       </header>
 
-      <form onSubmit={handleSubmit} className="login-form" noValidate>
-        {/* Email input field */}
+      <form 
+        className="login-form" 
+        onSubmit={handleSubmit}
+        noValidate
+      >
+        {/* General error message */}
+        {generalError && (
+          <div className="error-message" role="alert">
+            {generalError}
+          </div>
+        )}
+
+        {/* Email field */}
         <div className="form-group">
-          <label htmlFor="email" className="form-label">
+          <label className="form-label" htmlFor="email">
             Email Address
           </label>
           <input
             id="email"
             name="email"
             type="email"
-            value={formData.email}
-            onChange={handleInputChange}
             className="form-input"
             placeholder="Enter your email"
+            value={formData.email}
+            onChange={(e) => handleInputChange('email', e.target.value)}
+            disabled={isLoading}
             required
             autoComplete="email"
-            disabled={isLoading}
           />
+          {errors.email && (
+            <div className="field-error" role="alert">
+              {errors.email}
+            </div>
+          )}
         </div>
 
-        {/* Password input field */}
+        {/* Password field with toggle */}
         <div className="form-group">
-          <label htmlFor="password" className="form-label">
+          <label className="form-label" htmlFor="password">
             Password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            value={formData.password}
-            onChange={handleInputChange}
-            className="form-input"
-            placeholder="Enter your password"
-            required
-            autoComplete="current-password"
-            disabled={isLoading}
-          />
-        </div>
-
-        {/* Error message display */}
-        {error && (
-          <div className="error-message" role="alert" aria-live="polite">
-            <span className="error-icon">⚠️</span>
-            <span className="error-text">{error}</span>
+          <div className="password-input-container">
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              className="form-input"
+              placeholder="Enter your password"
+              value={formData.password}
+              onChange={(e) => handleInputChange('password', e.target.value)}
+              disabled={isLoading}
+              required
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="password-toggle-button"
+              onClick={togglePasswordVisibility}
+              aria-label="Toggle password visibility"
+              disabled={isLoading}
+            >
+              {showPassword ? (
+                <EyeOff size={20} data-testid="eye-off-icon" />
+              ) : (
+                <Eye size={20} data-testid="eye-icon" />
+              )}
+            </button>
           </div>
-        )}
+          {errors.password && (
+            <div className="field-error" role="alert">
+              {errors.password}
+            </div>
+          )}
+        </div>
 
         {/* Submit button */}
         <button
           type="submit"
           className="submit-button"
-          disabled={!isFormValid || isLoading}
-          aria-label={isLoading ? 'Signing in...' : 'Sign in to your account'}
+          disabled={isLoading || !formData.email || !formData.password}
+          aria-label="Sign in to your account"
         >
-          {isLoading ? (
-            <>
-              <span className="loading-spinner" aria-hidden="true">⟳</span>
-              <span>Signing In...</span>
-            </>
-          ) : (
-            'Sign In'
-          )}
+          {isLoading ? 'Signing In...' : 'Sign In'}
         </button>
       </form>
 
-      {/* Additional help links */}
       <footer className="login-footer">
         <a href="/forgot-password" className="help-link">
           Forgot your password?
         </a>
         <div className="signup-prompt">
-          Don't have an account?{' '}
-          <a href="/register" className="signup-link">
-            Sign up here
-          </a>
+          Don't have an account? <a href="/register" className="signup-link">Sign up here</a>
         </div>
       </footer>
     </section>
