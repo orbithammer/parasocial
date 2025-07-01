@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest",
+    "test:clean": "vitest --reporter=dot",
+    "test:file": "vitest --reporter=dot > test-results.txt 2>&1",
+    "test:verbose-file": "vitest --reporter=verbose > test-results.txt 2>&1",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest --coverage"
