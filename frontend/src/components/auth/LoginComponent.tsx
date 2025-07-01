@@ -1,12 +1,23 @@
 // frontend/src/components/auth/LoginComponent.tsx
-// Fixed login component with error handling, password toggle, and loading states
-// Version: 1.0.0
+// Fixed login component with proper error handling, validation, loading states, and accessibility
+// Version: 2.0.0
 
 'use client'
 
 import { useState, FormEvent } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import { validateLoginForm, type LoginFormData, type LoginFormErrors } from '../../lib/auth-validation'
+
+// Form data interface
+interface LoginFormData {
+  email: string
+  password: string
+}
+
+// Form errors interface
+interface LoginFormErrors {
+  email?: string
+  password?: string
+}
 
 // Props interface for the LoginComponent
 interface LoginComponentProps {
@@ -16,8 +27,37 @@ interface LoginComponentProps {
 }
 
 /**
+ * Validate email format
+ */
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
+}
+
+/**
+ * Validate login form data
+ */
+const validateLoginForm = (formData: LoginFormData): LoginFormErrors => {
+  const errors: LoginFormErrors = {}
+  
+  // Email validation
+  if (!formData.email.trim()) {
+    errors.email = 'Email is required'
+  } else if (!isValidEmail(formData.email.trim())) {
+    errors.email = 'Please enter a valid email address'
+  }
+  
+  // Password validation
+  if (!formData.password) {
+    errors.password = 'Password is required'
+  }
+  
+  return errors
+}
+
+/**
  * Fixed LoginComponent with all missing features added
- * Includes error display, password toggle, loading states, and proper error handling
+ * Includes proper error display, password toggle, loading states, validation, and accessibility
  */
 export default function LoginComponent({ 
   onLoginSuccess, 
@@ -30,7 +70,7 @@ export default function LoginComponent({
     password: ''
   })
   
-  // Error state management - FIXED: properly handle error objects
+  // Error state management
   const [errors, setErrors] = useState<LoginFormErrors>({})
   const [generalError, setGeneralError] = useState<string>('')
   
@@ -64,6 +104,13 @@ export default function LoginComponent({
    */
   const togglePasswordVisibility = () => {
     setShowPassword(prev => !prev)
+  }
+
+  /**
+   * Check if form is valid (both fields have content)
+   */
+  const isFormValid = (): boolean => {
+    return formData.email.trim().length > 0 && formData.password.length > 0
   }
 
   /**
@@ -109,7 +156,7 @@ export default function LoginComponent({
         // Call success callback
         onLoginSuccess?.(data.data?.user)
       } else {
-        // Handle API error - FIXED: properly extract error message
+        // Handle API error
         const errorMessage = data.error?.message || data.message || 'Login failed. Please try again.'
         setGeneralError(errorMessage)
         onLoginError?.(errorMessage)
@@ -152,7 +199,7 @@ export default function LoginComponent({
             id="email"
             name="email"
             type="email"
-            className="form-input"
+            className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.email ? 'border-red-500' : ''}`}
             placeholder="Enter your email"
             value={formData.email}
             onChange={(e) => handleInputChange('email', e.target.value)}
@@ -177,7 +224,7 @@ export default function LoginComponent({
               id="password"
               name="password"
               type={showPassword ? 'text' : 'password'}
-              className="form-input"
+              className={`form-input focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.password ? 'border-red-500' : ''}`}
               placeholder="Enter your password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
@@ -187,15 +234,16 @@ export default function LoginComponent({
             />
             <button
               type="button"
-              className="password-toggle-button"
+              className="password-toggle-button focus:ring-2 focus:ring-blue-500"
               onClick={togglePasswordVisibility}
               aria-label="Toggle password visibility"
               disabled={isLoading}
+              tabIndex={0}
             >
               {showPassword ? (
-                <EyeOff size={20} data-testid="eye-off-icon" />
+                <EyeOff data-testid="eye-off-icon" aria-hidden="true" size={20} />
               ) : (
-                <Eye size={20} data-testid="eye-icon" />
+                <Eye data-testid="eye-icon" aria-hidden="true" size={20} />
               )}
             </button>
           </div>
@@ -209,20 +257,29 @@ export default function LoginComponent({
         {/* Submit button */}
         <button
           type="submit"
-          className="submit-button"
-          disabled={isLoading || !formData.email || !formData.password}
+          className="submit-button focus:ring-2 focus:ring-blue-500"
+          disabled={!isFormValid() || isLoading}
           aria-label="Sign in to your account"
         >
-          {isLoading ? 'Signing In...' : 'Sign In'}
+          {isLoading ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
 
       <footer className="login-footer">
-        <a href="/forgot-password" className="help-link">
+        <a 
+          className="help-link focus:ring-2 focus:ring-blue-500" 
+          href="/forgot-password"
+        >
           Forgot your password?
         </a>
         <div className="signup-prompt">
-          Don't have an account? <a href="/register" className="signup-link">Sign up here</a>
+          Don't have an account?{' '}
+          <a 
+            className="signup-link focus:ring-2 focus:ring-blue-500" 
+            href="/register"
+          >
+            Sign up here
+          </a>
         </div>
       </footer>
     </section>
