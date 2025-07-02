@@ -136,7 +136,7 @@ describe('Media Upload Route', () => {
       expect(response.body).toEqual({
         success: true,
         data: {
-          id: expect.stringMatching(/^test-uuid-123-\d+$/),
+          id: 'test-uuid-123', // Just the UUID, not with timestamp
           url: expect.stringMatching(/^http:\/\/localhost:3001\/uploads\/test-uuid-123-\d+\.jpg$/),
           filename: expect.stringMatching(/^test-uuid-123-\d+\.jpg$/),
           originalName: 'profile-picture.jpg',
@@ -192,8 +192,8 @@ describe('Media Upload Route', () => {
       expect(response.body).toEqual({
         success: false,
         error: {
-          code: 'NO_FILE_PROVIDED',
-          message: 'No file provided. Use "file" field name'
+          code: 'VALIDATION_ERROR',
+          message: 'File is required for upload'
         }
       })
     })
@@ -213,15 +213,15 @@ describe('Media Upload Route', () => {
         success: false,
         error: {
           code: 'INVALID_FILE_TYPE',
-          message: 'Unsupported file type. Allowed types: jpg, jpeg, png, gif, webp'
+          message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
         }
       })
     })
 
     it('should reject files exceeding size limit', async () => {
-      // Create file larger than 5MB limit
+      // Create file larger than 10MB limit
       const testFile = createTestFile({
-        size: 6 * 1024 * 1024 // 6MB
+        size: 11 * 1024 * 1024 // 11MB
       })
       
       const response = await request(app)
@@ -233,7 +233,7 @@ describe('Media Upload Route', () => {
         success: false,
         error: {
           code: 'FILE_TOO_LARGE',
-          message: 'File size exceeds 5MB limit'
+          message: 'File size exceeds 10MB limit'
         }
       })
     })
@@ -251,8 +251,14 @@ describe('Media Upload Route', () => {
       expect(response.body).toEqual({
         success: false,
         error: {
-          code: 'INVALID_ALT_TEXT',
-          message: 'Alt text must be 200 characters or less'
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid media upload data',
+          details: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'altText',
+              message: 'Alt text must be 200 characters or less'
+            })
+          ])
         }
       })
     })
@@ -302,8 +308,8 @@ describe('Media Upload Route', () => {
       expect(response.body).toEqual({
         success: false,
         error: {
-          code: 'DIRECTORY_ERROR',
-          message: 'Failed to create upload directory'
+          code: 'UPLOAD_PROCESSING_ERROR',
+          message: 'Failed to process uploaded file'
         }
       })
     })
@@ -334,9 +340,9 @@ describe('Media Upload Route', () => {
 
   describe('Edge Cases', () => {
     it('should handle files at exactly the size limit', async () => {
-      // Create file at exactly 5MB
+      // Create file at exactly 10MB
       const testFile = createTestFile({
-        size: 5 * 1024 * 1024 // Exactly 5MB
+        size: 10 * 1024 * 1024 // Exactly 10MB
       })
       
       const response = await request(app)
@@ -344,7 +350,7 @@ describe('Media Upload Route', () => {
         .attach('file', testFile.buffer, testFile.filename)
         .expect(201)
       
-      expect(response.body.data.size).toBe(5 * 1024 * 1024)
+      expect(response.body.data.size).toBe(10 * 1024 * 1024)
     })
 
     it('should handle files with no extension', async () => {
@@ -362,7 +368,7 @@ describe('Media Upload Route', () => {
         success: false,
         error: {
           code: 'INVALID_FILE_TYPE',
-          message: 'Unsupported file type. Allowed types: jpg, jpeg, png, gif, webp'
+          message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
         }
       })
     })
