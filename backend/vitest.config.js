@@ -34,7 +34,7 @@ export default defineConfig({
     testTimeout: 10000,
     
     // Setup files
-    setupFiles: ['./tests/setup.js']
+    setupFiles: ['./__tests__/setup.ts']
   },
   
   // Resolve configuration for ES modules
