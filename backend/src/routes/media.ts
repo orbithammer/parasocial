@@ -1,6 +1,6 @@
 // backend/src/routes/media.ts
-// Version: 1.2
-// Fixed multer storage configuration to use callback-style instead of async/await to resolve 500 errors
+// Version: 1.3  
+// Fixed multer storage configuration and API response format to match test expectations
 
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
@@ -135,14 +135,14 @@ router.post('/upload',
       // Generate public URL for the uploaded file
       const fileUrl = generateFileUrl(req.file.filename!)
 
-      // Return successful upload response
+      // Return successful upload response with proper API format
       res.status(201).json({
         success: true,
         data: {
           id: uuidv4(), // Generate unique ID for database storage
           filename: req.file.filename,
           originalName: req.file.originalname,
-          mimetype: req.file.mimetype,
+          mimeType: req.file.mimetype, // Use camelCase to match API spec
           size: req.file.size,
           url: fileUrl,
           altText: altText || null,

@@ -1,31 +1,16 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.0
-// Validation middleware for media uploads and moderation endpoints
+// Version: 1.2
+// Fixed file size validation message, error response format, and TypeScript interface compatibility
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 
 /**
- * File upload interface for validation
- * Contains the essential properties needed from multer
- */
-interface UploadedFile {
-  fieldname: string
-  originalname: string
-  encoding: string
-  mimetype: string
-  size: number
-  destination?: string
-  filename?: string
-  path?: string
-  buffer?: Buffer
-}
-
-/**
- * Extended Request interface to include file upload
+ * Extended Request interface to include multer file upload
+ * Uses Express.Multer.File type to avoid conflicts
  */
 interface FileUploadRequest extends Request {
-  file?: UploadedFile
+  file?: Express.Multer.File
 }
 
 /**
@@ -41,6 +26,7 @@ const mediaUploadSchema = z.object({
 
 /**
  * Validation schema for file upload requirements
+ * Fixed size validation message to be accurate
  */
 const fileValidationSchema = z.object({
   mimetype: z.string()
@@ -58,7 +44,7 @@ const fileValidationSchema = z.object({
       message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
     }),
   size: z.number()
-    .max(10 * 1024 * 1024, 'File size must be less than 10MB')
+    .max(10 * 1024 * 1024, 'File size must be 10MB or less') // Fixed: accurate message
     .min(1, 'File cannot be empty')
 })
 
@@ -121,8 +107,7 @@ const usernameParamSchema = z.object({
 
 /**
  * Middleware to validate media upload request
- * Note: This should be used after multer middleware that adds req.file
- * Example: router.post('/upload', upload.single('file'), validateMediaUpload, handler)
+ * Fixed to match test expectations for error responses
  */
 export const validateMediaUpload = (req: FileUploadRequest, res: Response, next: NextFunction): void => {
   try {
@@ -151,6 +136,33 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
     next()
   } catch (error) {
     if (error instanceof z.ZodError) {
+      // Check for specific validation errors to provide appropriate responses
+      const sizeError = error.errors.find(err => err.path.includes('size'))
+      const typeError = error.errors.find(err => err.path.includes('mimetype'))
+      
+      if (typeError) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_FILE_TYPE',
+            message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
+          }
+        })
+        return
+      }
+      
+      if (sizeError) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'FILE_TOO_LARGE',
+            message: 'File size exceeds 10MB limit'
+          }
+        })
+        return
+      }
+      
+      // General validation error response
       res.status(400).json({
         success: false,
         error: {
@@ -223,7 +235,7 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Invalid block data',
+          message: 'Invalid block user data',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
             message: err.message,
@@ -248,8 +260,8 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
  */
 export const validateUsernameParam = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    const validatedParams = usernameParamSchema.parse(req.params)
-    req.params = validatedParams
+    const validatedData = usernameParamSchema.parse(req.params)
+    req.params = validatedData
     next()
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -257,7 +269,7 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Invalid username',
+          message: 'Invalid username parameter',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
             message: err.message,
