@@ -205,7 +205,7 @@ describe('LoginComponent - User Interactions', () => {
       await user.click(screen.getByRole('button', { name: /sign in to your account/i }))
       
       // Try to submit again immediately
-      await user.click(screen.getByRole('button'))
+      await user.click(screen.getByRole('button', { name: /sign in to your account/i }))
 
       // Should only have been called once
       expect(mockFetch).toHaveBeenCalledTimes(1)
@@ -270,7 +270,7 @@ describe('LoginComponent - User Interactions', () => {
       expect(screen.getByLabelText(/email address/i)).toBeDisabled()
       expect(screen.getByLabelText(/^password$/i)).toBeDisabled()
       
-      const submitButton = screen.getByRole('button')
+      const submitButton = screen.getByRole('button', { name: /sign in to your account/i })
       expect(submitButton).toBeDisabled()
     })
   })
