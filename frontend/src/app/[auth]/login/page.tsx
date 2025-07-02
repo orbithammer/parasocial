@@ -1,5 +1,5 @@
-// frontend/src/app/(auth)/login/page.tsx
-// Login page component for user authentication
+// frontend/src/app/(auth)/signin/page.tsx
+// Signin page component for user authentication
 // Version: 1.0.0
 
 'use client'
@@ -78,7 +78,7 @@ function validateLoginForm(formData: LoginFormData): LoginFormErrors {
  * Provides user authentication interface for existing ParaSocial accounts
  * @returns JSX element for the complete login page
  */
-export default function LoginPage() {
+export default function SigninPage() {
   // Form state management
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
