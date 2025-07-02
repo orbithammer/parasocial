@@ -7,6 +7,7 @@ backend/node_modules/
 frontend/.next/
 frontend/out/
 backend/dist/
+backend/uploads/
 
 # Environment variables
 .env
