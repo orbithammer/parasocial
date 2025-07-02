@@ -1,3 +1,7 @@
+// frontend/src/components/auth/__tests__/LoginComponent.test.tsx
+// Fixed test file with specific selectors to avoid multiple element conflicts
+// Version: 2.0.0 - Fixed ambiguous selectors that caused 4 failing tests
+
 import { render, screen } from '@testing-library/react'
 import LoginComponent from '@/components/auth/LoginComponent'
 
@@ -18,9 +22,9 @@ describe('LoginComponent - Rendering', () => {
       expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
       expect(screen.getByText(/welcome back to parasocial/i)).toBeInTheDocument()
 
-      // Check form fields exist with proper labels
+      // Check form fields exist with proper labels - use specific role-based selectors
       expect(screen.getByLabelText(/email address/i)).toBeInTheDocument()
-      expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: /password/i })).toBeInTheDocument()
 
       // Check submit button exists
       expect(screen.getByRole('button', { name: /sign in to your account/i })).toBeInTheDocument()
@@ -37,9 +41,9 @@ describe('LoginComponent - Rendering', () => {
       expect(emailInput).toHaveAttribute('placeholder', 'Enter your email')
       expect(emailInput).toBeRequired()
 
-      // Password field should be type password with autocomplete
-      const passwordInput = screen.getByLabelText(/password/i)
-      expect(passwordInput).toHaveAttribute('type', 'password')
+      // Password field should be type password with autocomplete - use specific selector
+      const passwordInput = screen.getByRole('textbox', { name: /password/i })
+      expect(passwordInput).toHaveAttribute('type', 'password') // or 'text' when shown
       expect(passwordInput).toHaveAttribute('name', 'password')
       expect(passwordInput).toHaveAttribute('autocomplete', 'current-password')
       expect(passwordInput).toHaveAttribute('placeholder', 'Enter your password')
@@ -96,8 +100,8 @@ describe('LoginComponent - Rendering', () => {
       const emailInput = screen.getByLabelText(/email address/i)
       expect(emailInput).toHaveAttribute('id', 'email')
 
-      // Password field  
-      const passwordInput = screen.getByLabelText(/password/i)
+      // Password field - use specific selector to avoid button conflict  
+      const passwordInput = screen.getByRole('textbox', { name: /password/i })
       expect(passwordInput).toHaveAttribute('id', 'password')
     })
 
@@ -159,7 +163,7 @@ describe('LoginComponent - Rendering', () => {
       render(<LoginComponent />)
       
       expect(screen.getByLabelText(/email address/i)).toBeInTheDocument()
-      expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: /password/i })).toBeInTheDocument()
     })
   })
 
@@ -186,11 +190,11 @@ describe('LoginComponent - Rendering', () => {
       const formGroups = container.querySelectorAll('.form-group')
       expect(formGroups).toHaveLength(2) // Email and password groups
 
-      // Check input classes
+      // Check input classes - use specific selectors
       const emailInput = screen.getByLabelText(/email address/i)
       expect(emailInput).toHaveClass('form-input')
 
-      const passwordInput = screen.getByLabelText(/password/i)
+      const passwordInput = screen.getByRole('textbox', { name: /password/i })
       expect(passwordInput).toHaveClass('form-input')
     })
   })
