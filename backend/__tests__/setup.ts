@@ -1,28 +1,53 @@
-// backend/tests/setup.js
-// Global test setup and configuration
+// __tests__/setup.ts
+// Version: 1.0.0
+// Global test setup and teardown for Vitest
 
-import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { PrismaClient } from '@prisma/client'
+import dotenv from 'dotenv'
 
-// Global test setup
-beforeAll(async () => {
-  // Set test environment variables
-  process.env.NODE_ENV = 'test'
-  process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only'
-  
+// Load test environment variables
+dotenv.config({ path: '.env.test' })
+
+let prisma: PrismaClient
+
+/**
+ * Global setup function - runs once before all tests
+ * Called by Vitest when configured as globalSetup
+ */
+export async function setup() {
   console.log('🧪 Test environment initialized')
-})
+  
+  // Initialize Prisma client for tests
+  prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL
+      }
+    }
+  })
+  
+  // Connect to test database
+  await prisma.$connect()
+  
+  // Run any global test setup here
+  // For example: seed test data, clear caches, etc.
+  
+  return async () => {
+    // This cleanup function runs after all tests
+    await teardown()
+  }
+}
 
-// Cleanup after all tests
-afterAll(async () => {
+/**
+ * Global teardown function - runs once after all tests
+ */
+export async function teardown() {
   console.log('🧹 Test cleanup completed')
-})
-
-// Reset state before each test
-beforeEach(async () => {
-  // Reset any global state if needed
-})
-
-// Cleanup after each test
-afterEach(async () => {
-  // Clear any test artifacts
-})
+  
+  if (prisma) {
+    // Clean up database connections
+    await prisma.$disconnect()
+  }
+  
+  // Any other global cleanup
+}

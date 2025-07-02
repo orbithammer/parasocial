@@ -1,53 +1,59 @@
-// backend/vitest.config.js
-// Version: 1.2
-// Fixed patterns to match your actual test file structure
+// vitest.config.ts
+// Version: 1.0.0
+// Fix setup.ts test discovery issue
 
 import { defineConfig } from 'vitest/config'
+import path from 'path'
 
 export default defineConfig({
   test: {
-    // Test environment
+    // Test environment setup
     environment: 'node',
     
-    // Test file patterns - Updated to match your actual structure
-    include: [
-      'src/**/*.test.{js,ts}',                    // Files like mediaUpload.test.ts
-      'src/**/__tests__/**/*.{js,ts,jsx,tsx}',    // Files in src/*/__tests__/
-      '__tests__/**/*.{js,ts,jsx,tsx}',           // Files in root __tests__/ (your structure)
-      '**/*.test.{js,ts,jsx,tsx}',                // Any .test. files anywhere
-      '**/*.spec.{js,ts,jsx,tsx}'                 // Any .spec. files anywhere
-    ],
-    exclude: ['node_modules', 'dist', 'build', '.next'],
+    // Global setup files (run once before all tests)
+    globalSetup: ['__tests__/setup.ts'],
     
-    // Global test setup
-    globals: true,
+    // Per-test setup files (run before each test file)
+    setupFiles: [],
+    
+    // Test file patterns - explicitly exclude setup files
+    include: [
+      '__tests__/**/*.{test,spec}.{js,ts}',
+      '**/*.{test,spec}.{js,ts}'
+    ],
+    
+    // Exclude setup files from being run as tests
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      '__tests__/setup.ts',
+      '__tests__/setup/**',
+      '**/*.setup.{js,ts}',
+      '**/*setup*.{js,ts}'
+    ],
+    
+    // Test timeout
+    testTimeout: 10000,
     
     // Coverage configuration
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: [
-        'node_modules/',
-        '__tests__/',
-        'dist/',
-        'build/',
+        'coverage/**',
+        'dist/**',
+        '__tests__/**',
         '**/*.d.ts',
         '**/*.config.{js,ts}',
-        '**/index.{js,ts}'
+        '**/setup.ts'
       ]
-    },
-    
-    // Test timeout
-    testTimeout: 10000,
-    
-    // Setup files
-    setupFiles: ['./__tests__/setup.ts']
+    }
   },
   
-  // Resolve configuration for ES modules
+  // TypeScript path resolution
   resolve: {
     alias: {
-      '@': new URL('./src', import.meta.url).pathname
+      '@': path.resolve(__dirname, './src')
     }
   }
 })
