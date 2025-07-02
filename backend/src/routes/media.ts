@@ -1,68 +1,84 @@
 // backend/src/routes/media.ts
-// Version: 1.1
-// Added complete upload route handler and multer configuration to fix 500 errors
+// Version: 1.2
+// Fixed multer storage configuration to use callback-style instead of async/await to resolve 500 errors
 
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import path from 'path'
-import fs from 'fs/promises'
+import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
 import { validateMediaUpload } from '../middleware/mediaModerationValidationMiddleware'
 import { mediaUploadRateLimit } from '../middleware/rateLimitMiddleware'
 
 const router = Router()
 
-// Ensure uploads directory exists
+// Define uploads directory path
 const uploadsDir = path.join(process.cwd(), 'uploads')
 
 /**
- * Initialize uploads directory on startup
- * Creates directory structure if it doesn't exist
+ * Initialize uploads directory on startup using callback-style fs
+ * This ensures directory exists before any upload attempts
  */
-async function initializeUploadsDirectory(): Promise<void> {
-  try {
-    await fs.access(uploadsDir)
-  } catch {
-    await fs.mkdir(uploadsDir, { recursive: true })
-    console.log('Created uploads directory:', uploadsDir)
-  }
+function initializeUploadsDirectory(): void {
+  fs.access(uploadsDir, (err) => {
+    if (err) {
+      // Directory doesn't exist, create it
+      fs.mkdir(uploadsDir, { recursive: true }, (mkdirErr) => {
+        if (mkdirErr) {
+          console.error('Failed to create uploads directory:', mkdirErr)
+        } else {
+          console.log('Created uploads directory:', uploadsDir)
+        }
+      })
+    } else {
+      console.log('Uploads directory already exists:', uploadsDir)
+    }
+  })
 }
 
 // Initialize directory when module loads
-initializeUploadsDirectory().catch(console.error)
+initializeUploadsDirectory()
 
 /**
- * Multer storage configuration
- * Handles file naming and storage location
+ * Multer storage configuration using callback-style fs operations
+ * This fixes the 500 error caused by async/await in multer callbacks
  */
 const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      // Ensure directory exists for each request
-      await fs.access(uploadsDir)
-      cb(null, uploadsDir)
-    } catch {
-      try {
-        await fs.mkdir(uploadsDir, { recursive: true })
+  destination: (req, file, cb) => {
+    // Use callback-style fs.access instead of async/await
+    fs.access(uploadsDir, (err) => {
+      if (err) {
+        // Directory doesn't exist, create it
+        fs.mkdir(uploadsDir, { recursive: true }, (mkdirErr) => {
+          if (mkdirErr) {
+            cb(mkdirErr, '')
+          } else {
+            cb(null, uploadsDir)
+          }
+        })
+      } else {
+        // Directory exists
         cb(null, uploadsDir)
-      } catch (error) {
-        cb(error as Error, '')
       }
-    }
+    })
   },
   filename: (req, file, cb) => {
-    // Generate unique filename: uuid + timestamp + original extension
-    const uniqueId = uuidv4()
-    const timestamp = Date.now()
-    const extension = path.extname(file.originalname).toLowerCase()
-    const filename = `${uniqueId}-${timestamp}${extension}`
-    cb(null, filename)
+    try {
+      // Generate unique filename: uuid + timestamp + original extension
+      const uniqueId = uuidv4()
+      const timestamp = Date.now()
+      const extension = path.extname(file.originalname).toLowerCase()
+      const filename = `${uniqueId}-${timestamp}${extension}`
+      cb(null, filename)
+    } catch (error) {
+      cb(error as Error, '')
+    }
   }
 })
 
 /**
  * Multer file filter - accept all files and let validation middleware handle type checking
- * This avoids TypeScript callback issues and provides better error messages
+ * This provides better error messages through our validation system
  */
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   // Accept all files - validation middleware will handle file type checking
@@ -71,6 +87,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
 
 /**
  * Configure multer with storage, file filter, and limits
+ * 10MB limit for file uploads with single file restriction
  */
 const upload = multer({
   storage,
@@ -136,13 +153,13 @@ router.post('/upload',
     } catch (error) {
       console.error('Upload processing error:', error)
       
-      // Clean up uploaded file if processing fails
+      // Clean up uploaded file if processing fails (using callback-style)
       if (req.file?.path) {
-        try {
-          await fs.unlink(req.file.path)
-        } catch (cleanupError) {
-          console.error('Failed to clean up file:', cleanupError)
-        }
+        fs.unlink(req.file.path, (unlinkErr) => {
+          if (unlinkErr) {
+            console.error('Failed to clean up file:', unlinkErr)
+          }
+        })
       }
 
       res.status(500).json({
