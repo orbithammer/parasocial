@@ -1,6 +1,6 @@
 // backend/src/routes/__tests__/mediaUpload.test.ts
-// Version: 1.4
-// Fixed fs.mkdir mocking to handle multiple function signatures properly
+// Version: 1.5
+// Fixed fs mocking to use importOriginal to preserve module structure and avoid default export errors
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import request from 'supertest'
@@ -9,12 +9,16 @@ import fs from 'fs'
 import path from 'path'
 import mediaRouter from '../media'
 
-// Mock the callback-style fs module with proper TypeScript support
-vi.mock('fs', () => ({
-  access: vi.fn(),
-  mkdir: vi.fn(),
-  unlink: vi.fn()
-}))
+// Mock the callback-style fs module with proper default export and importOriginal
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    access: vi.fn(),
+    mkdir: vi.fn(),
+    unlink: vi.fn()
+  }
+})
 
 // Get the mocked functions with proper typing
 const mockFsAccess = vi.mocked(fs.access)
