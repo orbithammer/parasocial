@@ -1,5 +1,6 @@
 // backend/src/app.ts
-// Example Express app setup with all routes including follow functionality
+// Version: 1.2
+// Added media router integration for file upload functionality
 
 import express from 'express'
 import cors from 'cors'
@@ -9,6 +10,7 @@ import { PrismaClient } from '@prisma/client'
 import { createAuthRouter } from './routes/auth'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
+import mediaRouter from './routes/media'  // Added media router import
 // Optional: import { createFollowsRouter } from './routes/follows'
 
 // Import controllers
@@ -105,6 +107,9 @@ export function createApp() {
   })
   app.use(`${apiPrefix}/users`, usersRouter)
 
+  // Media upload routes - ADDED
+  app.use(`${apiPrefix}/media`, mediaRouter)
+
   // Optional: Dedicated follow routes (alternative approach)
   // const followsRouter = createFollowsRouter({
   //   followController,
@@ -112,6 +117,13 @@ export function createApp() {
   //   optionalAuthMiddleware
   // })
   // app.use(`${apiPrefix}/follows`, followsRouter)
+
+  // ============================================================================
+  // STATIC FILE SERVING
+  // ============================================================================
+  
+  // Serve uploaded files statically
+  app.use('/uploads', express.static('uploads'))
 
   // ============================================================================
   // API DOCUMENTATION ENDPOINT
@@ -154,6 +166,9 @@ export function createApp() {
         blocking: [
           'POST /users/:username/block',
           'DELETE /users/:username/block'
+        ],
+        media: [  // Added media endpoints
+          'POST /media/upload'
         ]
       }
     })
