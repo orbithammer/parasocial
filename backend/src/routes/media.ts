@@ -1,6 +1,6 @@
 // backend/src/routes/media.ts
-// Version: 1.3  
-// Fixed multer storage configuration and API response format to match test expectations
+// Version: 1.5
+// Fixed no file error response to match test expectations
 
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
@@ -14,6 +14,13 @@ const router = Router()
 
 // Define uploads directory path
 const uploadsDir = path.join(process.cwd(), 'uploads')
+
+/**
+ * Supported file types for media uploads
+ */
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm']
+const SUPPORTED_FILE_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES]
 
 /**
  * Initialize uploads directory on startup using callback-style fs
@@ -77,11 +84,31 @@ const storage = multer.diskStorage({
 })
 
 /**
- * Multer file filter - accept all files and let validation middleware handle type checking
- * This provides better error messages through our validation system
+ * Custom multer error class for file type validation
+ */
+class FileTypeError extends Error {
+  code: string
+  
+  constructor(message: string) {
+    super(message)
+    this.code = 'INVALID_FILE_TYPE'
+    this.name = 'FileTypeError'
+  }
+}
+
+/**
+ * Multer file filter - validates file types and returns simple error codes
+ * This handles file type validation at the multer level as expected by route tests
  */
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  // Accept all files - validation middleware will handle file type checking
+  // Check if file type is supported
+  if (!SUPPORTED_FILE_TYPES.includes(file.mimetype)) {
+    const error = new FileTypeError('File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM')
+    cb(error)
+    return
+  }
+  
+  // File type is supported
   cb(null, true)
 }
 
@@ -118,13 +145,13 @@ router.post('/upload',
   validateMediaUpload,
   async (req: Request, res: Response) => {
     try {
-      // File should exist due to validation middleware
+      // File should exist due to multer processing
       if (!req.file) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'NO_FILE',
-            message: 'No file uploaded'
+            code: 'VALIDATION_ERROR',
+            message: 'File is required for upload'
           }
         })
       }
@@ -178,6 +205,18 @@ router.post('/upload',
  * Must be defined after the upload route
  */
 router.use((error: any, req: Request, res: Response, next: any) => {
+  // Handle custom file type errors
+  if (error instanceof FileTypeError) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_FILE_TYPE',
+        message: error.message
+      }
+    })
+  }
+  
+  // Handle standard multer errors
   if (error instanceof multer.MulterError) {
     switch (error.code) {
       case 'LIMIT_FILE_SIZE':

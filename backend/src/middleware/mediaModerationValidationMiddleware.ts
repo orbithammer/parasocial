@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 3.0
-// Fixed report schema to match test expectations - uppercase enums, correct error messages, proper error codes
+// Version: 2.3
+// Updated to only handle body validation - file type validation now handled by multer fileFilter
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -13,18 +13,6 @@ interface FileUploadRequest extends Request {
 }
 
 /**
- * Maximum file size: 10MB
- */
-const MAX_FILE_SIZE = 10 * 1024 * 1024
-
-/**
- * Supported file types for media uploads
- */
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm']
-const SUPPORTED_FILE_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES]
-
-/**
  * Validation schema for media upload body data
  */
 const mediaUploadSchema = z.object({
@@ -35,32 +23,16 @@ const mediaUploadSchema = z.object({
 })
 
 /**
- * Validation schema for file properties
- */
-const fileValidationSchema = z.object({
-  mimetype: z.string()
-    .refine(
-      (type) => SUPPORTED_FILE_TYPES.includes(type),
-      'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
-    ),
-  size: z.number()
-    .max(MAX_FILE_SIZE, 'File size must be less than 10MB')
-    .min(1, 'File cannot be empty')
-})
-
-/**
- * Validation schema for report creation - Fixed to match test expectations
+ * Validation schema for report creation
  */
 const reportSchema = z.object({
-  type: z.enum(['HARASSMENT', 'SPAM', 'MISINFORMATION', 'INAPPROPRIATE_CONTENT', 'COPYRIGHT', 'OTHER'], {
-    errorMap: () => ({ 
-      message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' 
-    })
+  type: z.enum(['harassment', 'spam', 'misinformation', 'inappropriate_content', 'copyright', 'other'], {
+    errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
   }),
   description: z.string()
     .trim()
-    .min(10, 'Report description must be at least 10 characters')
-    .max(1000, 'Report description must be less than 1000 characters'),
+    .min(10, 'Description must be at least 10 characters')
+    .max(1000, 'Description must be less than 1000 characters'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
 }).refine((data) => {
@@ -96,51 +68,37 @@ const usernameParamSchema = z.object({
 
 /**
  * Middleware to validate media upload request
- * Returns detailed validation errors matching test expectations
+ * Only handles body validation - file validation is handled by multer fileFilter
  */
 export const validateMediaUpload = (req: FileUploadRequest, res: Response, next: NextFunction): void => {
   try {
-    // Validate the file exists
-    if (!req.file) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'File is required for upload'
-        }
-      })
-      return
+    // File existence is handled by multer, just validate request body
+    try {
+      const bodyValidation = mediaUploadSchema.parse(req.body)
+      req.body = bodyValidation
+    } catch (bodyError) {
+      if (bodyError instanceof z.ZodError) {
+        // Return detailed validation error format for body validation
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid media upload data',
+            details: bodyError.errors.map(err => ({
+              field: err.path.join('.'),
+              message: err.message
+            }))
+          }
+        })
+        return
+      }
     }
 
-    // Validate file properties
-    const fileValidation = fileValidationSchema.parse({
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    })
-
-    // Validate optional body data (like altText)
-    const bodyValidation = mediaUploadSchema.parse(req.body)
-    req.body = bodyValidation
-
+    // All validations passed
     next()
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      // Return detailed validation error format that tests expect
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid media upload data',
-          details: error.errors.map(err => ({
-            field: err.path.join('.'),
-            message: err.message
-          }))
-        }
-      })
-      return
-    }
-
-    // Handle unexpected errors - Fixed to match test expectations
+    // Catch any unexpected errors
+    console.error('Media validation error:', error)
     res.status(500).json({
       success: false,
       error: {
@@ -152,9 +110,9 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
 }
 
 /**
- * Middleware to validate report creation request - Fixed to match test expectations
+ * Middleware to validate content reports
  */
-export const validateCreateReport = (req: Request, res: Response, next: NextFunction): void => {
+export const validateReport = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const validatedData = reportSchema.parse(req.body)
     req.body = validatedData
@@ -172,22 +130,20 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
           }))
         }
       })
-      return
+    } else {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Report validation failed'
+        }
+      })
     }
-
-    // Fixed error code and message to match test expectations
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'Internal server error during validation'
-      }
-    })
   }
 }
 
 /**
- * Middleware to validate user blocking request
+ * Middleware to validate user blocking requests
  */
 export const validateBlockUser = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -200,29 +156,27 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Invalid block user data',
+          message: 'Invalid block request',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
             message: err.message
           }))
         }
       })
-      return
+    } else {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Block validation failed'
+        }
+      })
     }
-
-    // Fixed error code and message to match test expectations
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'Internal server error during validation'
-      }
-    })
   }
 }
 
 /**
- * Middleware to validate username parameter
+ * Middleware to validate username parameters
  */
 export const validateUsernameParam = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -234,24 +188,18 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
       res.status(400).json({
         success: false,
         error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid username parameter',
-          details: error.errors.map(err => ({
-            field: err.path.join('.'),
-            message: err.message
-          }))
+          code: 'INVALID_USERNAME',
+          message: error.errors[0].message
         }
       })
-      return
+    } else {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Username validation failed'
+        }
+      })
     }
-
-    // Fixed error code and message to match test expectations
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'Internal server error during validation'
-      }
-    })
   }
 }
