@@ -1,16 +1,17 @@
 // backend/src/routes/__tests__/staticFileServingSecurity.test.ts
-// Version: 1.1
-// Fixed middleware order, added JSON parsing, improved Windows path handling and test robustness
+// Version: 1.8
+// Updated to use clean middleware implementation with correct export name
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import path from 'path'
 import fs from 'fs'
+import { createSecureStaticFileHandler } from '../../middleware/staticFileSecurityMiddleware'
 
 /**
  * Create test Express app with static file serving middleware
- * Replicates the security middleware from app.ts for isolated testing
+ * Uses the same security middleware as the main app
  */
 function createTestAppWithStaticSecurity(): express.Application {
   const app = express()
@@ -18,51 +19,9 @@ function createTestAppWithStaticSecurity(): express.Application {
   // Add JSON parsing middleware (needed for error responses)
   app.use(express.json())
   
-  // Replicate the uploads static serving with security from app.ts
+  // Use the same secure static file handler as the main app
   const uploadsPath = path.join(process.cwd(), 'test-uploads')
-  
-  // Security middleware: Prevent directory traversal (applied to all /uploads requests)
-  app.use('/uploads', (req, res, next) => {
-    // Check for path traversal attempts in the URL path
-    if (req.path.includes('..') || req.path.includes('~')) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
-    }
-    next()
-  })
-  
-  // Serve static files with security headers
-  app.use('/uploads', express.static(uploadsPath, {
-    // No cache in test environment
-    maxAge: 0,
-    // Security: Don't expose file system details
-    dotfiles: 'deny',
-    // Add security headers
-    setHeaders: (res, filePath) => {
-      // Prevent files from being executed as scripts
-      res.setHeader('X-Content-Type-Options', 'nosniff')
-      // Only allow files to be embedded in same origin
-      res.setHeader('X-Frame-Options', 'SAMEORIGIN')
-      
-      // Set appropriate Content-Type based on file extension
-      const ext = path.extname(filePath).toLowerCase()
-      if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
-        // Image files - allow inline display
-        res.setHeader('Content-Disposition', 'inline')
-      } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
-        // Video files - allow inline display
-        res.setHeader('Content-Disposition', 'inline')
-      } else {
-        // Other files - force download for security
-        res.setHeader('Content-Disposition', 'attachment')
-      }
-    }
-  }))
+  app.use('/uploads', ...createSecureStaticFileHandler(uploadsPath))
   
   return app
 }
@@ -310,6 +269,15 @@ describe('Static File Serving Security', () => {
       const response = await request(app)
         .get('/uploads/.hidden-config')
         .expect(403)
+      
+      // Verify security response format
+      expect(response.body).toEqual({
+        success: false,
+        error: {
+          code: 'DOTFILE_ACCESS_DENIED',
+          message: 'Access to dotfiles is not allowed'
+        }
+      })
     })
     
     it('should deny access to files starting with dot', async () => {
@@ -320,9 +288,11 @@ describe('Static File Serving Security', () => {
         createTestFile(dotfile, 'sensitive content')
         
         // Should deny access to all dotfiles
-        await request(app)
+        const response = await request(app)
           .get(`/uploads/${dotfile}`)
           .expect(403)
+        
+        expect(response.body.error.code).toBe('DOTFILE_ACCESS_DENIED')
       }
     })
   })
