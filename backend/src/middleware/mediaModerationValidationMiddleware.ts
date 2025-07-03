@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.2
-// Updated file validation error to match test expectations - changed NO_FILE to VALIDATION_ERROR
+// Version: 1.3
+// Fixed internal server error handling in validateCreateReport to return SERVER_ERROR code instead of VALIDATION_ERROR
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -204,11 +204,13 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
         }
       })
     } else {
+      // Handle internal server errors (non-validation errors)
+      console.error('Report validation error:', error)
       res.status(500).json({
         success: false,
         error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Report validation failed'
+          code: 'SERVER_ERROR',
+          message: 'Internal server error during validation'
         }
       })
     }
