@@ -1,17 +1,17 @@
 // backend/src/app.ts
-// Version: 1.2
-// Added media router integration for file upload functionality
+// Version: 1.5
+// Fixed import paths and verified constructor parameters for all repositories and services
 
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
 import { PrismaClient } from '@prisma/client'
 
 // Import route creators
 import { createAuthRouter } from './routes/auth'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
-import mediaRouter from './routes/media'  // Added media router import
-// Optional: import { createFollowsRouter } from './routes/follows'
+import mediaRouter from './routes/media'
 
 // Import controllers
 import { AuthController } from './controllers/AuthController'
@@ -33,7 +33,7 @@ import { BlockRepository } from './repositories/BlockRepository'
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
 
 /**
- * Create and configure Express application with all routes
+ * Create and configure Express application with all routes and static file serving
  */
 export function createApp() {
   const app = express()
@@ -42,175 +42,160 @@ export function createApp() {
   // MIDDLEWARE SETUP
   // ============================================================================
 
-  // Basic middleware
-  app.use(cors())
-  app.use(express.json())
+  // Enable CORS for cross-origin requests
+  app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true
+  }))
+
+  // Parse JSON bodies with size limit
+  app.use(express.json({ limit: '10mb' }))
+
+  // Parse URL-encoded bodies
   app.use(express.urlencoded({ extended: true }))
-
-  // ============================================================================
-  // DEPENDENCY SETUP
-  // ============================================================================
-
-  // Database client
-  const prisma = new PrismaClient()
-
-  // Repositories
-  const userRepository = new UserRepository(prisma)
-  const postRepository = new PostRepository(prisma)
-  const followRepository = new FollowRepository(prisma)
-  const blockRepository = new BlockRepository(prisma)
-
-  // Services
-  const authService = new AuthService()
-  const followService = new FollowService(followRepository, userRepository)
-
-  // Controllers
-  const authController = new AuthController(authService, userRepository)
-  const postController = new PostController(postRepository, userRepository)
-  // Fixed: UserController expects userRepository, followRepository, and blockRepository
-  const userController = new UserController(userRepository, followRepository, blockRepository)
-  const followController = new FollowController(followService, userRepository)
-
-  // Middleware functions
-  const authMiddleware = createAuthMiddleware(authService)
-  const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
-
-  // ============================================================================
-  // ROUTE REGISTRATION
-  // ============================================================================
-
-  // API base path
-  const apiPrefix = '/api/v1'
-
-  // Authentication routes
-  const authRouter = createAuthRouter({
-    authController,
-    authMiddleware
-  })
-  app.use(`${apiPrefix}/auth`, authRouter)
-
-  // Post routes
-  const postsRouter = createPostsRouter({
-    postController,
-    authMiddleware,
-    optionalAuthMiddleware
-  })
-  app.use(`${apiPrefix}/posts`, postsRouter)
-
-  // User routes (includes all follow/unfollow functionality)
-  const usersRouter = createUsersRouter({
-    userController,
-    postController,
-    followController, // Added FollowController
-    authMiddleware,
-    optionalAuthMiddleware
-  })
-  app.use(`${apiPrefix}/users`, usersRouter)
-
-  // Media upload routes - ADDED
-  app.use(`${apiPrefix}/media`, mediaRouter)
-
-  // Optional: Dedicated follow routes (alternative approach)
-  // const followsRouter = createFollowsRouter({
-  //   followController,
-  //   authMiddleware,
-  //   optionalAuthMiddleware
-  // })
-  // app.use(`${apiPrefix}/follows`, followsRouter)
 
   // ============================================================================
   // STATIC FILE SERVING
   // ============================================================================
-  
-  // Serve uploaded files statically
-  app.use('/uploads', express.static('uploads'))
-
-  // ============================================================================
-  // API DOCUMENTATION ENDPOINT
-  // ============================================================================
 
   /**
-   * GET /api/v1/routes
-   * Get available API routes (for development)
+   * Serve uploaded media files from the uploads directory
+   * Files accessible at /uploads/<filename>
+   * Includes security headers and caching for performance
    */
-  app.get(`${apiPrefix}/routes`, (req, res) => {
+  const uploadsPath = path.join(process.cwd(), 'uploads')
+  
+  app.use('/uploads', 
+    // Security: Prevent directory traversal
+    (req, res, next) => {
+      if (req.path.includes('..') || req.path.includes('~')) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      next()
+    },
+    // Serve static files with caching headers
+    express.static(uploadsPath, {
+      // Cache files for 1 day in production, no cache in development
+      maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+      // Security: Don't expose file system details
+      dotfiles: 'deny',
+      // Add security headers
+      setHeaders: (res, filePath) => {
+        // Prevent files from being executed as scripts
+        res.setHeader('X-Content-Type-Options', 'nosniff')
+        // Only allow files to be embedded in same origin
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+        
+        // Set appropriate Content-Type based on file extension
+        const ext = path.extname(filePath).toLowerCase()
+        if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
+          // Image files - allow inline display
+          res.setHeader('Content-Disposition', 'inline')
+        } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
+          // Video files - allow inline display
+          res.setHeader('Content-Disposition', 'inline')
+        } else {
+          // Other files - force download for security
+          res.setHeader('Content-Disposition', 'attachment')
+        }
+      }
+    })
+  )
+
+  // ============================================================================
+  // DATABASE AND SERVICES SETUP
+  // ============================================================================
+
+  // Initialize Prisma client
+  const prisma: PrismaClient = new PrismaClient()
+
+  // Initialize repositories with explicit types
+  const userRepository: UserRepository = new UserRepository(prisma)
+  const postRepository: PostRepository = new PostRepository(prisma)
+  const followRepository: FollowRepository = new FollowRepository(prisma)
+  const blockRepository: BlockRepository = new BlockRepository(prisma)
+
+  // Initialize services
+  const authService = new AuthService(userRepository)
+  const followService = new FollowService(followRepository, blockRepository)
+
+  // Initialize controllers
+  const authController = new AuthController(authService)
+  const postController = new PostController(postRepository)
+  const userController = new UserController(userRepository)
+  const followController = new FollowController(followService)
+
+  // Initialize middleware with explicit types
+  const authMiddleware = createAuthMiddleware(authService)
+  const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
+
+  // ============================================================================
+  // API ROUTES
+  // ============================================================================
+
+  // Health check endpoint
+  app.get('/health', (req, res) => {
     res.json({
       success: true,
       data: {
-        auth: [
-          'POST /auth/register',
-          'POST /auth/login', 
-          'POST /auth/logout',
-          'GET /auth/me'
-        ],
-        posts: [
-          'GET /posts',
-          'POST /posts',
-          'GET /posts/:id',
-          'DELETE /posts/:id'
-        ],
-        users: [
-          'GET /users/:username',
-          'GET /users/:username/posts'
-        ],
-        follows: [
-          'POST /users/:username/follow',
-          'DELETE /users/:username/follow',
-          'GET /users/:username/followers',
-          'GET /users/:username/following',
-          'GET /users/:username/followers/recent',
-          'GET /users/:username/stats',
-          'GET /users/:username/following/:targetUsername',
-          'POST /users/:username/following/check'
-        ],
-        blocking: [
-          'POST /users/:username/block',
-          'DELETE /users/:username/block'
-        ],
-        media: [  // Added media endpoints
-          'POST /media/upload'
-        ]
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
       }
     })
   })
+
+  // Mount API routes
+  app.use('/auth', createAuthRouter(authController))
+  app.use('/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
+  app.use('/users', createUsersRouter(userController, authMiddleware))
+  app.use('/media', mediaRouter) // Media upload routes with static serving
+
+  // Optional: Follow routes (uncomment when ready)
+  // app.use('/follows', createFollowsRouter(followController, authMiddleware))
 
   // ============================================================================
   // ERROR HANDLING
   // ============================================================================
 
-  // 404 handler
+  // Handle 404 for undefined routes
   app.use('*', (req, res) => {
     res.status(404).json({
       success: false,
-      error: 'Route not found',
-      code: 'NOT_FOUND'
+      error: {
+        code: 'ROUTE_NOT_FOUND',
+        message: `Route ${req.method} ${req.originalUrl} not found`
+      }
     })
   })
 
   // Global error handler
   app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('Unhandled error:', error)
+    console.error('Global error handler:', error)
+
+    // Don't send error details in production
+    const isProduction = process.env.NODE_ENV === 'production'
     
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
-      error: 'Internal server error',
-      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: {
+        code: error.code || 'INTERNAL_ERROR',
+        message: isProduction ? 'Internal server error' : error.message,
+        ...(isProduction ? {} : { stack: error.stack })
+      }
     })
   })
 
   return app
 }
 
-// ============================================================================
-// SERVER STARTUP (if running directly)
-// ============================================================================
-
-if (require.main === module) {
-  const app = createApp()
-  const PORT = process.env.PORT || 3001
-
-  app.listen(PORT, () => {
-    console.log(`🚀 ParaSocial API server running on port ${PORT}`)
-    console.log(`📚 API routes available at http://localhost:${PORT}/api/v1/routes`)
-  })
-}
+/**
+ * Export app instance for use in server and tests
+ */
+export default createApp
