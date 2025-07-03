@@ -1,6 +1,6 @@
 // backend/src/app.ts
-// Version: 2.6
-// Removed explicit type annotations to fix TypeScript constructor argument issue
+// Version: 2.7
+// Fixed AuthService constructor call - removed userRepository argument
 
 import express from 'express'
 import cors from 'cors'
@@ -82,12 +82,12 @@ export function createApp() {
   const followRepository = new FollowRepository(prisma)
   const blockRepository = new BlockRepository(prisma)
 
-  // Initialize services
-  const authService = new AuthService(userRepository)
+  // Initialize services - AuthService takes no arguments
+  const authService = new AuthService()
   const followService = new FollowService(followRepository, userRepository, blockRepository)
 
   // Initialize controllers
-  const authController = new AuthController(authService)
+  const authController = new AuthController(authService, userRepository)
   const postController = new PostController(postRepository, userRepository)
   const userController = new UserController(userRepository, blockRepository)
   const followController = new FollowController(followService, userRepository)
@@ -97,63 +97,50 @@ export function createApp() {
   const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
   // ============================================================================
-  // ROUTES SETUP
+  // ROUTE SETUP
   // ============================================================================
 
-  // API routes with version prefix
-  app.use('/api/v1/auth', createAuthRouter(authController))
-  app.use('/api/v1/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
-  app.use('/api/v1/users', createUsersRouter(userController, followController, authMiddleware, optionalAuthMiddleware))
-  app.use('/api/v1/media', mediaRouter)
-
-  // ============================================================================
-  // HEALTH CHECK
-  // ============================================================================
-
-  /**
-   * Health check endpoint for monitoring and load balancers
-   */
+  // Health check endpoint
   app.get('/health', (req, res) => {
-    res.json({
-      status: 'ok',
+    res.json({ 
+      status: 'healthy',
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development'
+      version: '1.0.0'
     })
   })
 
-  // ============================================================================
-  // ERROR HANDLING
-  // ============================================================================
+  // Authentication routes
+  app.use('/auth', createAuthRouter(authController))
 
-  /**
-   * Global error handler for unhandled routes
-   */
+  // User routes
+  app.use('/users', createUsersRouter(userController, followController, authMiddleware, optionalAuthMiddleware))
+
+  // Post routes
+  app.use('/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
+
+  // Media routes
+  app.use('/media', mediaRouter)
+
+  // 404 handler for unmatched routes
   app.use('*', (req, res) => {
     res.status(404).json({
       success: false,
       error: {
         code: 'NOT_FOUND',
-        message: `Route ${req.method} ${req.originalUrl} not found`
+        message: 'Route not found'
       }
     })
   })
 
-  /**
-   * Global error handler for server errors
-   */
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('Global error handler:', err)
-    
-    // Don't expose internal errors in production
-    const isDevelopment = process.env.NODE_ENV === 'development'
-    
-    res.status(err.status || 500).json({
+  // Global error handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error('Global error:', err)
+    res.status(500).json({
       success: false,
       error: {
-        code: err.code || 'INTERNAL_SERVER_ERROR',
-        message: isDevelopment ? err.message : 'Internal server error'
-      },
-      ...(isDevelopment && { stack: err.stack })
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An internal server error occurred'
+      }
     })
   })
 
