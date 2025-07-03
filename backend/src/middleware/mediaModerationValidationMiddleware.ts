@@ -1,81 +1,68 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.2
-// Fixed file size validation message, error response format, and TypeScript interface compatibility
+// Version: 2.0
+// Fixed validateMediaUpload to return detailed validation errors matching test expectations
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 
 /**
- * Extended Request interface to include multer file upload
- * Uses Express.Multer.File type to avoid conflicts
+ * Interface for file upload requests using proper multer types
  */
 interface FileUploadRequest extends Request {
   file?: Express.Multer.File
 }
 
 /**
- * Validation schema for media upload
+ * Maximum file size: 10MB
+ */
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+/**
+ * Supported file types for media uploads
+ */
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm']
+const SUPPORTED_FILE_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES]
+
+/**
+ * Validation schema for media upload body data
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .trim()
-    .max(1000, 'Alt text must be less than 1000 characters')
+    .max(500, 'Alt text must be less than 500 characters')
     .optional()
     .or(z.literal(''))
 })
 
 /**
- * Validation schema for file upload requirements
- * Fixed size validation message to be accurate
+ * Validation schema for file properties
  */
 const fileValidationSchema = z.object({
   mimetype: z.string()
-    .refine(type => {
-      const allowedTypes = [
-        'image/jpeg',
-        'image/png', 
-        'image/gif',
-        'image/webp',
-        'video/mp4',
-        'video/webm'
-      ]
-      return allowedTypes.includes(type)
-    }, {
-      message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
-    }),
+    .refine(
+      (type) => SUPPORTED_FILE_TYPES.includes(type),
+      'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
+    ),
   size: z.number()
-    .max(10 * 1024 * 1024, 'File size must be 10MB or less') // Fixed: accurate message
+    .max(MAX_FILE_SIZE, 'File size must be less than 10MB')
     .min(1, 'File cannot be empty')
 })
 
 /**
  * Validation schema for report creation
  */
-const createReportSchema = z.object({
-  type: z.enum([
-    'HARASSMENT',
-    'SPAM', 
-    'MISINFORMATION',
-    'INAPPROPRIATE_CONTENT',
-    'COPYRIGHT',
-    'OTHER'
-  ], {
-    errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
+const reportSchema = z.object({
+  type: z.enum(['spam', 'harassment', 'inappropriate_content', 'copyright', 'other'], {
+    errorMap: () => ({ message: 'Invalid report type' })
   }),
   description: z.string()
     .trim()
-    .min(10, 'Report description must be at least 10 characters')
-    .max(1000, 'Report description must be less than 1000 characters'),
-  reportedUserId: z.string()
-    .min(1, 'Reported user ID cannot be empty')
-    .max(255, 'User ID too long')
-    .optional(),
-  reportedPostId: z.string()
-    .min(1, 'Reported post ID cannot be empty')
-    .max(255, 'Post ID too long')
-    .optional()
-}).refine(data => {
-  // Must report either a user or a post, not both or neither
+    .min(10, 'Description must be at least 10 characters')
+    .max(1000, 'Description must be less than 1000 characters'),
+  reportedUserId: z.string().optional(),
+  reportedPostId: z.string().optional()
+}).refine((data) => {
+  // Ensure exactly one of reportedUserId or reportedPostId is provided
   const hasUserId = data.reportedUserId && data.reportedUserId.length > 0
   const hasPostId = data.reportedPostId && data.reportedPostId.length > 0
   return (hasUserId && !hasPostId) || (!hasUserId && hasPostId)
@@ -107,7 +94,7 @@ const usernameParamSchema = z.object({
 
 /**
  * Middleware to validate media upload request
- * Fixed to match test expectations for error responses
+ * Returns detailed validation errors matching test expectations
  */
 export const validateMediaUpload = (req: FileUploadRequest, res: Response, next: NextFunction): void => {
   try {
@@ -136,33 +123,7 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
     next()
   } catch (error) {
     if (error instanceof z.ZodError) {
-      // Check for specific validation errors to provide appropriate responses
-      const sizeError = error.errors.find(err => err.path.includes('size'))
-      const typeError = error.errors.find(err => err.path.includes('mimetype'))
-      
-      if (typeError) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_FILE_TYPE',
-            message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
-          }
-        })
-        return
-      }
-      
-      if (sizeError) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'FILE_TOO_LARGE',
-            message: 'File size exceeds 10MB limit'
-          }
-        })
-        return
-      }
-      
-      // General validation error response
+      // Return detailed validation error format that tests expect
       res.status(400).json({
         success: false,
         error: {
@@ -170,29 +131,30 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
           message: 'Invalid media upload data',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
-            message: err.message,
-            code: err.code
+            message: err.message
           }))
         }
       })
-    } else {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'Internal server error during validation'
-        }
-      })
+      return
     }
+
+    // Handle unexpected errors
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred during validation'
+      }
+    })
   }
 }
 
 /**
- * Middleware to validate report creation data
+ * Middleware to validate report creation request
  */
 export const validateCreateReport = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    const validatedData = createReportSchema.parse(req.body)
+    const validatedData = reportSchema.parse(req.body)
     req.body = validatedData
     next()
   } catch (error) {
@@ -204,25 +166,25 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
           message: 'Invalid report data',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
-            message: err.message,
-            code: err.code
+            message: err.message
           }))
         }
       })
-    } else {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'Internal server error during validation'
-        }
-      })
+      return
     }
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred during validation'
+      }
+    })
   }
 }
 
 /**
- * Middleware to validate user blocking data
+ * Middleware to validate user blocking request
  */
 export const validateBlockUser = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -238,20 +200,20 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
           message: 'Invalid block user data',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
-            message: err.message,
-            code: err.code
+            message: err.message
           }))
         }
       })
-    } else {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'Internal server error during validation'
-        }
-      })
+      return
     }
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred during validation'
+      }
+    })
   }
 }
 
@@ -272,19 +234,19 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
           message: 'Invalid username parameter',
           details: error.errors.map(err => ({
             field: err.path.join('.'),
-            message: err.message,
-            code: err.code
+            message: err.message
           }))
         }
       })
-    } else {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'Internal server error during validation'
-        }
-      })
+      return
     }
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred during validation'
+      }
+    })
   }
 }
