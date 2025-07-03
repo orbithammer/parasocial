@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 2.0
-// Fixed validateMediaUpload to return detailed validation errors matching test expectations
+// Version: 3.0
+// Fixed report schema to match test expectations - uppercase enums, correct error messages, proper error codes
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -29,7 +29,7 @@ const SUPPORTED_FILE_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .max(500, 'Alt text must be less than 500 characters')
+    .max(1000, 'Alt text must be less than 1000 characters')
     .optional()
     .or(z.literal(''))
 })
@@ -49,16 +49,18 @@ const fileValidationSchema = z.object({
 })
 
 /**
- * Validation schema for report creation
+ * Validation schema for report creation - Fixed to match test expectations
  */
 const reportSchema = z.object({
-  type: z.enum(['spam', 'harassment', 'inappropriate_content', 'copyright', 'other'], {
-    errorMap: () => ({ message: 'Invalid report type' })
+  type: z.enum(['HARASSMENT', 'SPAM', 'MISINFORMATION', 'INAPPROPRIATE_CONTENT', 'COPYRIGHT', 'OTHER'], {
+    errorMap: () => ({ 
+      message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' 
+    })
   }),
   description: z.string()
     .trim()
-    .min(10, 'Description must be at least 10 characters')
-    .max(1000, 'Description must be less than 1000 characters'),
+    .min(10, 'Report description must be at least 10 characters')
+    .max(1000, 'Report description must be less than 1000 characters'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
 }).refine((data) => {
@@ -138,19 +140,19 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
       return
     }
 
-    // Handle unexpected errors
+    // Handle unexpected errors - Fixed to match test expectations
     res.status(500).json({
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred during validation'
+        code: 'SERVER_ERROR',
+        message: 'Internal server error during validation'
       }
     })
   }
 }
 
 /**
- * Middleware to validate report creation request
+ * Middleware to validate report creation request - Fixed to match test expectations
  */
 export const validateCreateReport = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -173,11 +175,12 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
       return
     }
 
+    // Fixed error code and message to match test expectations
     res.status(500).json({
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred during validation'
+        code: 'SERVER_ERROR',
+        message: 'Internal server error during validation'
       }
     })
   }
@@ -207,11 +210,12 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
       return
     }
 
+    // Fixed error code and message to match test expectations
     res.status(500).json({
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred during validation'
+        code: 'SERVER_ERROR',
+        message: 'Internal server error during validation'
       }
     })
   }
@@ -241,11 +245,12 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
       return
     }
 
+    // Fixed error code and message to match test expectations
     res.status(500).json({
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred during validation'
+        code: 'SERVER_ERROR',
+        message: 'Internal server error during validation'
       }
     })
   }
