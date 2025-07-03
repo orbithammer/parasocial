@@ -1,6 +1,6 @@
 // backend/src/app.ts
-// Version: 1.5
-// Fixed import paths and verified constructor parameters for all repositories and services
+// Version: 1.8
+// Fixed createUsersRouter dependencies to include all required parameters
 
 import express from 'express'
 import cors from 'cors'
@@ -121,15 +121,15 @@ export function createApp() {
   const followRepository: FollowRepository = new FollowRepository(prisma)
   const blockRepository: BlockRepository = new BlockRepository(prisma)
 
-  // Initialize services
-  const authService = new AuthService(userRepository)
-  const followService = new FollowService(followRepository, blockRepository)
+  // Initialize services - AuthService takes no constructor arguments
+  const authService = new AuthService()
+  const followService = new FollowService(followRepository, userRepository)
 
-  // Initialize controllers
-  const authController = new AuthController(authService)
-  const postController = new PostController(postRepository)
-  const userController = new UserController(userRepository)
-  const followController = new FollowController(followService)
+  // Initialize controllers with correct constructor arguments
+  const authController = new AuthController(authService, userRepository)
+  const postController = new PostController(postRepository, userRepository)
+  const userController = new UserController(userRepository, followRepository, blockRepository)
+  const followController = new FollowController(followService, userRepository)
 
   // Initialize middleware with explicit types
   const authMiddleware = createAuthMiddleware(authService)
@@ -151,14 +151,31 @@ export function createApp() {
     })
   })
 
-  // Mount API routes
-  app.use('/auth', createAuthRouter(authController))
-  app.use('/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
-  app.use('/users', createUsersRouter(userController, authMiddleware))
-  app.use('/media', mediaRouter) // Media upload routes with static serving
+  // Mount API routes with proper dependency injection
+  app.use('/auth', createAuthRouter({ 
+    authController, 
+    authMiddleware 
+  }))
+  
+  app.use('/posts', createPostsRouter({ 
+    postController, 
+    authMiddleware, 
+    optionalAuthMiddleware 
+  }))
+  
+  app.use('/users', createUsersRouter({ 
+    userController, 
+    postController,
+    followController,
+    authMiddleware,
+    optionalAuthMiddleware
+  }))
+  
+  // Media upload routes with static serving
+  app.use('/media', mediaRouter)
 
   // Optional: Follow routes (uncomment when ready)
-  // app.use('/follows', createFollowsRouter(followController, authMiddleware))
+  // app.use('/follows', createFollowsRouter({ followController, authMiddleware }))
 
   // ============================================================================
   // ERROR HANDLING
