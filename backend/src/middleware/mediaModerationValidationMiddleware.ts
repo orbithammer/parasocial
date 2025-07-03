@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.3
-// Fixed internal server error handling in validateCreateReport to return SERVER_ERROR code instead of VALIDATION_ERROR
+// Version: 1.4
+// Removed minimum length requirement for alt text to allow empty strings as expected by tests
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -15,7 +15,6 @@ import { z } from 'zod'
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .min(1, 'Alt text is required for accessibility')
     .max(200, 'Alt text must be 200 characters or less')
     .optional()
 })
