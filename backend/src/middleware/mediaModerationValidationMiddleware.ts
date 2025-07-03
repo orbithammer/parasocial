@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.5
-// Updated report description error message to match test expectations - added "Report" prefix
+// Version: 1.6
+// Fixed blockUserSchema: removed blockedUserId requirement, updated error message, and allowed empty reason strings
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -57,11 +57,15 @@ const reportSchema = z.object({
  * Schema for validating user blocking requests
  */
 const blockUserSchema = z.object({
-  blockedUserId: z.string()
-    .min(1, 'User ID is required'),
   reason: z.string()
-    .min(5, 'Block reason must be at least 5 characters')
-    .max(500, 'Block reason must be 500 characters or less')
+    .refine(
+      (val) => val === '' || val.length >= 5,
+      { message: 'Block reason must be at least 5 characters' }
+    )
+    .refine(
+      (val) => val.length <= 500,
+      { message: 'Block reason must be less than 500 characters' }
+    )
     .optional()
 })
 
