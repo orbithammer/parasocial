@@ -1,6 +1,6 @@
 // backend/src/app.ts
-// Version: 2.7
-// Fixed AuthService constructor call - removed userRepository argument
+// Version: 2.8
+// Fixed FollowService constructor call - removed blockRepository argument
 
 import express from 'express'
 import cors from 'cors'
@@ -84,12 +84,12 @@ export function createApp() {
 
   // Initialize services - AuthService takes no arguments
   const authService = new AuthService()
-  const followService = new FollowService(followRepository, userRepository, blockRepository)
+  const followService = new FollowService(followRepository, userRepository)
 
   // Initialize controllers
   const authController = new AuthController(authService, userRepository)
   const postController = new PostController(postRepository, userRepository)
-  const userController = new UserController(userRepository, blockRepository)
+  const userController = new UserController(userRepository, followRepository, blockRepository)
   const followController = new FollowController(followService, userRepository)
 
   // Initialize middleware
@@ -110,13 +110,26 @@ export function createApp() {
   })
 
   // Authentication routes
-  app.use('/auth', createAuthRouter(authController))
+  app.use('/auth', createAuthRouter({
+    authController,
+    authMiddleware
+  }))
 
   // User routes
-  app.use('/users', createUsersRouter(userController, followController, authMiddleware, optionalAuthMiddleware))
+  app.use('/users', createUsersRouter({
+    userController,
+    postController,
+    followController,
+    authMiddleware,
+    optionalAuthMiddleware
+  }))
 
   // Post routes
-  app.use('/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
+  app.use('/posts', createPostsRouter({
+    postController,
+    authMiddleware,
+    optionalAuthMiddleware
+  }))
 
   // Media routes
   app.use('/media', mediaRouter)
