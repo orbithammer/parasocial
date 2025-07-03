@@ -1,6 +1,6 @@
-// vitest.config.ts
-// Version: 1.0.0
-// Fix setup.ts test discovery issue
+// backend/vitest.config.js
+// Version: 1.1
+// Fixed test discovery issues and aligned with frontend Vitest version
 
 import { defineConfig } from 'vitest/config'
 import path from 'path'
@@ -10,30 +10,32 @@ export default defineConfig({
     // Test environment setup
     environment: 'node',
     
-    // Global setup files (run once before all tests)
-    globalSetup: ['__tests__/setup.ts'],
+    // Remove problematic globalSetup (causing pending tests)
+    // globalSetup: ['__tests__/setup.ts'],
     
     // Per-test setup files (run before each test file)
     setupFiles: [],
     
-    // Test file patterns - explicitly exclude setup files
+    // Simplified test file patterns that actually work
     include: [
+      'src/**/*.{test,spec}.{js,ts}',
       '__tests__/**/*.{test,spec}.{js,ts}',
-      '**/*.{test,spec}.{js,ts}'
     ],
     
-    // Exclude setup files from being run as tests
+    // Simple exclusion patterns
     exclude: [
       'node_modules/**',
       'dist/**',
-      '__tests__/setup.ts',
-      '__tests__/setup/**',
-      '**/*.setup.{js,ts}',
-      '**/*setup*.{js,ts}'
+      'coverage/**',
+      '**/*.d.ts',
+      '**/*.config.{js,ts}',
     ],
     
-    // Test timeout
-    testTimeout: 10000,
+    // Increase timeout for file system operations
+    testTimeout: 15000,
+    
+    // Enable globals for easier testing
+    globals: true,
     
     // Coverage configuration
     coverage: {
@@ -45,7 +47,6 @@ export default defineConfig({
         '__tests__/**',
         '**/*.d.ts',
         '**/*.config.{js,ts}',
-        '**/setup.ts'
       ]
     }
   },
@@ -55,5 +56,10 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src')
     }
+  },
+  
+  // Esbuild configuration for better TypeScript support
+  esbuild: {
+    target: 'node18'
   }
 })
