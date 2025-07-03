@@ -1,6 +1,6 @@
 // backend/src/routes/__tests__/staticFileServingSecurity.test.ts
-// Version: 1.0
-// Unit tests for static file serving security features including path traversal protection
+// Version: 1.1
+// Fixed middleware order, added JSON parsing, improved Windows path handling and test robustness
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
@@ -15,51 +15,54 @@ import fs from 'fs'
 function createTestAppWithStaticSecurity(): express.Application {
   const app = express()
   
+  // Add JSON parsing middleware (needed for error responses)
+  app.use(express.json())
+  
   // Replicate the uploads static serving with security from app.ts
   const uploadsPath = path.join(process.cwd(), 'test-uploads')
   
-  app.use('/uploads', 
-    // Security middleware: Prevent directory traversal
-    (req, res, next) => {
-      if (req.path.includes('..') || req.path.includes('~')) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
-      next()
-    },
-    // Serve static files with security headers
-    express.static(uploadsPath, {
-      // No cache in test environment
-      maxAge: 0,
-      // Security: Don't expose file system details
-      dotfiles: 'deny',
-      // Add security headers
-      setHeaders: (res, filePath) => {
-        // Prevent files from being executed as scripts
-        res.setHeader('X-Content-Type-Options', 'nosniff')
-        // Only allow files to be embedded in same origin
-        res.setHeader('X-Frame-Options', 'SAMEORIGIN')
-        
-        // Set appropriate Content-Type based on file extension
-        const ext = path.extname(filePath).toLowerCase()
-        if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
-          // Image files - allow inline display
-          res.setHeader('Content-Disposition', 'inline')
-        } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
-          // Video files - allow inline display
-          res.setHeader('Content-Disposition', 'inline')
-        } else {
-          // Other files - force download for security
-          res.setHeader('Content-Disposition', 'attachment')
+  // Security middleware: Prevent directory traversal (applied to all /uploads requests)
+  app.use('/uploads', (req, res, next) => {
+    // Check for path traversal attempts in the URL path
+    if (req.path.includes('..') || req.path.includes('~')) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_PATH',
+          message: 'Invalid file path'
         }
+      })
+    }
+    next()
+  })
+  
+  // Serve static files with security headers
+  app.use('/uploads', express.static(uploadsPath, {
+    // No cache in test environment
+    maxAge: 0,
+    // Security: Don't expose file system details
+    dotfiles: 'deny',
+    // Add security headers
+    setHeaders: (res, filePath) => {
+      // Prevent files from being executed as scripts
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      // Only allow files to be embedded in same origin
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+      
+      // Set appropriate Content-Type based on file extension
+      const ext = path.extname(filePath).toLowerCase()
+      if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
+        // Image files - allow inline display
+        res.setHeader('Content-Disposition', 'inline')
+      } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
+        // Video files - allow inline display
+        res.setHeader('Content-Disposition', 'inline')
+      } else {
+        // Other files - force download for security
+        res.setHeader('Content-Disposition', 'attachment')
       }
-    })
-  )
+    }
+  }))
   
   return app
 }
@@ -88,15 +91,31 @@ function createTestFile(filename: string, content: string = 'test content'): voi
 function cleanupTestFiles(): void {
   const testUploadsDir = path.join(process.cwd(), 'test-uploads')
   
-  if (fs.existsSync(testUploadsDir)) {
-    // Remove all files in test directory
-    const files = fs.readdirSync(testUploadsDir)
-    files.forEach(file => {
-      fs.unlinkSync(path.join(testUploadsDir, file))
-    })
-    
-    // Remove test directory
-    fs.rmdirSync(testUploadsDir)
+  try {
+    if (fs.existsSync(testUploadsDir)) {
+      // Remove all files in test directory
+      const files = fs.readdirSync(testUploadsDir)
+      files.forEach(file => {
+        const filePath = path.join(testUploadsDir, file)
+        try {
+          fs.unlinkSync(filePath)
+        } catch (error) {
+          // Ignore file deletion errors in tests
+          console.warn(`Warning: Could not delete test file ${filePath}`)
+        }
+      })
+      
+      // Remove test directory
+      try {
+        fs.rmdirSync(testUploadsDir)
+      } catch (error) {
+        // Ignore directory deletion errors in tests
+        console.warn(`Warning: Could not delete test directory ${testUploadsDir}`)
+      }
+    }
+  } catch (error) {
+    // Ignore cleanup errors in tests
+    console.warn(`Warning: Test cleanup failed:`, error)
   }
 }
 
@@ -181,8 +200,13 @@ describe('Static File Serving Security', () => {
         .get('/uploads/legitimate-image.jpg')
         .expect(200)
       
-      // Verify file content is served
+      // Verify file content is served (use response.text for string content)
       expect(response.text).toBe('fake image content')
+      
+      // Verify security headers are present
+      expect(response.headers['x-content-type-options']).toBe('nosniff')
+      expect(response.headers['x-frame-options']).toBe('SAMEORIGIN')
+      expect(response.headers['content-disposition']).toBe('inline')
     })
     
     it('should allow files with dots in names but not path traversal', async () => {
