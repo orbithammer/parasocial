@@ -5,8 +5,8 @@
     "numFailedTestSuites": 13,
     "numPendingTestSuites": 0,
     "numTotalTests": 31,
-    "numPassedTests": 13,
-    "numFailedTests": 18,
+    "numPassedTests": 14,
+    "numFailedTests": 17,
     "numPendingTests": 0,
     "numTodoTests": 0,
     "snapshot": {
@@ -25,7 +25,7 @@
         "updated": 0,
         "didUpdate": false
     },
-    "startTime": 1751524640660,
+    "startTime": 1751524958971,
     "success": false,
     "testResults": [
         {
@@ -39,7 +39,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Valid Media Uploads should pass validation with valid image file",
                     "status": "passed",
                     "title": "should pass validation with valid image file",
-                    "duration": 3.9062000000000126,
+                    "duration": 3.8968999999999596,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -52,7 +52,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Valid Media Uploads should pass validation with all supported image types",
                     "status": "passed",
                     "title": "should pass validation with all supported image types",
-                    "duration": 0.8186000000000035,
+                    "duration": 0.865099999999984,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -65,7 +65,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Valid Media Uploads should pass validation with supported video types",
                     "status": "passed",
                     "title": "should pass validation with supported video types",
-                    "duration": 0.46520000000003847,
+                    "duration": 0.5493000000000166,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -78,7 +78,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Valid Media Uploads should pass validation without alt text",
                     "status": "passed",
                     "title": "should pass validation without alt text",
-                    "duration": 0.4378000000000384,
+                    "duration": 0.4440999999999917,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -91,7 +91,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Valid Media Uploads should pass validation with empty alt text",
                     "status": "failed",
                     "title": "should pass validation with empty alt text",
-                    "duration": 7.359699999999975,
+                    "duration": 10.212600000000009,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called once, but got 0 times\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:172:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
                     ],
@@ -104,12 +104,10 @@
                         "Invalid Media Uploads"
                     ],
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Invalid Media Uploads should reject upload without file",
-                    "status": "failed",
+                    "status": "passed",
                     "title": "should reject upload without file",
-                    "duration": 7.225599999999986,
-                    "failureMessages": [
-                        "AssertionError: expected \"spy\" to be called with arguments: [ { success: false, error: { …(2) } } ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[2m    {\u001b[22m\n\u001b[2m      \"error\": {\u001b[22m\n\u001b[32m-       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[32m-       \"message\": \"File is required for upload\",\u001b[90m\n\u001b[31m+       \"code\": \"NO_FILE\",\u001b[90m\n\u001b[31m+       \"message\": \"No file uploaded\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:190:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
-                    ],
+                    "duration": 1.9885999999999626,
+                    "failureMessages": [],
                     "meta": {}
                 },
                 {
@@ -121,7 +119,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Invalid Media Uploads should reject unsupported file types",
                     "status": "failed",
                     "title": "should reject unsupported file types",
-                    "duration": 2.47950000000003,
+                    "duration": 5.377799999999979,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[32m-           \"field\": \"mimetype\",\u001b[90m\n\u001b[32m-           \"message\": \"File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM\",\u001b[90m\n\u001b[32m-         },\u001b[90m\n\u001b[32m-       ],\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"INVALID_FILE_TYPE\",\u001b[90m\n\u001b[31m+       \"message\": \"File type text/plain is not supported. Allowed types: image/jpeg, image/jpg, image/png, image/gif, image/webp, video/mp4, video/webm, video/quicktime\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:222:27\n    at Array.forEach (<anonymous>)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:202:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)"
                     ],
@@ -136,7 +134,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Invalid Media Uploads should reject files that are too large",
                     "status": "failed",
                     "title": "should reject files that are too large",
-                    "duration": 1.230799999999988,
+                    "duration": 1.6973999999999592,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[32m-           \"field\": \"size\",\u001b[90m\n\u001b[32m-           \"message\": \"File size must be less than 10MB\",\u001b[90m\n\u001b[32m-         },\u001b[90m\n\u001b[32m-       ],\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"FILE_TOO_LARGE\",\u001b[90m\n\u001b[31m+       \"message\": \"File size 11.0MB exceeds limit of 10MB for images\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:257:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -151,7 +149,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Invalid Media Uploads should reject empty files",
                     "status": "failed",
                     "title": "should reject empty files",
-                    "duration": 0.862700000000018,
+                    "duration": 0.7955000000000041,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ 400 ]\u001b[90m\n\nNumber of calls: \u001b[1m0\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:289:27\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -166,7 +164,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateMediaUpload Invalid Media Uploads should reject alt text that is too long",
                     "status": "failed",
                     "title": "should reject alt text that is too long",
-                    "duration": 1.5493999999999915,
+                    "duration": 1.9329999999999927,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[2m            \"field\": \"altText\",\u001b[22m\n\u001b[32m-           \"message\": \"Alt text must be less than 1000 characters\",\u001b[90m\n\u001b[31m+           \"message\": \"Alt text must be 200 characters or less\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid upload metadata\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:326:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -181,7 +179,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Valid Report Creation should pass validation for user report",
                     "status": "passed",
                     "title": "should pass validation for user report",
-                    "duration": 0.8118000000000052,
+                    "duration": 0.9110000000000014,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -194,7 +192,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Valid Report Creation should pass validation for post report",
                     "status": "passed",
                     "title": "should pass validation for post report",
-                    "duration": 0.28820000000001755,
+                    "duration": 0.40269999999998163,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -207,7 +205,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Valid Report Creation should pass validation for all report types",
                     "status": "passed",
                     "title": "should pass validation for all report types",
-                    "duration": 1.1240999999999985,
+                    "duration": 0.7909999999999968,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -220,7 +218,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Valid Report Creation should pass validation with maximum length description",
                     "status": "passed",
                     "title": "should pass validation with maximum length description",
-                    "duration": 0.30230000000000246,
+                    "duration": 0.3838000000000079,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -233,7 +231,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Invalid Report Creation should reject invalid report type",
                     "status": "passed",
                     "title": "should reject invalid report type",
-                    "duration": 1.1545999999999594,
+                    "duration": 0.9066000000000258,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -246,7 +244,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Invalid Report Creation should reject description that is too short",
                     "status": "failed",
                     "title": "should reject description that is too short",
-                    "duration": 1.7577999999999747,
+                    "duration": 1.1023000000000138,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[2m            \"field\": \"description\",\u001b[22m\n\u001b[32m-           \"message\": \"Report description must be at least 10 characters\",\u001b[90m\n\u001b[31m+           \"message\": \"Description must be at least 10 characters\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid report data\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:462:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -261,7 +259,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Invalid Report Creation should reject description that is too long",
                     "status": "failed",
                     "title": "should reject description that is too long",
-                    "duration": 1.2315000000000396,
+                    "duration": 1.1306000000000154,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[2m            \"field\": \"description\",\u001b[22m\n\u001b[32m-           \"message\": \"Report description must be less than 1000 characters\",\u001b[90m\n\u001b[31m+           \"message\": \"Description must be 1000 characters or less\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid report data\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:490:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -276,7 +274,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Invalid Report Creation should reject report with both user and post IDs",
                     "status": "failed",
                     "title": "should reject report with both user and post IDs",
-                    "duration": 3.3577999999999975,
+                    "duration": 1.9706999999999653,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[32m-           \"message\": \"Must report either a user or a post, not both\",\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[31m+           \"field\": \"reportedUserId\",\u001b[90m\n\u001b[31m+           \"message\": \"Cannot report both a user and a post in the same report\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid report data\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:519:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -291,7 +289,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateCreateReport Invalid Report Creation should reject report with neither user nor post ID",
                     "status": "failed",
                     "title": "should reject report with neither user nor post ID",
-                    "duration": 0.8910000000000196,
+                    "duration": 0.8695000000000164,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[32m-           \"message\": \"Must report either a user or a post, not both\",\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[31m+           \"field\": \"reportedUserId\",\u001b[90m\n\u001b[31m+           \"message\": \"Either reportedUserId or reportedPostId must be provided\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid report data\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:546:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -306,7 +304,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateBlockUser Valid User Blocking should pass validation with reason",
                     "status": "failed",
                     "title": "should pass validation with reason",
-                    "duration": 0.6795000000000186,
+                    "duration": 0.6579000000000406,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called once, but got 0 times\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:574:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
                     ],
@@ -321,7 +319,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateBlockUser Valid User Blocking should pass validation without reason",
                     "status": "failed",
                     "title": "should pass validation without reason",
-                    "duration": 0.5049000000000206,
+                    "duration": 1.0612999999999602,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called once, but got 0 times\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:586:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
                     ],
@@ -336,7 +334,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateBlockUser Valid User Blocking should pass validation with empty reason",
                     "status": "failed",
                     "title": "should pass validation with empty reason",
-                    "duration": 0.5562999999999647,
+                    "duration": 1.2555999999999585,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called once, but got 0 times\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:599:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
                     ],
@@ -351,7 +349,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateBlockUser Invalid User Blocking should reject reason that is too long",
                     "status": "failed",
                     "title": "should reject reason that is too long",
-                    "duration": 1.2706000000000017,
+                    "duration": 1.2684999999999036,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"details\": [\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[31m+           \"field\": \"blockedUserId\",\u001b[90m\n\u001b[31m+           \"message\": \"Required\",\u001b[90m\n\u001b[31m+         },\u001b[90m\n\u001b[31m+         {\u001b[90m\n\u001b[2m            \"field\": \"reason\",\u001b[22m\n\u001b[32m-           \"message\": \"Block reason must be less than 500 characters\",\u001b[90m\n\u001b[31m+           \"message\": \"Block reason must be 500 characters or less\",\u001b[90m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[31m+       \"message\": \"Invalid block request\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:615:25\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -366,7 +364,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Valid Usernames should pass validation with valid username",
                     "status": "passed",
                     "title": "should pass validation with valid username",
-                    "duration": 0.47779999999994516,
+                    "duration": 0.44820000000004256,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -379,7 +377,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Valid Usernames should pass validation with minimum length username",
                     "status": "passed",
                     "title": "should pass validation with minimum length username",
-                    "duration": 0.25600000000002865,
+                    "duration": 0.2977000000000771,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -392,7 +390,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Valid Usernames should pass validation with maximum length username",
                     "status": "passed",
                     "title": "should pass validation with maximum length username",
-                    "duration": 0.21119999999996253,
+                    "duration": 0.20890000000008513,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -405,7 +403,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Valid Usernames should pass validation with underscores",
                     "status": "passed",
                     "title": "should pass validation with underscores",
-                    "duration": 0.19760000000002265,
+                    "duration": 0.18650000000002365,
                     "failureMessages": [],
                     "meta": {}
                 },
@@ -418,7 +416,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Invalid Usernames should reject username that is too short",
                     "status": "failed",
                     "title": "should reject username that is too short",
-                    "duration": 0.47050000000001546,
+                    "duration": 0.37770000000000437,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ 400 ]\u001b[90m\n\nNumber of calls: \u001b[1m0\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:699:27\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -433,7 +431,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Invalid Usernames should reject username that is too long",
                     "status": "failed",
                     "title": "should reject username that is too long",
-                    "duration": 0.44700000000000273,
+                    "duration": 0.4231999999999516,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ 400 ]\u001b[90m\n\nNumber of calls: \u001b[1m0\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:725:27\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
@@ -448,7 +446,7 @@
                     "fullName": "Media & Moderation Validation Middleware validateUsernameParam Invalid Usernames should reject username with invalid characters",
                     "status": "failed",
                     "title": "should reject username with invalid characters",
-                    "duration": 1.1982999999999606,
+                    "duration": 0.9852999999999383,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[32m-   ObjectContaining {\u001b[90m\n\u001b[32m-     \"error\": ObjectContaining {\u001b[90m\n\u001b[32m-       \"details\": ArrayContaining [\u001b[90m\n\u001b[32m-         ObjectContaining {\u001b[90m\n\u001b[32m-           \"field\": \"username\",\u001b[90m\n\u001b[32m-           \"message\": \"Username can only contain letters, numbers, and underscores\",\u001b[90m\n\u001b[32m-         },\u001b[90m\n\u001b[32m-       ],\u001b[90m\n\u001b[31m+   {\u001b[90m\n\u001b[31m+     \"error\": {\u001b[90m\n\u001b[31m+       \"code\": \"INVALID_USERNAME\",\u001b[90m\n\u001b[31m+       \"message\": \"Username can only contain letters, numbers, underscores, and hyphens\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:762:27\n    at Array.forEach (<anonymous>)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:751:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)"
                     ],
@@ -462,15 +460,15 @@
                     "fullName": "Media & Moderation Validation Middleware Error Handling should handle internal server errors gracefully",
                     "status": "failed",
                     "title": "should handle internal server errors gracefully",
-                    "duration": 1.7804000000000428,
+                    "duration": 0.8173000000000457,
                     "failureMessages": [
                         "AssertionError: expected \"spy\" to be called with arguments: [ { success: false, error: { …(2) } } ]\u001b[90m\n\nReceived: \n\n\u001b[1m  1st spy call:\n\n\u001b[22m\u001b[2m  [\u001b[22m\n\u001b[2m    {\u001b[22m\n\u001b[2m      \"error\": {\u001b[22m\n\u001b[32m-       \"code\": \"SERVER_ERROR\",\u001b[90m\n\u001b[32m-       \"message\": \"Internal server error during validation\",\u001b[90m\n\u001b[31m+       \"code\": \"VALIDATION_ERROR\",\u001b[90m\n\u001b[31m+       \"message\": \"Report validation failed\",\u001b[90m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"success\": false,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\u001b[39m\u001b[90m\n\nNumber of calls: \u001b[1m1\u001b[22m\n\u001b[39m\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1355:10)\n    at Proxy.<anonymous> (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/expect/dist/index.js:1029:14)\n    at Proxy.methodWrapper (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/chai/chai.js:1618:25)\n    at C:\\Users\\Et Al\\Documents\\GitHub\\ParaSocial\\backend\\__tests__\\middleware\\mediaModerationValidationMiddleware.test.ts:800:23\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Users/Et%20Al/Documents/GitHub/parasocial/backend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)"
                     ],
                     "meta": {}
                 }
             ],
-            "startTime": 1751524641631,
-            "endTime": 1751524641676.7805,
+            "startTime": 1751524959852,
+            "endTime": 1751524959897.8174,
             "status": "failed",
             "message": "",
             "name": "C:/Users/Et Al/Documents/GitHub/ParaSocial/backend/__tests__/middleware/mediaModerationValidationMiddleware.test.ts"

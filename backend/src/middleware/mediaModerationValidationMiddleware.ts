@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.1
-// Fixed validateReport export name to validateCreateReport to match test imports
+// Version: 1.2
+// Updated file validation error to match test expectations - changed NO_FILE to VALIDATION_ERROR
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -91,8 +91,8 @@ export const validateMediaUpload = (req: Request, res: Response, next: NextFunct
       res.status(400).json({
         success: false,
         error: {
-          code: 'NO_FILE',
-          message: 'No file uploaded'
+          code: 'VALIDATION_ERROR',
+          message: 'File is required for upload'
         }
       })
       return
