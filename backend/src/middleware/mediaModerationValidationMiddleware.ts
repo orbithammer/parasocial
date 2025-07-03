@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.4
-// Removed minimum length requirement for alt text to allow empty strings as expected by tests
+// Version: 1.5
+// Updated report description error message to match test expectations - added "Report" prefix
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -35,7 +35,7 @@ const reportSchema = z.object({
     errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
   }),
   description: z.string()
-    .min(10, 'Description must be at least 10 characters')
+    .min(10, 'Report description must be at least 10 characters')
     .max(1000, 'Description must be 1000 characters or less'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
