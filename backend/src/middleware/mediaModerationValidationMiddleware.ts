@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.6
-// Fixed blockUserSchema: removed blockedUserId requirement, updated error message, and allowed empty reason strings
+// Version: 1.7
+// Fixed usernameParamSchema validation: updated min/max length (3-30), removed hyphens, fixed error format to use details array
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -74,9 +74,9 @@ const blockUserSchema = z.object({
  */
 const usernameParamSchema = z.object({
   username: z.string()
-    .min(1, 'Username is required')
-    .max(50, 'Username must be 50 characters or less')
-    .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens')
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be less than 30 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
 })
 
 // ============================================================================
@@ -266,8 +266,12 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
       res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_USERNAME',
-          message: error.errors[0].message
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid username parameter',
+          details: error.errors.map(err => ({
+            field: err.path.join('.'),
+            message: err.message
+          }))
         }
       })
     } else {
