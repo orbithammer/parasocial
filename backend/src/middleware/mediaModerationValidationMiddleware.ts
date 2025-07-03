@@ -1,90 +1,162 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 2.3
-// Updated to only handle body validation - file type validation now handled by multer fileFilter
+// Version: 1.1
+// Fixed validateReport export name to validateCreateReport to match test imports
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 
-/**
- * Interface for file upload requests using proper multer types
- */
-interface FileUploadRequest extends Request {
-  file?: Express.Multer.File
-}
+// ============================================================================
+// VALIDATION SCHEMAS
+// ============================================================================
 
 /**
- * Validation schema for media upload body data
+ * Schema for validating media upload requests
+ * Supports images and videos with size and type restrictions
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .max(1000, 'Alt text must be less than 1000 characters')
+    .min(1, 'Alt text is required for accessibility')
+    .max(200, 'Alt text must be 200 characters or less')
     .optional()
-    .or(z.literal(''))
 })
 
 /**
- * Validation schema for report creation
+ * Schema for validating content report creation
+ * Supports reporting users or posts with required description
  */
 const reportSchema = z.object({
-  type: z.enum(['harassment', 'spam', 'misinformation', 'inappropriate_content', 'copyright', 'other'], {
+  type: z.enum([
+    'HARASSMENT',
+    'SPAM', 
+    'MISINFORMATION',
+    'INAPPROPRIATE_CONTENT',
+    'COPYRIGHT',
+    'OTHER'
+  ], {
     errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
   }),
   description: z.string()
-    .trim()
     .min(10, 'Description must be at least 10 characters')
-    .max(1000, 'Description must be less than 1000 characters'),
+    .max(1000, 'Description must be 1000 characters or less'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
-}).refine((data) => {
-  // Ensure exactly one of reportedUserId or reportedPostId is provided
-  const hasUserId = data.reportedUserId && data.reportedUserId.length > 0
-  const hasPostId = data.reportedPostId && data.reportedPostId.length > 0
-  return (hasUserId && !hasPostId) || (!hasUserId && hasPostId)
-}, {
-  message: 'Must report either a user or a post, not both',
-  path: ['reportedUserId', 'reportedPostId']
-})
+}).refine(
+  (data) => data.reportedUserId || data.reportedPostId,
+  {
+    message: 'Either reportedUserId or reportedPostId must be provided',
+    path: ['reportedUserId']
+  }
+).refine(
+  (data) => !(data.reportedUserId && data.reportedPostId),
+  {
+    message: 'Cannot report both a user and a post in the same report',
+    path: ['reportedUserId']
+  }
+)
 
 /**
- * Validation schema for blocking a user
+ * Schema for validating user blocking requests
  */
 const blockUserSchema = z.object({
+  blockedUserId: z.string()
+    .min(1, 'User ID is required'),
   reason: z.string()
-    .trim()
-    .max(500, 'Block reason must be less than 500 characters')
+    .min(5, 'Block reason must be at least 5 characters')
+    .max(500, 'Block reason must be 500 characters or less')
     .optional()
-    .or(z.literal(''))
 })
 
 /**
- * Validation schema for username parameter
+ * Schema for validating username parameters in URL paths
  */
 const usernameParamSchema = z.object({
   username: z.string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(30, 'Username must be less than 30 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .min(1, 'Username is required')
+    .max(50, 'Username must be 50 characters or less')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens')
 })
 
+// ============================================================================
+// MIDDLEWARE FUNCTIONS
+// ============================================================================
+
 /**
- * Middleware to validate media upload request
- * Only handles body validation - file validation is handled by multer fileFilter
+ * Middleware to validate media file uploads
+ * Checks file type, size, and optional metadata
  */
-export const validateMediaUpload = (req: FileUploadRequest, res: Response, next: NextFunction): void => {
+export const validateMediaUpload = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    // File existence is handled by multer, just validate request body
+    // Validate file presence
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'NO_FILE',
+          message: 'No file uploaded'
+        }
+      })
+      return
+    }
+
+    // Define allowed file types and sizes
+    const allowedImageTypes = [
+      'image/jpeg',
+      'image/jpg', 
+      'image/png',
+      'image/gif',
+      'image/webp'
+    ]
+    
+    const allowedVideoTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/quicktime'
+    ]
+    
+    const allowedTypes = [...allowedImageTypes, ...allowedVideoTypes]
+    const maxFileSize = 50 * 1024 * 1024 // 50MB
+    const maxImageSize = 10 * 1024 * 1024 // 10MB for images
+
+    // Validate file type
+    if (!allowedTypes.includes(req.file.mimetype)) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_FILE_TYPE',
+          message: `File type ${req.file.mimetype} is not supported. Allowed types: ${allowedTypes.join(', ')}`
+        }
+      })
+      return
+    }
+
+    // Validate file size based on type
+    const isImage = allowedImageTypes.includes(req.file.mimetype)
+    const sizeLimit = isImage ? maxImageSize : maxFileSize
+    
+    if (req.file.size > sizeLimit) {
+      const sizeLimitMB = sizeLimit / (1024 * 1024)
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: `File size ${(req.file.size / (1024 * 1024)).toFixed(1)}MB exceeds limit of ${sizeLimitMB}MB for ${isImage ? 'images' : 'videos'}`
+        }
+      })
+      return
+    }
+
+    // Validate request body (metadata)
     try {
-      const bodyValidation = mediaUploadSchema.parse(req.body)
-      req.body = bodyValidation
-    } catch (bodyError) {
-      if (bodyError instanceof z.ZodError) {
-        // Return detailed validation error format for body validation
+      const validatedBody = mediaUploadSchema.parse(req.body)
+      req.body = validatedBody
+    } catch (error) {
+      if (error instanceof z.ZodError) {
         res.status(400).json({
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Invalid media upload data',
-            details: bodyError.errors.map(err => ({
+            message: 'Invalid upload metadata',
+            details: error.errors.map(err => ({
               field: err.path.join('.'),
               message: err.message
             }))
@@ -111,8 +183,9 @@ export const validateMediaUpload = (req: FileUploadRequest, res: Response, next:
 
 /**
  * Middleware to validate content reports
+ * Updated function name from validateReport to validateCreateReport
  */
-export const validateReport = (req: Request, res: Response, next: NextFunction): void => {
+export const validateCreateReport = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const validatedData = reportSchema.parse(req.body)
     req.body = validatedData
