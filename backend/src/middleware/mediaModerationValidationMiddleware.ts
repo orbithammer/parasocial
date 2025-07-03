@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.7
-// Fixed usernameParamSchema validation: updated min/max length (3-30), removed hyphens, fixed error format to use details array
+// Version: 1.10
+// Updated all media upload error messages to use "Invalid media upload data" for consistency with route tests
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -15,7 +15,7 @@ import { z } from 'zod'
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .max(200, 'Alt text must be 200 characters or less')
+    .max(1000, 'Alt text must be less than 1000 characters')
     .optional()
 })
 
@@ -36,19 +36,19 @@ const reportSchema = z.object({
   }),
   description: z.string()
     .min(10, 'Report description must be at least 10 characters')
-    .max(1000, 'Description must be 1000 characters or less'),
+    .max(1000, 'Report description must be less than 1000 characters'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
 }).refine(
   (data) => data.reportedUserId || data.reportedPostId,
   {
-    message: 'Either reportedUserId or reportedPostId must be provided',
+    message: 'Must report either a user or a post, not both',
     path: ['reportedUserId']
   }
 ).refine(
   (data) => !(data.reportedUserId && data.reportedPostId),
   {
-    message: 'Cannot report both a user and a post in the same report',
+    message: 'Must report either a user or a post, not both',
     path: ['reportedUserId']
   }
 )
@@ -125,8 +125,12 @@ export const validateMediaUpload = (req: Request, res: Response, next: NextFunct
       res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_FILE_TYPE',
-          message: `File type ${req.file.mimetype} is not supported. Allowed types: ${allowedTypes.join(', ')}`
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid media upload data',
+          details: [{
+            field: 'mimetype',
+            message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
+          }]
         }
       })
       return
@@ -136,13 +140,34 @@ export const validateMediaUpload = (req: Request, res: Response, next: NextFunct
     const isImage = allowedImageTypes.includes(req.file.mimetype)
     const sizeLimit = isImage ? maxImageSize : maxFileSize
     
-    if (req.file.size > sizeLimit) {
-      const sizeLimitMB = sizeLimit / (1024 * 1024)
+    // Check for empty files
+    if (req.file.size === 0) {
       res.status(400).json({
         success: false,
         error: {
-          code: 'FILE_TOO_LARGE',
-          message: `File size ${(req.file.size / (1024 * 1024)).toFixed(1)}MB exceeds limit of ${sizeLimitMB}MB for ${isImage ? 'images' : 'videos'}`
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid media upload data',
+          details: [{
+            field: 'size',
+            message: 'File cannot be empty'
+          }]
+        }
+      })
+      return
+    }
+    
+    if (req.file.size > sizeLimit) {
+      const sizeLimitMB = sizeLimit / (1024 * 1024)
+      const fileType = isImage ? 'images' : 'videos'
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid media upload data',
+          details: [{
+            field: 'size',
+            message: `File size must be less than ${sizeLimitMB}MB`
+          }]
         }
       })
       return
@@ -158,7 +183,7 @@ export const validateMediaUpload = (req: Request, res: Response, next: NextFunct
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Invalid upload metadata',
+            message: 'Invalid media upload data',
             details: error.errors.map(err => ({
               field: err.path.join('.'),
               message: err.message
