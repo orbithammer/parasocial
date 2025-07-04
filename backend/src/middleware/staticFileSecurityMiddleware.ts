@@ -1,30 +1,24 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 3.0
-// COMPLETE REWRITE: Fixed all path traversal detection and file serving issues
+// Version: 4.0
+// CRITICAL FIX: Corrected logic errors in pattern detection and middleware ordering
 
 import express from 'express'
 import * as pathModule from 'path'
 
 /**
- * Comprehensive security middleware that detects and blocks all path traversal attempts
- * This middleware checks the raw URL BEFORE Express processes it
+ * Global security middleware that detects and blocks path traversal attempts
+ * This runs first and only catches path traversal - NOT dotfiles
  */
 export function createGlobalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    // Get the original URL before any processing
     const originalUrl = req.originalUrl || req.url || ''
     
     console.log('\n=== GLOBAL SECURITY MIDDLEWARE ===')
     console.log('Original URL:', JSON.stringify(originalUrl))
     
-    /**
-     * Check for path traversal patterns in the raw URL
-     * We need to check BEFORE decoding to catch encoded attacks
-     */
-    
-    // 1. Check for basic double dots anywhere in the path
+    // 1. Check for basic double dots (but not single dots which are normal)
     if (originalUrl.includes('..')) {
-      console.log('BLOCKING: Basic double dots detected')
+      console.log('BLOCKING: Double dots detected')
       return res.status(400).json({
         success: false,
         error: {
@@ -34,9 +28,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    // 2. Check for URL encoded dots (%2e, %2E)
-    if (/%2e/i.test(originalUrl)) {
-      console.log('BLOCKING: URL encoded dots detected')
+    // 2. Check for URL encoded dots (%2e, %2E) - but be more specific
+    if (/%2e%2e/i.test(originalUrl) || /%2E%2E/i.test(originalUrl)) {
+      console.log('BLOCKING: URL encoded double dots detected')
       return res.status(400).json({
         success: false,
         error: {
@@ -46,9 +40,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    // 3. Check for URL encoded slashes (%2f, %2F)
-    if (/%2f/i.test(originalUrl)) {
-      console.log('BLOCKING: URL encoded forward slashes detected')
+    // 3. Check for URL encoded forward slashes in suspicious patterns
+    if (/%2f/i.test(originalUrl) && originalUrl.includes('..')) {
+      console.log('BLOCKING: URL encoded slashes with traversal detected')
       return res.status(400).json({
         success: false,
         error: {
@@ -94,25 +88,18 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    // 7. Check for dangerous system file patterns
-    const dangerousPatterns = [
-      /etc\/passwd/i,
-      /windows\/system32/i,
-      /\.ssh/i,
-      /\.env/i
-    ]
-    
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(originalUrl)) {
-        console.log(`BLOCKING: Dangerous system file pattern detected: ${pattern}`)
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
+    // 7. Check for dangerous system file patterns (but not dotfiles in general)
+    if (/etc\/passwd/i.test(originalUrl) || 
+        /windows\/system32/i.test(originalUrl) ||
+        /\.ssh\//i.test(originalUrl)) {
+      console.log('BLOCKING: Dangerous system file pattern detected')
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_PATH',
+          message: 'Invalid file path'
+        }
+      })
     }
     
     // 8. Check for null bytes
@@ -127,20 +114,32 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    console.log('ALLOWING: URL passed all security checks')
+    // 9. Check for URL encoded traversal patterns
+    const decodedUrl = decodeURIComponent(originalUrl)
+    if (decodedUrl !== originalUrl && decodedUrl.includes('..')) {
+      console.log('BLOCKING: Decoded URL contains path traversal')
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_PATH',
+          message: 'Invalid file path'
+        }
+      })
+    }
+    
+    console.log('ALLOWING: URL passed global security checks')
     next()
   }
 }
 
 /**
  * Local security middleware for dotfile protection
- * This runs after global security and handles file-specific security
+ * This runs after global security and specifically handles dotfiles
  */
 function createLocalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.log('\n=== LOCAL SECURITY MIDDLEWARE ===')
     
-    // Extract filename from the request path
     const requestPath = req.path || req.url || ''
     const fileName = pathModule.basename(requestPath)
     
@@ -174,7 +173,7 @@ export function createSecureStaticFileHandler(uploadsPath: string): express.Requ
     // Global security middleware (path traversal protection)
     createGlobalSecurityMiddleware(),
     
-    // Local security middleware (dotfile protection)
+    // Local security middleware (dotfile protection)  
     createLocalSecurityMiddleware(),
     
     // Express static file serving with security options
