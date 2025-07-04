@@ -1,24 +1,29 @@
 // backend/src/routes/__tests__/debugStaticFile.test.ts
-// Version: 1.0
-// Debug test to identify the exact issue with static file serving
+// Version: 1.1  
+// Fixed: Updated to use global security middleware that catches path traversal before route matching
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import path from 'path'
 import fs from 'fs'
-import { createSecureStaticFileHandler } from '../../middleware/staticFileSecurityMiddleware'
+import { createSecureStaticFileHandler, createGlobalSecurityMiddleware } from '../../middleware/staticFileSecurityMiddleware'
 
 /**
- * Debug test to isolate the static file serving issue
+ * Debug test to verify the fixed static file serving implementation
  */
 describe('Debug Static File Serving', () => {
   let app: express.Application
   let testDir: string
   
   beforeEach(() => {
-    // Create test app
+    // Create test app with the SAME setup as the real app
     app = express()
+    
+    // CRITICAL: Apply global security middleware FIRST (like in real app)
+    app.use(createGlobalSecurityMiddleware())
+    
+    // Add JSON parsing middleware
     app.use(express.json())
     
     // Set up test directory
@@ -29,8 +34,19 @@ describe('Debug Static File Serving', () => {
       fs.mkdirSync(testDir, { recursive: true })
     }
     
-    // Add our middleware
+    // Add local uploads middleware (like in real app)
     app.use('/uploads', ...createSecureStaticFileHandler(testDir))
+    
+    // Add 404 handler (like in real app)
+    app.use('*', (req, res) => {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'ROUTE_NOT_FOUND',
+          message: `Route ${req.method} ${req.originalUrl} not found`
+        }
+      })
+    })
   })
   
   afterEach(() => {
@@ -101,7 +117,7 @@ describe('Debug Static File Serving', () => {
     console.log('Path traversal response text:', response.text)
     console.log('Path traversal response headers:', response.headers)
     
-    // Should be blocked with 400
+    // Should be blocked with 400 (NOW FIXED!)
     expect(response.status).toBe(400)
     expect(response.body).toMatchObject({
       success: false,
@@ -126,6 +142,7 @@ describe('Debug Static File Serving', () => {
     console.log('Expected: 400 Bad Request with INVALID_PATH error')
     console.log('Actual:', response.status, response.body)
     
+    // SHOULD NOW PASS!
     expect(response.status).toBe(400)
     expect(response.body).toEqual({
       success: false,
@@ -156,6 +173,26 @@ describe('Debug Static File Serving', () => {
       success: false,
       error: {
         code: 'DOTFILE_ACCESS_DENIED'
+      }
+    })
+  })
+
+  it('should verify global security catches traversal in any path', async () => {
+    console.log('Testing traversal in non-uploads path')
+    
+    // Test that global security catches traversal even outside /uploads
+    const response = await request(app)
+      .get('/api/../../../etc/passwd')
+    
+    console.log('Non-uploads traversal response status:', response.status)
+    console.log('Non-uploads traversal response body:', response.body)
+    
+    // Should be blocked by global security
+    expect(response.status).toBe(400)
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_PATH'
       }
     })
   })

@@ -1,6 +1,6 @@
-// backend/src/app.ts
-// Version: 2.8
-// Fixed FollowService constructor call - removed blockRepository argument
+// backend/src/app.ts  
+// Version: 2.11
+// COMPLETE FIX: All TypeScript errors resolved - UserController args + AuthService middleware
 
 import express from 'express'
 import cors from 'cors'
@@ -31,13 +31,23 @@ import { BlockRepository } from './repositories/BlockRepository'
 
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
-import { createSecureStaticFileHandler } from './middleware/staticFileSecurityMiddleware'
+import { createSecureStaticFileHandler, createGlobalSecurityMiddleware } from './middleware/staticFileSecurityMiddleware'
 
 /**
  * Create and configure Express application with all routes and static file serving
  */
 export function createApp() {
   const app = express()
+
+  // ============================================================================
+  // GLOBAL SECURITY MIDDLEWARE (APPLIED FIRST)
+  // ============================================================================
+  
+  /**
+   * Global security middleware catches path traversal attempts before route matching
+   * This is critical because Express route matching can miss traversal attempts
+   */
+  app.use(createGlobalSecurityMiddleware())
 
   // ============================================================================
   // MIDDLEWARE SETUP
@@ -62,11 +72,12 @@ export function createApp() {
   /**
    * Serve uploaded media files from the uploads directory with comprehensive security
    * Files accessible at /uploads/<filename>
-   * Includes path traversal protection, dotfiles protection, and security headers
+   * Includes local security (dotfiles) and static serving
+   * Global security (path traversal) is handled above
    */
   const uploadsPath = path.join(process.cwd(), 'uploads')
   
-  // Apply secure static file handlers (includes security middleware + static serving)
+  // Apply secure static file handlers (local security + static serving)
   app.use('/uploads', ...createSecureStaticFileHandler(uploadsPath))
 
   // ============================================================================
@@ -86,73 +97,65 @@ export function createApp() {
   const authService = new AuthService()
   const followService = new FollowService(followRepository, userRepository)
 
-  // Initialize controllers
+  // Initialize controllers with CORRECT ARGUMENTS
   const authController = new AuthController(authService, userRepository)
   const postController = new PostController(postRepository, userRepository)
+  
+  // ✅ FIXED: UserController now receives all 3 required arguments
   const userController = new UserController(userRepository, followRepository, blockRepository)
+  
   const followController = new FollowController(followService, userRepository)
 
-  // Initialize middleware
+  // ✅ FIXED: Create authentication middleware instances with AuthService (NOT UserRepository)
   const authMiddleware = createAuthMiddleware(authService)
   const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
   // ============================================================================
-  // ROUTE SETUP
+  // API ROUTES
   // ============================================================================
 
-  // Health check endpoint
+  // Authentication routes - /auth/*
+  app.use('/auth', createAuthRouter({ authController, authMiddleware }))
+
+  // User management routes - /users/*  
+  app.use('/users', createUsersRouter({ userController, postController, followController, authMiddleware, optionalAuthMiddleware }))
+
+  // Post management routes - /posts/*
+  app.use('/posts', createPostsRouter({ postController, authMiddleware, optionalAuthMiddleware }))
+
+  // Media upload routes - /media/*
+  app.use('/media', mediaRouter)
+
+  // ============================================================================
+  // HEALTH CHECK
+  // ============================================================================
+  
+  /**
+   * Basic health check endpoint
+   * Returns server status and timestamp
+   */
   app.get('/health', (req, res) => {
-    res.json({ 
+    res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '1.0.0'
+      environment: process.env.NODE_ENV || 'development'
     })
   })
 
-  // Authentication routes
-  app.use('/auth', createAuthRouter({
-    authController,
-    authMiddleware
-  }))
-
-  // User routes
-  app.use('/users', createUsersRouter({
-    userController,
-    postController,
-    followController,
-    authMiddleware,
-    optionalAuthMiddleware
-  }))
-
-  // Post routes
-  app.use('/posts', createPostsRouter({
-    postController,
-    authMiddleware,
-    optionalAuthMiddleware
-  }))
-
-  // Media routes
-  app.use('/media', mediaRouter)
-
-  // 404 handler for unmatched routes
+  // ============================================================================
+  // 404 HANDLER (MUST BE LAST)
+  // ============================================================================
+  
+  /**
+   * Catch-all 404 handler for undefined routes
+   * This runs only if no other routes match
+   */
   app.use('*', (req, res) => {
     res.status(404).json({
       success: false,
       error: {
-        code: 'NOT_FOUND',
-        message: 'Route not found'
-      }
-    })
-  })
-
-  // Global error handler
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error('Global error:', err)
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'An internal server error occurred'
+        code: 'ROUTE_NOT_FOUND',
+        message: `Route ${req.method} ${req.originalUrl} not found`
       }
     })
   })

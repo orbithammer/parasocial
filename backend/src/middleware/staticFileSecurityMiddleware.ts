@@ -1,27 +1,36 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 1.1
-// Fixed path traversal detection and improved security middleware
+// Version: 1.2
+// Fixed: Applied security middleware globally to catch path traversal before route matching
 
 import express from 'express'
 import path from 'path'
 
 /**
- * Security middleware to prevent path traversal attacks and protect dotfiles
- * This middleware runs before express.static to catch malicious requests
+ * Global security middleware to prevent path traversal attacks
+ * This middleware runs on ALL requests to catch traversal attempts before route matching
  */
-function createStaticFileSecurityMiddleware(): express.RequestHandler {
+export function createGlobalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    // DEBUG: Log all request properties
-    console.log('=== SECURITY MIDDLEWARE DEBUG ===')
-    console.log('req.originalUrl:', req.originalUrl)
-    console.log('req.url:', req.url)
-    console.log('req.path:', req.path)
-    console.log('req.baseUrl:', req.baseUrl)
-    
-    // Get all possible representations of the path
+    // Only check requests that are targeting upload paths or contain traversal patterns
     const originalUrl = req.originalUrl || req.url
     const url = req.url
     const path = req.path
+    
+    // Check if this request is targeting uploads or contains suspicious patterns
+    const isUploadsRequest = originalUrl.includes('/uploads') || url.includes('/uploads') || path.includes('/uploads')
+    const containsTraversal = originalUrl.includes('..') || url.includes('..') || path.includes('..')
+    
+    // Only apply security checks to upload-related requests or requests with traversal patterns
+    if (!isUploadsRequest && !containsTraversal) {
+      return next()
+    }
+    
+    console.log('=== GLOBAL SECURITY MIDDLEWARE DEBUG ===')
+    console.log('req.originalUrl:', originalUrl)
+    console.log('req.url:', url)
+    console.log('req.path:', path)
+    console.log('isUploadsRequest:', isUploadsRequest)
+    console.log('containsTraversal:', containsTraversal)
     
     // Decode URLs to catch encoded attacks
     let decodedUrl = ''
@@ -34,7 +43,6 @@ function createStaticFileSecurityMiddleware(): express.RequestHandler {
       console.log('decodedPath:', decodedPath)
     } catch (error) {
       console.log('URL decoding failed - likely malicious')
-      // If URL decoding fails, it might be malicious
       return res.status(400).json({
         success: false,
         error: {
@@ -48,7 +56,7 @@ function createStaticFileSecurityMiddleware(): express.RequestHandler {
     const pathsToCheck = [originalUrl, url, path, decodedUrl, decodedPath]
     console.log('pathsToCheck:', pathsToCheck)
     
-    // Simple but effective path traversal detection
+    // Path traversal detection for upload-related requests
     for (const pathToCheck of pathsToCheck) {
       if (!pathToCheck) continue
       
@@ -79,39 +87,44 @@ function createStaticFileSecurityMiddleware(): express.RequestHandler {
         })
       }
       
-      // Check for backslashes (Windows path traversal)
-      if (pathToCheck.includes('\\')) {
-        console.log('BLOCKED: Found backslash in path')
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
-      
-      // Check for encoded patterns that decode to dangerous characters
-      if (lowerPath.includes('%2e') || lowerPath.includes('%5c')) {
-        console.log('BLOCKED: Found encoded dangerous characters')
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
+      // Check for encoded traversal patterns
+      const encodedPatterns = ['%2e%2e', '%2f%2e%2e', '%5c', '\\']
+      for (const pattern of encodedPatterns) {
+        if (lowerPath.includes(pattern)) {
+          console.log(`BLOCKED: Found encoded pattern "${pattern}" in path`)
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_PATH',
+              message: 'Invalid file path'
+            }
+          })
+        }
       }
     }
     
-    // Extract filename from the path for dotfile checking
-    // Use the decoded path to get the actual filename
-    const pathSegments = decodedPath.split('/')
-    const fileName = pathSegments[pathSegments.length - 1]
+    console.log('PASSED: Request allowed through global security middleware')
+    next()
+  }
+}
+
+/**
+ * Local security middleware for dotfiles and additional upload-specific security
+ * This runs only on /uploads routes after global security has passed
+ */
+function createLocalSecurityMiddleware(): express.RequestHandler {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.log('=== LOCAL SECURITY MIDDLEWARE DEBUG ===')
+    console.log('req.url:', req.url)
+    console.log('req.path:', req.path)
+    
+    // Extract filename from the request path
+    const requestPath = req.path || req.url
+    const fileName = path.basename(requestPath)
     
     console.log('fileName:', fileName)
     
-    // Check for dotfiles (files starting with .)
+    // Block dotfiles (files starting with .)
     if (fileName && fileName.startsWith('.')) {
       console.log('BLOCKED: Dotfile access denied')
       return res.status(403).json({
@@ -123,20 +136,19 @@ function createStaticFileSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    console.log('PASSED: Request allowed through security middleware')
-    // If all security checks pass, continue to next middleware
+    console.log('PASSED: Request allowed through local security middleware')
     next()
   }
 }
 
 /**
- * Create secure static file handler with security middleware
- * Returns array of middleware: [security, static file serving]
+ * Create secure static file handler with both global and local security
+ * Returns array of middleware: [local security, static file serving]
  */
 export function createSecureStaticFileHandler(uploadsPath: string): express.RequestHandler[] {
   return [
-    // Security middleware runs first to catch malicious requests
-    createStaticFileSecurityMiddleware(),
+    // Local security middleware (for dotfiles and upload-specific checks)
+    createLocalSecurityMiddleware(),
     
     // Express static file serving with security options
     express.static(uploadsPath, {
@@ -157,13 +169,10 @@ export function createSecureStaticFileHandler(uploadsPath: string): express.Requ
         
         // Files that should be displayed inline (safe for browsers)
         if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) {
-          // Image files - display inline
           res.setHeader('Content-Disposition', 'inline')
         } else if (['.mp4', '.webm', '.mov', '.avi'].includes(ext)) {
-          // Video files - display inline
           res.setHeader('Content-Disposition', 'inline')
         } else if (['.mp3', '.wav', '.ogg', '.m4a'].includes(ext)) {
-          // Audio files - display inline
           res.setHeader('Content-Disposition', 'inline')
         } else {
           // All other file types - force download for security
