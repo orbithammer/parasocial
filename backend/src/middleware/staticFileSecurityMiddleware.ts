@@ -12,72 +12,82 @@ import * as pathModule from 'path'
  */
 export function createGlobalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const originalUrl = req.originalUrl || req.url || ''
+    // Check all possible URL sources to catch path traversal attempts
+    const originalUrl = req.originalUrl || ''
+    const requestUrl = req.url || ''
+    const requestPath = req.path || ''
     
     console.log('\n=== GLOBAL SECURITY MIDDLEWARE ===')
-    console.log('Original URL:', JSON.stringify(originalUrl))
+    console.log('originalUrl:', JSON.stringify(originalUrl))
+    console.log('req.url:', JSON.stringify(requestUrl))
+    console.log('req.path:', JSON.stringify(requestPath))
     
-    // Block any path containing double dots (basic path traversal)
-    if (originalUrl.includes('..')) {
-      console.log('BLOCKING: Double dots detected in path')
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
+    // Check all URL variations for security threats
+    const urlsToCheck = [originalUrl, requestUrl, requestPath]
+    
+    for (const urlToCheck of urlsToCheck) {
+      // Block any path containing double dots (basic path traversal)
+      if (urlToCheck.includes('..')) {
+        console.log('BLOCKING: Double dots detected in:', JSON.stringify(urlToCheck))
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      
+      // Block URL encoded double dots (%2e%2e, %2E%2E)
+      if (/%2e%2e/i.test(urlToCheck)) {
+        console.log('BLOCKING: URL encoded double dots detected in:', JSON.stringify(urlToCheck))
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      
+      // Block backslashes (Windows path traversal)
+      if (urlToCheck.includes('\\')) {
+        console.log('BLOCKING: Backslashes detected in:', JSON.stringify(urlToCheck))
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      
+      // Block URL encoded backslashes (%5c, %5C)
+      if (/%5c/i.test(urlToCheck)) {
+        console.log('BLOCKING: URL encoded backslashes detected in:', JSON.stringify(urlToCheck))
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      
+      // Block tilde paths (home directory access)
+      if (urlToCheck.includes('~')) {
+        console.log('BLOCKING: Tilde paths detected in:', JSON.stringify(urlToCheck))
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
     }
     
-    // Block URL encoded double dots (%2e%2e, %2E%2E)
-    if (/%2e%2e/i.test(originalUrl)) {
-      console.log('BLOCKING: URL encoded double dots detected')
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
-    }
-    
-    // Block backslashes (Windows path traversal)
-    if (originalUrl.includes('\\')) {
-      console.log('BLOCKING: Backslashes detected (Windows path traversal)')
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
-    }
-    
-    // Block URL encoded backslashes (%5c, %5C)
-    if (/%5c/i.test(originalUrl)) {
-      console.log('BLOCKING: URL encoded backslashes detected')
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
-    }
-    
-    // Block tilde paths (home directory access)
-    if (originalUrl.includes('~')) {
-      console.log('BLOCKING: Tilde paths detected')
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PATH',
-          message: 'Invalid file path'
-        }
-      })
-    }
-    
-    console.log('ALLOWED: Path passed global security validation')
+    console.log('ALLOWED: All URLs passed global security validation')
     next()
   }
 }
