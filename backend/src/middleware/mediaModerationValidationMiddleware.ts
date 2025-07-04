@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 2.0
-// COMPLETE FIX: Added missing schemas and corrected error messages to match test expectations
+// Version: 1.1
+// Fixed file type validation to use consistent VALIDATION_ERROR format with details array
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -10,45 +10,40 @@ import { z } from 'zod'
 // ============================================================================
 
 /**
- * Schema for validating media upload requests
- * Supports images and videos with size and type restrictions
+ * Schema for validating media upload metadata
+ * Alt text is optional for accessibility
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .max(1000, 'Alt text must be less than 1000 characters')
+    .max(200, 'Alt text must be less than 200 characters')
     .optional()
 })
 
 /**
- * Schema for validating content report creation
- * Supports reporting users or posts with required description
+ * Schema for validating content reports
+ * Supports reporting both users and posts with validation rules
  */
 const reportSchema = z.object({
-  type: z.enum([
-    'HARASSMENT',
-    'SPAM', 
-    'MISINFORMATION',
-    'INAPPROPRIATE_CONTENT',
-    'COPYRIGHT',
-    'OTHER'
-  ], {
-    errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
+  type: z.enum(['spam', 'harassment', 'inappropriate', 'copyright', 'other'], {
+    errorMap: () => ({ message: 'Report type must be one of: spam, harassment, inappropriate, copyright, other' })
   }),
   description: z.string()
     .min(10, 'Report description must be at least 10 characters')
     .max(1000, 'Report description must be less than 1000 characters'),
   reportedUserId: z.string().optional(),
   reportedPostId: z.string().optional()
-}).refine(
-  (data) => data.reportedUserId || data.reportedPostId,
+})
+.refine(
+  (data) => !(data.reportedUserId && data.reportedPostId),
   {
     message: 'Must report either a user or a post, not both',
     path: ['reportedUserId']
   }
-).refine(
-  (data) => !(data.reportedUserId && data.reportedPostId),
+)
+.refine(
+  (data) => !!(data.reportedUserId || data.reportedPostId),
   {
-    message: 'Must report either a user or a post, not both',
+    message: 'Must specify either a user ID or post ID to report',
     path: ['reportedUserId']
   }
 )
@@ -71,7 +66,6 @@ const blockUserSchema = z.object({
 
 /**
  * Schema for validating username parameters in URL paths
- * FIXED: Added missing schema that was causing test failures
  */
 const usernameParamSchema = z.object({
   username: z.string()
@@ -87,6 +81,7 @@ const usernameParamSchema = z.object({
 /**
  * Middleware to validate media file uploads
  * Checks file type, size, and optional metadata
+ * FIXED: Now uses consistent VALIDATION_ERROR format for all validations
  */
 export const validateMediaUpload = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -121,13 +116,17 @@ export const validateMediaUpload = (req: Request, res: Response, next: NextFunct
     const maxFileSize = 50 * 1024 * 1024 // 50MB
     const maxImageSize = 10 * 1024 * 1024 // 10MB for images
 
-    // Validate file type
+    // FIXED: Validate file type using consistent VALIDATION_ERROR format
     if (!allowedTypes.includes(req.file.mimetype)) {
       res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_FILE_TYPE',
-          message: `File type ${req.file.mimetype} is not supported. Allowed types: ${allowedTypes.join(', ')}`
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid media upload data',
+          details: [{
+            field: 'mimetype',
+            message: 'File type not supported. Use JPEG, PNG, GIF, WEBP, MP4, or WEBM'
+          }]
         }
       })
       return
@@ -275,7 +274,6 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
 
 /**
  * Middleware to validate username parameters
- * FIXED: Now uses the proper usernameParamSchema that was missing
  */
 export const validateUsernameParam = (req: Request, res: Response, next: NextFunction): void => {
   try {
