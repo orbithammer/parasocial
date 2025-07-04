@@ -32,6 +32,7 @@ import { BlockRepository } from './repositories/BlockRepository'
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
 import { createSecureStaticFileHandler, createGlobalSecurityMiddleware } from './middleware/staticFileSecurityMiddleware'
+import { createExpressAwareSecurityMiddleware } from './middleware/expressAwareSecurityMiddleware'
 
 /**
  * Create and configure Express application with all routes and static file serving
@@ -47,7 +48,8 @@ export function createApp() {
    * Global security middleware catches path traversal attempts before route matching
    * This is critical because Express route matching can miss traversal attempts
    */
-  app.use(createGlobalSecurityMiddleware())
+  
+  app.use(createExpressAwareSecurityMiddleware())
 
   // ============================================================================
   // MIDDLEWARE SETUP
