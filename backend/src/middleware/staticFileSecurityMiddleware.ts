@@ -12,23 +12,30 @@ import * as pathModule from 'path'
  */
 export function createGlobalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    // Check all possible URL sources to catch path traversal attempts
+    console.log('\n=== GLOBAL SECURITY MIDDLEWARE ===')
+    
+    // Get all possible URL sources
     const originalUrl = req.originalUrl || ''
     const requestUrl = req.url || ''
     const requestPath = req.path || ''
     
-    console.log('\n=== GLOBAL SECURITY MIDDLEWARE ===')
-    console.log('originalUrl:', JSON.stringify(originalUrl))
-    console.log('req.url:', JSON.stringify(requestUrl))
-    console.log('req.path:', JSON.stringify(requestPath))
+    console.log('URL sources:')
+    console.log('  originalUrl:', JSON.stringify(originalUrl))
+    console.log('  req.url:', JSON.stringify(requestUrl))
+    console.log('  req.path:', JSON.stringify(requestPath))
     
-    // Check all URL variations for security threats
-    const urlsToCheck = [originalUrl, requestUrl, requestPath]
+    // Create array of URLs to check (filter out empty strings)
+    const urlsToCheck = [originalUrl, requestUrl, requestPath].filter(url => url && url.length > 0)
+    console.log('URLs to check:', urlsToCheck.length, urlsToCheck)
     
-    for (const urlToCheck of urlsToCheck) {
-      // Block any path containing double dots (basic path traversal)
-      if (urlToCheck.includes('..')) {
-        console.log('BLOCKING: Double dots detected in:', JSON.stringify(urlToCheck))
+    // Check each URL for security threats
+    for (let i = 0; i < urlsToCheck.length; i++) {
+      const currentUrl = urlsToCheck[i]
+      console.log(`\nChecking URL ${i}:`, JSON.stringify(currentUrl))
+      
+      // 1. Check for double dots (path traversal) - using indexOf for reliability
+      if (currentUrl.indexOf('..') !== -1) {
+        console.log('BLOCKING: Path traversal (double dots) detected!')
         return res.status(400).json({
           success: false,
           error: {
@@ -38,9 +45,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
         })
       }
       
-      // Block URL encoded double dots (%2e%2e, %2E%2E)
-      if (/%2e%2e/i.test(urlToCheck)) {
-        console.log('BLOCKING: URL encoded double dots detected in:', JSON.stringify(urlToCheck))
+      // 2. Check for backslashes (Windows path traversal)
+      if (currentUrl.indexOf('\\') !== -1) {
+        console.log('BLOCKING: Windows path traversal (backslashes) detected!')
         return res.status(400).json({
           success: false,
           error: {
@@ -50,9 +57,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
         })
       }
       
-      // Block backslashes (Windows path traversal)
-      if (urlToCheck.includes('\\')) {
-        console.log('BLOCKING: Backslashes detected in:', JSON.stringify(urlToCheck))
+      // 3. Check for tilde (home directory access)
+      if (currentUrl.indexOf('~') !== -1) {
+        console.log('BLOCKING: Tilde path detected!')
         return res.status(400).json({
           success: false,
           error: {
@@ -62,9 +69,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
         })
       }
       
-      // Block URL encoded backslashes (%5c, %5C)
-      if (/%5c/i.test(urlToCheck)) {
-        console.log('BLOCKING: URL encoded backslashes detected in:', JSON.stringify(urlToCheck))
+      // 4. Check for URL encoded double dots (%2e%2e, %2E%2E)
+      if (/%2e%2e/i.test(currentUrl)) {
+        console.log('BLOCKING: URL encoded double dots detected!')
         return res.status(400).json({
           success: false,
           error: {
@@ -74,9 +81,9 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
         })
       }
       
-      // Block tilde paths (home directory access)
-      if (urlToCheck.includes('~')) {
-        console.log('BLOCKING: Tilde paths detected in:', JSON.stringify(urlToCheck))
+      // 5. Check for URL encoded backslashes (%5c, %5C)
+      if (/%5c/i.test(currentUrl)) {
+        console.log('BLOCKING: URL encoded backslashes detected!')
         return res.status(400).json({
           success: false,
           error: {
@@ -87,7 +94,7 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       }
     }
     
-    console.log('ALLOWED: All URLs passed global security validation')
+    console.log('ALLOWED: All URLs passed security validation')
     next()
   }
 }
@@ -139,26 +146,36 @@ export function createSecureStaticFileHandler(uploadsPath: string): express.Requ
     // 2. Then apply local security (blocks dotfiles)
     createLocalSecurityMiddleware(),
     
-    // 3. Finally serve static files with security options (only if security checks pass)
+    // 3. Add security headers before serving files
+    (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      // Set security headers for file responses
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+      
+      // Set Content-Disposition based on file extension
+      const requestPath = req.path || req.url || ''
+      const extension = pathModule.extname(requestPath).toLowerCase()
+      
+      // Files that should be displayed inline (safe for browsers)
+      const inlineExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mp3', '.wav', '.ogg']
+      
+      if (inlineExtensions.includes(extension)) {
+        res.setHeader('Content-Disposition', 'inline')
+      } else {
+        // All other file types - force download for security
+        res.setHeader('Content-Disposition', 'attachment')
+      }
+      
+      next()
+    },
+    
+    // 4. Finally serve static files (only if security checks pass)
     express.static(uploadsPath, {
-      // Security options for express.static
+      // Basic security options for express.static
       dotfiles: 'deny',  // Deny access to dotfiles (backup protection)
       index: false,      // Don't serve directory indexes
-      redirect: false,   // Don't redirect trailing slashes
-      
-      // Custom headers for all served files
-      setHeaders: (res: express.Response, filePath: string) => {
-        // Security headers
-        res.setHeader('X-Content-Type-Options', 'nosniff')
-        res.setHeader('X-Frame-Options', 'SAMEORIGIN')
-        res.setHeader('Content-Disposition', 'inline')
-        
-        // Content Security Policy for media files
-        const ext = pathModule.extname(filePath).toLowerCase()
-        if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mp3', '.wav'].includes(ext)) {
-          res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; media-src 'self'")
-        }
-      }
+      redirect: false    // Don't redirect trailing slashes
     })
   ]
 }
+
