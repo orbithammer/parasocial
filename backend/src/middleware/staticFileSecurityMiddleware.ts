@@ -1,48 +1,173 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 1.2
-// Fixed: Applied security middleware globally to catch path traversal before route matching
+// Version: 1.5
+// Fixed: Capture raw URL before Express normalizes path traversal
 
 import express from 'express'
-import path from 'path'
+import * as pathModule from 'path'
+import { IncomingMessage } from 'http'
 
 /**
  * Global security middleware to prevent path traversal attacks
- * This middleware runs on ALL requests to catch traversal attempts before route matching
+ * Captures the raw URL before Express normalizes it
  */
 export function createGlobalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    // Only check requests that are targeting upload paths or contain traversal patterns
-    const originalUrl = req.originalUrl || req.url
-    const url = req.url
-    const path = req.path
+    console.log('\n=== GLOBAL SECURITY MIDDLEWARE EXECUTING ===')
     
-    // Check if this request is targeting uploads or contains suspicious patterns
-    const isUploadsRequest = originalUrl.includes('/uploads') || url.includes('/uploads') || path.includes('/uploads')
-    const containsTraversal = originalUrl.includes('..') || url.includes('..') || path.includes('..')
+    // CRITICAL: Get the raw URL from the HTTP request before Express normalization
+    const rawUrl = (req as any).originalUrl || req.url || ''
     
-    // Only apply security checks to upload-related requests or requests with traversal patterns
-    if (!isUploadsRequest && !containsTraversal) {
+    // Also try to get it from the raw HTTP request if available
+    let httpRawUrl = ''
+    if ((req as any).socket && (req as any).socket.parser) {
+      // Try to access the raw HTTP request
+      const httpReq = (req as any).socket.parser.incoming
+      if (httpReq && httpReq.url) {
+        httpRawUrl = httpReq.url
+      }
+    }
+    
+    // Try alternative method: access the raw request URL
+    const nodeReq = req as any as IncomingMessage
+    const nodeRawUrl = nodeReq.url || ''
+    
+    // Get Express-processed URLs for comparison
+    const originalUrl = req.originalUrl || req.url || ''
+    const url = req.url || ''
+    const requestPath = req.path || ''
+    
+    console.log('URL Analysis:')
+    console.log('  rawUrl (from req):', JSON.stringify(rawUrl))
+    console.log('  httpRawUrl (from socket):', JSON.stringify(httpRawUrl))
+    console.log('  nodeRawUrl (from IncomingMessage):', JSON.stringify(nodeRawUrl))
+    console.log('  originalUrl (Express):', JSON.stringify(originalUrl))
+    console.log('  url (Express):', JSON.stringify(url))
+    console.log('  path (Express):', JSON.stringify(requestPath))
+    
+    // Use all available URL sources for security checking
+    const urlsToAnalyze = [
+      rawUrl,
+      httpRawUrl, 
+      nodeRawUrl,
+      originalUrl,
+      url,
+      requestPath
+    ].filter(u => u && u.length > 0) // Remove empty strings
+    
+    console.log('URLs to analyze:', urlsToAnalyze.map(u => JSON.stringify(u)))
+    
+    // Check if ANY URL variation involves uploads or traversal
+    let hasUploads = false
+    let hasTraversal = false
+    
+    for (const urlToCheck of urlsToAnalyze) {
+      if (urlToCheck.includes('/uploads')) hasUploads = true
+      if (urlToCheck.includes('..')) hasTraversal = true
+    }
+    
+    console.log('Pattern Detection:')
+    console.log('  hasUploads:', hasUploads)
+    console.log('  hasTraversal:', hasTraversal)
+    console.log('  shouldSkipSecurity:', !hasUploads && !hasTraversal)
+    
+    // If no URLs involve uploads or traversal, skip security checks
+    if (!hasUploads && !hasTraversal) {
+      console.log('SKIPPING: No URLs involve uploads or traversal patterns')
       return next()
     }
     
-    console.log('=== GLOBAL SECURITY MIDDLEWARE DEBUG ===')
-    console.log('req.originalUrl:', originalUrl)
-    console.log('req.url:', url)
-    console.log('req.path:', path)
-    console.log('isUploadsRequest:', isUploadsRequest)
-    console.log('containsTraversal:', containsTraversal)
+    console.log('APPLYING SECURITY: At least one URL involves uploads or traversal patterns')
     
-    // Decode URLs to catch encoded attacks
-    let decodedUrl = ''
-    let decodedPath = ''
+    // Check each URL for malicious patterns
+    for (let i = 0; i < urlsToAnalyze.length; i++) {
+      const urlToCheck = urlsToAnalyze[i]
+      
+      // Decode URL to catch encoded attacks
+      let decodedUrl = ''
+      try {
+        decodedUrl = decodeURIComponent(urlToCheck)
+      } catch (error) {
+        console.log(`[${i}] BLOCKING: URL decoding failed for "${urlToCheck}"`)
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+      
+      // Check both original and decoded versions
+      const versionsToCheck = [urlToCheck, decodedUrl]
+      
+      for (const version of versionsToCheck) {
+        const lowerUrl = version.toLowerCase()
+        console.log(`  [${i}] Checking: ${JSON.stringify(version)} (lower: ${JSON.stringify(lowerUrl)})`)
+        
+        // Check for path traversal (double dots)
+        if (lowerUrl.includes('..')) {
+          console.log(`  [${i}] BLOCKING: Found path traversal (..) in URL`)
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_PATH',
+              message: 'Invalid file path'
+            }
+          })
+        }
+        
+        // Check for home directory access
+        if (lowerUrl.includes('~')) {
+          console.log(`  [${i}] BLOCKING: Found tilde (~) in URL`)
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_PATH',
+              message: 'Invalid file path'
+            }
+          })
+        }
+        
+        // Check for encoded traversal patterns
+        const maliciousPatterns = ['%2e%2e', '%2f%2e%2e', '%5c', '\\']
+        for (const pattern of maliciousPatterns) {
+          if (lowerUrl.includes(pattern)) {
+            console.log(`  [${i}] BLOCKING: Found encoded pattern "${pattern}" in URL`)
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'INVALID_PATH',
+                message: 'Invalid file path'
+              }
+            })
+          }
+        }
+        
+        console.log(`  [${i}] SAFE: No malicious patterns found in "${version}"`)
+      }
+    }
     
-    try {
-      decodedUrl = decodeURIComponent(originalUrl)
-      decodedPath = decodeURIComponent(path)
-      console.log('decodedUrl:', decodedUrl)
-      console.log('decodedPath:', decodedPath)
-    } catch (error) {
-      console.log('URL decoding failed - likely malicious')
+    console.log('ALLOWING: All URLs passed security checks')
+    next()
+  }
+}
+
+/**
+ * Alternative approach: Raw HTTP middleware that runs before Express routing
+ * This captures the URL before any Express processing
+ */
+export function createRawHttpSecurityMiddleware(): express.RequestHandler {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    // Access the raw Node.js HTTP request
+    const nodeReq = req as any as IncomingMessage
+    const rawUrl = nodeReq.url || ''
+    
+    console.log('\n=== RAW HTTP SECURITY MIDDLEWARE ===')
+    console.log('Raw HTTP URL:', JSON.stringify(rawUrl))
+    
+    // Basic security checks on raw URL
+    if (rawUrl.includes('..') && (rawUrl.includes('/uploads') || rawUrl.includes('uploads'))) {
+      console.log('BLOCKING: Raw URL contains path traversal targeting uploads')
       return res.status(400).json({
         success: false,
         error: {
@@ -52,58 +177,7 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    // All path variations to check
-    const pathsToCheck = [originalUrl, url, path, decodedUrl, decodedPath]
-    console.log('pathsToCheck:', pathsToCheck)
-    
-    // Path traversal detection for upload-related requests
-    for (const pathToCheck of pathsToCheck) {
-      if (!pathToCheck) continue
-      
-      const lowerPath = pathToCheck.toLowerCase()
-      console.log(`Checking path: "${pathToCheck}" (lower: "${lowerPath}")`)
-      
-      // Check for double dots (the main path traversal indicator)
-      if (lowerPath.includes('..')) {
-        console.log('BLOCKED: Found double dots in path')
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
-      
-      // Check for tilde (home directory access)
-      if (lowerPath.includes('~')) {
-        console.log('BLOCKED: Found tilde in path')
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
-      
-      // Check for encoded traversal patterns
-      const encodedPatterns = ['%2e%2e', '%2f%2e%2e', '%5c', '\\']
-      for (const pattern of encodedPatterns) {
-        if (lowerPath.includes(pattern)) {
-          console.log(`BLOCKED: Found encoded pattern "${pattern}" in path`)
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_PATH',
-              message: 'Invalid file path'
-            }
-          })
-        }
-      }
-    }
-    
-    console.log('PASSED: Request allowed through global security middleware')
+    console.log('ALLOWING: Raw URL passed basic security check')
     next()
   }
 }
@@ -114,19 +188,19 @@ export function createGlobalSecurityMiddleware(): express.RequestHandler {
  */
 function createLocalSecurityMiddleware(): express.RequestHandler {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.log('=== LOCAL SECURITY MIDDLEWARE DEBUG ===')
-    console.log('req.url:', req.url)
-    console.log('req.path:', req.path)
+    console.log('\n=== LOCAL SECURITY MIDDLEWARE EXECUTING ===')
     
     // Extract filename from the request path
-    const requestPath = req.path || req.url
-    const fileName = path.basename(requestPath)
+    const requestPath = req.path || req.url || ''
+    const fileName = pathModule.basename(requestPath)
     
-    console.log('fileName:', fileName)
+    console.log('Local Security Check:')
+    console.log('  requestPath:', JSON.stringify(requestPath))
+    console.log('  fileName:', JSON.stringify(fileName))
     
     // Block dotfiles (files starting with .)
     if (fileName && fileName.startsWith('.')) {
-      console.log('BLOCKED: Dotfile access denied')
+      console.log('BLOCKING: Dotfile access denied')
       return res.status(403).json({
         success: false,
         error: {
@@ -136,7 +210,7 @@ function createLocalSecurityMiddleware(): express.RequestHandler {
       })
     }
     
-    console.log('PASSED: Request allowed through local security middleware')
+    console.log('ALLOWING: Local security checks passed')
     next()
   }
 }
@@ -165,7 +239,7 @@ export function createSecureStaticFileHandler(uploadsPath: string): express.Requ
         res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; media-src 'self'")
         
         // Content disposition based on file type
-        const ext = path.extname(filePath).toLowerCase()
+        const ext = pathModule.extname(filePath).toLowerCase()
         
         // Files that should be displayed inline (safe for browsers)
         if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) {
