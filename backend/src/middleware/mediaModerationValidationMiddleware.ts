@@ -1,6 +1,6 @@
 // backend/src/middleware/mediaModerationValidationMiddleware.ts
-// Version: 1.1
-// Fixed file type validation to use consistent VALIDATION_ERROR format with details array
+// Version: 1.2
+// Fixed alt text limit and report types to match test expectations
 
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
@@ -15,7 +15,7 @@ import { z } from 'zod'
  */
 const mediaUploadSchema = z.object({
   altText: z.string()
-    .max(200, 'Alt text must be less than 200 characters')
+    .max(1000, 'Alt text must be less than 1000 characters')
     .optional()
 })
 
@@ -24,8 +24,8 @@ const mediaUploadSchema = z.object({
  * Supports reporting both users and posts with validation rules
  */
 const reportSchema = z.object({
-  type: z.enum(['spam', 'harassment', 'inappropriate', 'copyright', 'other'], {
-    errorMap: () => ({ message: 'Report type must be one of: spam, harassment, inappropriate, copyright, other' })
+  type: z.enum(['HARASSMENT', 'SPAM', 'MISINFORMATION', 'INAPPROPRIATE_CONTENT', 'COPYRIGHT', 'OTHER'], {
+    errorMap: () => ({ message: 'Report type must be one of: HARASSMENT, SPAM, MISINFORMATION, INAPPROPRIATE_CONTENT, COPYRIGHT, OTHER' })
   }),
   description: z.string()
     .min(10, 'Report description must be at least 10 characters')
@@ -43,7 +43,7 @@ const reportSchema = z.object({
 .refine(
   (data) => !!(data.reportedUserId || data.reportedPostId),
   {
-    message: 'Must specify either a user ID or post ID to report',
+    message: 'Must report either a user or a post, not both',
     path: ['reportedUserId']
   }
 )
@@ -225,6 +225,7 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
           }))
         }
       })
+      return
     } else {
       // Handle internal server errors (non-validation errors)
       console.error('Report validation error:', error)
@@ -235,6 +236,7 @@ export const validateCreateReport = (req: Request, res: Response, next: NextFunc
           message: 'Internal server error during validation'
         }
       })
+      return
     }
   }
 }
@@ -260,6 +262,7 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
           }))
         }
       })
+      return
     } else {
       res.status(500).json({
         success: false,
@@ -268,6 +271,7 @@ export const validateBlockUser = (req: Request, res: Response, next: NextFunctio
           message: 'Block validation failed'
         }
       })
+      return
     }
   }
 }
@@ -293,6 +297,7 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
           }))
         }
       })
+      return
     } else {
       res.status(500).json({
         success: false,
@@ -301,6 +306,7 @@ export const validateUsernameParam = (req: Request, res: Response, next: NextFun
           message: 'Username validation failed'
         }
       })
+      return
     }
   }
 }
