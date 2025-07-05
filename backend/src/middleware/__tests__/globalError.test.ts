@@ -1,6 +1,6 @@
 // backend/src/middleware/__tests__/globalError.test.ts
 // Comprehensive unit tests for global error handling middleware and utilities
-// Version: 1.0.0 - Initial test implementation for error handling system
+// Version: 1.0.7 - Fixed TypeScript error with proper type assertion (as unknown as MockResponse)
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Request, Response, NextFunction } from 'express'
@@ -25,6 +25,15 @@ import {
 // ============================================================================
 
 /**
+ * Interface for mock response with access to mock functions
+ * Extends Express Response with references to the original Vitest mocks
+ */
+interface MockResponse extends Response {
+  statusMock: ReturnType<typeof vi.fn>
+  jsonMock: ReturnType<typeof vi.fn>
+}
+
+/**
  * Create mock Express request object with common properties
  * Allows testing different request scenarios
  */
@@ -35,8 +44,9 @@ function createMockRequest(overrides: Partial<Request> = {}): Partial<Request> {
     ip: '127.0.0.1',
     get: vi.fn((header: string) => {
       if (header === 'User-Agent') return 'test-user-agent'
-      return undefined
-    }),
+      if (header === 'set-cookie') return undefined as string[] | undefined
+      return undefined as string | undefined
+    }) as any,
     ...overrides
   }
 }
@@ -45,17 +55,44 @@ function createMockRequest(overrides: Partial<Request> = {}): Partial<Request> {
  * Create mock Express response object with spy functions
  * Tracks status codes and JSON responses for assertions
  */
-function createMockResponse(): Partial<Response> & { 
-  status: ReturnType<typeof vi.fn>
-  json: ReturnType<typeof vi.fn>
-  req: Partial<Request>
-} {
-  const res = {
-    status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis(),
-    req: createMockRequest()
+function createMockResponse(): MockResponse {
+  const statusMock = vi.fn().mockReturnThis()
+  const jsonMock = vi.fn().mockReturnThis()
+  
+  const mockResponse = {
+    status: statusMock,
+    json: jsonMock,
+    send: vi.fn().mockReturnThis(),
+    sendStatus: vi.fn().mockReturnThis(),
+    end: vi.fn().mockReturnThis(),
+    req: createMockRequest(),
+    // Add minimal required properties to satisfy Express Response interface
+    locals: {},
+    headersSent: false,
+    // Mock other commonly used methods
+    cookie: vi.fn().mockReturnThis(),
+    clearCookie: vi.fn().mockReturnThis(),
+    redirect: vi.fn().mockReturnThis(),
+    render: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
+    get: vi.fn(),
+    type: vi.fn().mockReturnThis(),
+    vary: vi.fn().mockReturnThis(),
+    // Add placeholder methods for other Response methods
+    sendFile: vi.fn(),
+    download: vi.fn(),
+    attachment: vi.fn().mockReturnThis(),
+    append: vi.fn().mockReturnThis(),
+    links: vi.fn().mockReturnThis(),
+    location: vi.fn().mockReturnThis(),
+    jsonp: vi.fn().mockReturnThis(),
+    format: vi.fn().mockReturnThis(),
+    // Keep references to mocks for testing
+    statusMock,
+    jsonMock
   }
-  return res as any
+
+  return mockResponse as unknown as MockResponse
 }
 
 /**
@@ -207,14 +244,14 @@ describe('Global Error Handler', () => {
   describe('Custom Application Errors', () => {
     it('should handle AppError correctly', () => {
       const req = createMockRequest() as Request
-      const res = createMockResponse() as Response
+      const res = createMockResponse()
       const next = createMockNext()
       const error = new AppError('Test error', 400, 'TEST_ERROR')
 
       globalErrorHandler(error, req, res, next)
 
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
+      expect(res.statusMock).toHaveBeenCalledWith(400)
+      expect(res.jsonMock).toHaveBeenCalledWith(
         expect.objectContaining({
           success: false,
           error: 'Test error',
@@ -227,15 +264,15 @@ describe('Global Error Handler', () => {
 
     it('should handle ValidationError with validation details', () => {
       const req = createMockRequest() as Request
-      const res = createMockResponse() as Response
+      const res = createMockResponse()
       const next = createMockNext()
       const validationErrors = { field: 'email', message: 'Invalid' }
       const error = new ValidationError('Validation failed', validationErrors)
 
       globalErrorHandler(error, req, res, next)
 
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
+      expect(res.statusMock).toHaveBeenCalledWith(400)
+      expect(res.jsonMock).toHaveBeenCalledWith(
         expect.objectContaining({
           success: false,
           error: 'Validation failed',
@@ -247,14 +284,14 @@ describe('Global Error Handler', () => {
 
     it('should handle AuthenticationError', () => {
       const req = createMockRequest() as Request
-      const res = createMockResponse() as Response
+      const res = createMockResponse()
       const next = createMockNext()
       const error = new AuthenticationError('Invalid token')
 
       globalErrorHandler(error, req, res, next)
 
-      expect(res.status).toHaveBeenCalledWith(401)
-      expect(res.json).toHaveBeenCalledWith(
+      expect(res.statusMock).toHaveBeenCalledWith(401)
+      expect(res.jsonMock).toHaveBeenCalledWith(
         expect.objectContaining({
           success: false,
           error: 'Invalid token',
@@ -368,6 +405,42 @@ describe('Global Error Handler', () => {
           success: false,
           error: 'Unexpected file field',
           code: 'UNEXPECTED_FILE'
+        })
+      )
+    })
+
+    it('should handle LIMIT_PART_COUNT error', () => {
+      const req = createMockRequest() as Request
+      const res = createMockResponse() as Response
+      const next = createMockNext()
+      const multerError = new MulterError('LIMIT_PART_COUNT', 'form')
+
+      globalErrorHandler(multerError, req, res, next)
+
+      expect(res.status).toHaveBeenCalledWith(400)
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: 'Too many form parts uploaded',
+          code: 'TOO_MANY_PARTS'
+        })
+      )
+    })
+
+    it('should handle LIMIT_FIELD_COUNT error', () => {
+      const req = createMockRequest() as Request
+      const res = createMockResponse() as Response
+      const next = createMockNext()
+      const multerError = new MulterError('LIMIT_FIELD_COUNT', 'fields')
+
+      globalErrorHandler(multerError, req, res, next)
+
+      expect(res.status).toHaveBeenCalledWith(400)
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: 'Too many form fields',
+          code: 'TOO_MANY_FIELDS'
         })
       )
     })
@@ -502,7 +575,7 @@ describe('Global Error Handler', () => {
 
       globalErrorHandler(unknownError, req, res, next)
 
-      expect(res.json).toHaveBeenCalledWith(
+      expect(res.jsonMock).toHaveBeenCalledWith(
         expect.objectContaining({
           details: expect.objectContaining({
             stack: expect.any(String),
@@ -526,7 +599,7 @@ describe('Global Error Handler', () => {
 
       globalErrorHandler(unknownError, req, res, next)
 
-      const responseCall = res.json.mock.calls[0][0]
+      const responseCall = res.jsonMock.mock.calls[0][0]
       expect(responseCall.details).toBeUndefined()
 
       process.env.NODE_ENV = originalEnv
@@ -581,7 +654,7 @@ describe('Global Error Handler', () => {
 
       globalErrorHandler(error, req, res, next)
 
-      const responseCall = res.json.mock.calls[0][0]
+      const responseCall = res.jsonMock.mock.calls[0][0]
       expect(responseCall.request_id).toMatch(/^req_\d+_[a-z0-9]{6}$/)
     })
 
@@ -596,8 +669,8 @@ describe('Global Error Handler', () => {
       globalErrorHandler(error, req1, res1, next)
       globalErrorHandler(error, req2, res2, next)
 
-      const response1 = res1.json.mock.calls[0][0]
-      const response2 = res2.json.mock.calls[0][0]
+      const response1 = res1.jsonMock.mock.calls[0][0]
+      const response2 = res2.jsonMock.mock.calls[0][0]
       
       expect(response1.request_id).not.toBe(response2.request_id)
     })
@@ -621,13 +694,13 @@ describe('Not Found Handler', () => {
 
   it('should handle 404 for undefined routes', () => {
     const req = createMockRequest({ method: 'POST', path: '/undefined-route' }) as Request
-    const res = createMockResponse() as Response
+    const res = createMockResponse()
     const next = createMockNext()
 
     notFoundHandler(req, res, next)
 
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith(
+    expect(res.statusMock).toHaveBeenCalledWith(404)
+    expect(res.jsonMock).toHaveBeenCalledWith(
       expect.objectContaining({
         success: false,
         error: 'Route POST /undefined-route not found',
@@ -640,7 +713,7 @@ describe('Not Found Handler', () => {
 
   it('should log 404 attempts', () => {
     const req = createMockRequest({ method: 'GET', path: '/missing' }) as Request
-    const res = createMockResponse() as Response
+    const res = createMockResponse()
     const next = createMockNext()
 
     notFoundHandler(req, res, next)
@@ -656,12 +729,12 @@ describe('Not Found Handler', () => {
 
   it('should include request ID in 404 response', () => {
     const req = createMockRequest() as Request
-    const res = createMockResponse() as Response
+    const res = createMockResponse()
     const next = createMockNext()
 
     notFoundHandler(req, res, next)
 
-    const responseCall = res.json.mock.calls[0][0]
+    const responseCall = res.jsonMock.mock.calls[0][0]
     expect(responseCall.request_id).toMatch(/^req_\d+_[a-z0-9]{6}$/)
   })
 })
@@ -800,7 +873,7 @@ describe('Helper Functions', () => {
 
       sendError(res, 'Error message')
 
-      const responseCall = res.json.mock.calls[0][0]
+      const responseCall = res.jsonMock.mock.calls[0][0]
       expect(responseCall.details).toBeUndefined()
     })
   })
