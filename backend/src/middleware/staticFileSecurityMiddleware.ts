@@ -1,6 +1,6 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 2.0
-// FIXED: Proper dotfile protection with 403 status + separate path validation
+// Version: 2.3
+// FIXED: Middleware order (path traversal first) + dotfile detection + content disposition
 
 import { Request, Response, NextFunction } from 'express'
 import path from 'path'
@@ -8,10 +8,21 @@ import fs from 'fs'
 
 /**
  * Check if requested file is a dotfile (should be blocked)
+ * Only detects legitimate hidden files, not path traversal
  */
 const isDotfile = (filePath: string): boolean => {
+  // Get the final filename from the path
   const filename = path.basename(filePath)
-  return filename.startsWith('.')
+  
+  // Check if it's a legitimate dotfile:
+  // - Starts with '.'
+  // - Is not path traversal ('.' or '..')
+  // - Contains actual filename content
+  return filename.startsWith('.') && 
+         filename !== '.' && 
+         filename !== '..' &&
+         filename.length > 1 &&
+         !filename.includes('%') // Exclude URL-encoded paths
 }
 
 /**
@@ -42,8 +53,9 @@ const getContentDisposition = (filename: string): string => {
   // Files that should be displayed inline (safe to display in browser)
   const inlineExtensions = [
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-    '.mp4', '.webm', '.mp3', '.wav', '.ogg',
-    '.txt', '.json'
+    '.mp4', '.webm', '.avi', '.mov', '.mkv', // Added more video formats
+    '.mp3', '.wav', '.ogg', '.m4a', '.flac', // Added more audio formats
+    '.txt', '.json', '.pdf' // Added PDF
   ]
   
   return inlineExtensions.includes(ext) ? 'inline' : 'attachment'
@@ -159,27 +171,31 @@ const createFileSecurityHandler = (staticRoot: string) => {
  */
 export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: Request, res: Response, next: NextFunction) => void> => {
   return [
-    // Step 1: Check for dotfiles first (403 if found)
-    dotfileProtection,
-    // Step 2: Check for path traversal attacks (400 if found)
+    // Step 1: Check for path traversal attacks FIRST (400 if found)
     pathTraversalProtection,
+    // Step 2: Check for dotfiles second (403 if found)  
+    dotfileProtection,
     // Step 3: Verify file exists and set security headers
     createFileSecurityHandler(staticRoot),
     // Step 4: Serve the file
     (req: Request, res: Response, next: NextFunction) => {
       const requestedFile = req.path
       const fullPath = path.join(staticRoot, requestedFile)
+      const resolvedPath = path.resolve(fullPath)
       
       // Serve the file directly
-      res.sendFile(path.resolve(fullPath), (err) => {
+      res.sendFile(resolvedPath, (err) => {
         if (err) {
-          res.status(404).json({
-            success: false,
-            error: {
-              code: 'FILE_NOT_FOUND',
-              message: 'File not found'
-            }
-          })
+          // Only send error response if not already sent
+          if (!res.headersSent) {
+            res.status(404).json({
+              success: false,
+              error: {
+                code: 'FILE_NOT_FOUND',
+                message: 'File not found'
+              }
+            })
+          }
         }
       })
     }
