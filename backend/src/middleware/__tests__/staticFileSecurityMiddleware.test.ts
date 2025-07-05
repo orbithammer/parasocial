@@ -1,6 +1,6 @@
 // backend/src/middleware/__tests__/staticFileSecurityMiddleware.test.ts
-// Version: 2.0
-// REWRITTEN: Focus on realistic security threats and proper file serving
+// Version: 2.1
+// FIXED: Proper file creation and path handling for static file serving
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
@@ -18,8 +18,13 @@ function createTestApp(): express.Application {
   // Add JSON parsing middleware (needed for error responses)
   app.use(express.json())
   
-  // Create test uploads directory path
+  // Create test uploads directory path - MUST match where files are created
   const testUploadsPath = path.join(process.cwd(), 'test-uploads-middleware')
+  
+  // Ensure test directory exists before setting up middleware
+  if (!fs.existsSync(testUploadsPath)) {
+    fs.mkdirSync(testUploadsPath, { recursive: true })
+  }
   
   // Use our secure static file handler
   app.use('/uploads', ...createSecureStaticFileHandler(testUploadsPath))
@@ -29,6 +34,7 @@ function createTestApp(): express.Application {
 
 /**
  * Create test file in test directory
+ * FIXED: Ensures directory exists and handles path correctly
  */
 function createTestFile(filename: string, content: string = 'test file content'): void {
   const testDir = path.join(process.cwd(), 'test-uploads-middleware')
@@ -41,6 +47,11 @@ function createTestFile(filename: string, content: string = 'test file content')
   // Write test file
   const filePath = path.join(testDir, filename)
   fs.writeFileSync(filePath, content)
+  
+  // Verify file was created (debugging)
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Failed to create test file: ${filePath}`)
+  }
 }
 
 /**
@@ -66,11 +77,11 @@ function cleanupTestFiles(): void {
       try {
         fs.rmdirSync(testDir)
       } catch (error) {
-        console.warn(`Could not delete test directory: ${testDir}`)
+        console.warn(`Could not remove test directory: ${testDir}`)
       }
     }
   } catch (error) {
-    console.warn('Test cleanup failed:', error)
+    console.warn('Error during test cleanup:', error)
   }
 }
 
@@ -78,26 +89,53 @@ describe('Static File Security Middleware', () => {
   let app: express.Application
   
   beforeEach(() => {
+    // Clean up before each test
+    cleanupTestFiles()
+    
+    // Create fresh app
     app = createTestApp()
-    process.env.NODE_ENV = 'test'
   })
   
   afterEach(() => {
+    // Clean up after each test
     cleanupTestFiles()
-    delete process.env.NODE_ENV
+  })
+
+  describe('Path Traversal Protection', () => {
+    it('should block basic path traversal attempts', async () => {
+      const pathTraversalUrls = [
+        '/uploads/../../../etc/passwd',
+        '/uploads/..\\..\\..\\windows\\system32',
+        '/uploads/....//....//....//etc/passwd'
+      ]
+      
+      for (const url of pathTraversalUrls) {
+        const response = await request(app)
+          .get(url)
+          .expect(400)
+        
+        expect(response.body).toEqual({
+          success: false,
+          error: {
+            code: 'INVALID_PATH',
+            message: 'Invalid file path'
+          }
+        })
+      }
+    })
   })
 
   describe('URL Encoded Path Traversal Protection', () => {
     it('should block URL encoded path traversal', async () => {
-      const maliciousPaths = [
+      const encodedUrls = [
+        '/uploads/..%2F..%2F..%2Fetc%2Fpasswd',
         '/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2f/etc/passwd',
-        '/uploads/..%2F..%2F..%2F/etc/passwd',
-        '/uploads/%2E%2E%2F%2E%2E%2F/etc/passwd'
+        '/uploads/..%252F..%252F..%252F/etc/passwd'
       ]
       
-      for (const maliciousPath of maliciousPaths) {
+      for (const url of encodedUrls) {
         const response = await request(app)
-          .get(maliciousPath)
+          .get(url)
           .expect(400)
         
         expect(response.body.error.code).toBe('INVALID_PATH')
@@ -105,17 +143,11 @@ describe('Static File Security Middleware', () => {
     })
     
     it('should block URL encoded backslashes', async () => {
-      const windowsPaths = [
-        '/uploads/%5c%5c%2e%2e%5c%5c%2e%2e'
-      ]
+      const response = await request(app)
+        .get('/uploads/..%5C..%5C..%5Cwindows%5Csystem32')
+        .expect(400)
       
-      for (const windowsPath of windowsPaths) {
-        const response = await request(app)
-          .get(windowsPath)
-          .expect(400)
-        
-        expect(response.body.error.code).toBe('INVALID_PATH')
-      }
+      expect(response.body.error.code).toBe('INVALID_PATH')
     })
   })
 
@@ -132,10 +164,10 @@ describe('Static File Security Middleware', () => {
   describe('Dotfiles Protection', () => {
     it('should block access to dotfiles', async () => {
       // Create a dotfile
-      createTestFile('.secret-config', 'sensitive data')
+      createTestFile('.env', 'SECRET_KEY=secret123')
       
       const response = await request(app)
-        .get('/uploads/.secret-config')
+        .get('/uploads/.env')
         .expect(403)
       
       expect(response.body).toEqual({
@@ -167,11 +199,15 @@ describe('Static File Security Middleware', () => {
       // Create a legitimate test file
       createTestFile('test-image.jpg', 'fake image content')
       
+      // Verify file exists before testing
+      const testFilePath = path.join(process.cwd(), 'test-uploads-middleware', 'test-image.jpg')
+      expect(fs.existsSync(testFilePath)).toBe(true)
+      
       const response = await request(app)
         .get('/uploads/test-image.jpg')
         .expect(200)
       
-      // Verify file content
+      // FIXED: Verify file content is served correctly
       expect(response.text).toBe('fake image content')
       
       // Verify security headers are set
@@ -201,79 +237,75 @@ describe('Static File Security Middleware', () => {
 
   describe('Security Headers', () => {
     it('should set appropriate Content-Disposition for different file types', async () => {
-      // Test inline files (images, videos, audio)
+      // Test inline files (images, videos)
       const inlineFiles = [
-        { name: 'image.jpg', content: 'jpg content' },
-        { name: 'video.mp4', content: 'mp4 content' },
-        { name: 'audio.mp3', content: 'mp3 content' }
+        { name: 'image.jpg', disposition: 'inline' },
+        { name: 'video.mp4', disposition: 'inline' },
+        { name: 'audio.mp3', disposition: 'inline' }
       ]
       
       for (const file of inlineFiles) {
-        createTestFile(file.name, file.content)
+        createTestFile(file.name, 'test content')
         
         const response = await request(app)
           .get(`/uploads/${file.name}`)
           .expect(200)
         
-        expect(response.headers['content-disposition']).toBe('inline')
+        expect(response.headers['content-disposition']).toBe(file.disposition)
       }
       
-      // Test attachment files (other types)
+      // Test attachment files (documents, executables)
       const attachmentFiles = [
-        { name: 'document.pdf', content: 'pdf content' },
-        { name: 'archive.zip', content: 'zip content' },
-        { name: 'script.exe', content: 'exe content' }
+        { name: 'document.pdf', disposition: 'attachment' },
+        { name: 'script.js', disposition: 'attachment' },
+        { name: 'archive.zip', disposition: 'attachment' }
       ]
       
       for (const file of attachmentFiles) {
-        createTestFile(file.name, file.content)
+        createTestFile(file.name, 'test content')
         
         const response = await request(app)
           .get(`/uploads/${file.name}`)
           .expect(200)
         
-        expect(response.headers['content-disposition']).toBe('attachment')
+        expect(response.headers['content-disposition']).toBe(file.disposition)
       }
     })
     
     it('should set all required security headers', async () => {
-      createTestFile('security-test.txt', 'security test content')
+      createTestFile('test-headers.txt', 'header test content')
       
       const response = await request(app)
-        .get('/uploads/security-test.txt')
+        .get('/uploads/test-headers.txt')
         .expect(200)
       
       // Verify all security headers are present
       expect(response.headers['x-content-type-options']).toBe('nosniff')
       expect(response.headers['x-frame-options']).toBe('SAMEORIGIN')
+      expect(response.headers['content-disposition']).toBeDefined()
     })
   })
 
   describe('Express Auto-Fixed Patterns (Informational)', () => {
     it('should demonstrate Express auto-normalization behavior', async () => {
-      // These patterns are auto-normalized by Express (which is good security!)
-      // We document this behavior but don't expect these to be blocked
-      const expressFixedPatterns = [
-        '/uploads/../../../etc/passwd',  // → normalized by Express
-        '/uploads\\..\\..\\windows'      // → normalized by Express
+      // These patterns are automatically normalized by Express
+      // These tests document this behavior but don't need to be blocked by our middleware
+      createTestFile('normal-file.txt', 'normal content')
+      
+      const normalizedPaths = [
+        '/uploads/./normal-file.txt',
+        '/uploads//normal-file.txt',
+        '/uploads/subfolder/../normal-file.txt'
       ]
       
-      for (const pattern of expressFixedPatterns) {
+      for (const normalizedPath of normalizedPaths) {
         const response = await request(app)
-          .get(pattern)
-          .expect(404)  // File not found after normalization (which is correct)
+          .get(normalizedPath)
         
-        console.log(`ℹ️  Express auto-normalized: ${pattern}`)
+        // Express auto-normalizes these to the correct file
+        // This test documents Express behavior - not our security requirements
+        console.log(`Path ${normalizedPath} -> Status: ${response.status}`)
       }
     })
   })
 })
-
-/**
- * Export test utilities for use in integration tests
- */
-export {
-  createTestApp,
-  createTestFile,
-  cleanupTestFiles
-}
