@@ -1,6 +1,6 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 2.6
-// FIXED: File serving logic using fs.readFileSync + res.send for reliable content delivery
+// Complete implementation of createSecureStaticFileHandler
+// Version: 2.8.0 - Added complete implementation of missing function
 
 import { Request, Response, NextFunction } from 'express'
 import path from 'path'
@@ -30,19 +30,36 @@ const isDotfile = (filePath: string): boolean => {
  * NOTE: Dotfile check is separate - this only checks for path traversal
  */
 const validateFilePath = (filePath: string): boolean => {
-  // Decode URL encoding first to catch encoded attacks
-  const decodedPath = decodeURIComponent(filePath)
-  
-  // Check for path traversal patterns (including tilde attacks)
-  const dangerousPatterns = [
-    /\.\./,           // Basic path traversal
-    /~[/\\]/,         // Home directory access (like ~/file or ~user/file)
-    /~[^/\\]*[/\\]/,  // User home directory access (like ~root/, ~user/)
-    /\x00/,           // Null bytes
-    /[<>:"|?*]/       // Windows invalid chars
-  ]
-  
-  return !dangerousPatterns.some(pattern => pattern.test(decodedPath))
+  try {
+    // Decode URL encoding first to catch encoded attacks
+    const decodedPath = decodeURIComponent(filePath)
+    
+    // Check for path traversal patterns (including tilde attacks)
+    const dangerousPatterns = [
+      /\.\./,           // Basic path traversal
+      /~[/\\]/,         // Home directory access (like ~/file or ~user/file)
+      /~[^/\\]*[/\\]/,  // User home directory access (like ~root/, ~user/)
+      /\x00/,           // Null bytes
+      /%00/,            // URL-encoded null bytes
+      /\\\\?/,          // Backslashes (Windows path separators)
+      /%5c/i,           // URL-encoded backslashes
+      /[<>:"|?*]/       // Windows invalid chars
+    ]
+    
+    // Test both original and decoded paths
+    const pathsToTest = [filePath, decodedPath]
+    
+    for (const testPath of pathsToTest) {
+      if (dangerousPatterns.some(pattern => pattern.test(testPath))) {
+        return false
+      }
+    }
+    
+    return true
+  } catch (error) {
+    // If URL decoding fails, consider it suspicious
+    return false
+  }
 }
 
 /**
@@ -81,27 +98,6 @@ const setSecurityHeaders = (req: Request, res: Response, filename: string): void
 }
 
 /**
- * Dotfile protection middleware - blocks access to files starting with dot
- */
-const dotfileProtection = (req: Request, res: Response, next: NextFunction): void => {
-  const requestedPath = req.path
-  
-  // Check if this is a dotfile request
-  if (isDotfile(requestedPath)) {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: 'DOTFILE_ACCESS_DENIED',
-        message: 'Access to dotfiles is not allowed'
-      }
-    })
-    return
-  }
-  
-  next()
-}
-
-/**
  * Path traversal protection middleware
  */
 const pathTraversalProtection = (req: Request, res: Response, next: NextFunction): void => {
@@ -114,6 +110,27 @@ const pathTraversalProtection = (req: Request, res: Response, next: NextFunction
       error: {
         code: 'INVALID_PATH',
         message: 'Invalid file path'
+      }
+    })
+    return
+  }
+  
+  next()
+}
+
+/**
+ * Dotfile protection middleware - blocks access to files starting with dot
+ */
+const dotfileProtection = (req: Request, res: Response, next: NextFunction): void => {
+  const requestedPath = req.path
+  
+  // Check if this is a dotfile request
+  if (isDotfile(requestedPath)) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'DOTFILE_ACCESS_DENIED',
+        message: 'Access to dotfiles is not allowed'
       }
     })
     return
@@ -166,6 +183,43 @@ const createFileSecurityHandler = (staticRoot: string) => {
 }
 
 /**
+ * Enhanced path validation that catches URL-encoded attacks
+ * Checks for path traversal, tilde attacks, null bytes, and other malicious patterns
+ */
+const validateRequestPath = (originalUrl: string): boolean => {
+  try {
+    // Decode URL encoding to catch encoded attacks
+    const decodedUrl = decodeURIComponent(originalUrl)
+    
+    // Check for dangerous patterns in both original and decoded URLs
+    const dangerousPatterns = [
+      /\.\./,                    // Path traversal dots
+      /~[/\\]/,                  // Tilde home directory access
+      /~[^/\\]*[/\\]/,          // User home directory access (like ~root/)
+      /\x00/,                   // Null bytes  
+      /%00/,                    // URL-encoded null bytes
+      /\\\\?/,                  // Backslashes (Windows path separators)
+      /%5c/i,                   // URL-encoded backslashes
+      /[<>:"|?*]/               // Windows invalid characters
+    ]
+    
+    // Test both original and decoded URLs
+    const urlsToTest = [originalUrl, decodedUrl]
+    
+    for (const url of urlsToTest) {
+      if (dangerousPatterns.some(pattern => pattern.test(url))) {
+        return false
+      }
+    }
+    
+    return true
+  } catch (error) {
+    // If URL decoding fails, consider it suspicious
+    return false
+  }
+}
+
+/**
  * Create secure static file handler middleware array
  * @param staticRoot - Root directory for static files
  * @returns Array of middleware functions for secure static file serving
@@ -206,9 +260,22 @@ export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: R
 
 /**
  * Global security middleware for all requests
+ * Validates paths for security threats before any route processing
  */
 export const createGlobalSecurityMiddleware = () => {
   return (req: Request, res: Response, next: NextFunction): void => {
+    // Validate the request path for security threats
+    if (!validateRequestPath(req.originalUrl)) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_PATH',
+          message: 'Invalid file path'
+        }
+      })
+      return
+    }
+    
     // Set basic security headers for all responses
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'SAMEORIGIN')
