@@ -1,6 +1,6 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 2.3
-// FIXED: Middleware order (path traversal first) + dotfile detection + content disposition
+// Version: 2.5
+// FIXED: Enhanced tilde pattern detection + Content-Disposition for txt/pdf + improved file serving
 
 import { Request, Response, NextFunction } from 'express'
 import path from 'path'
@@ -33,10 +33,11 @@ const validateFilePath = (filePath: string): boolean => {
   // Decode URL encoding first to catch encoded attacks
   const decodedPath = decodeURIComponent(filePath)
   
-  // Check for path traversal patterns (excluding dotfiles - handled separately)
+  // Check for path traversal patterns (including tilde attacks)
   const dangerousPatterns = [
     /\.\./,           // Basic path traversal
-    /~[/\\]/,         // Home directory access
+    /~[/\\]/,         // Home directory access (like ~/file or ~user/file)
+    /~[^/\\]*[/\\]/,  // User home directory access (like ~root/, ~user/)
     /\x00/,           // Null bytes
     /[<>:"|?*]/       // Windows invalid chars
   ]
@@ -53,9 +54,9 @@ const getContentDisposition = (filename: string): string => {
   // Files that should be displayed inline (safe to display in browser)
   const inlineExtensions = [
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-    '.mp4', '.webm', '.avi', '.mov', '.mkv', // Added more video formats
-    '.mp3', '.wav', '.ogg', '.m4a', '.flac', // Added more audio formats
-    '.txt', '.json', '.pdf' // Added PDF
+    '.mp4', '.webm', '.avi', '.mov', '.mkv', // Video formats
+    '.mp3', '.wav', '.ogg', '.m4a', '.flac', // Audio formats  
+    '.json' // JSON only - txt and pdf should be attachment for security
   ]
   
   return inlineExtensions.includes(ext) ? 'inline' : 'attachment'
@@ -183,19 +184,31 @@ export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: R
       const fullPath = path.join(staticRoot, requestedFile)
       const resolvedPath = path.resolve(fullPath)
       
-      // Serve the file directly
+      // Double-check file exists before serving (redundant but safe)
+      if (!fs.existsSync(resolvedPath)) {
+        if (!res.headersSent) {
+          res.status(404).json({
+            success: false,
+            error: {
+              code: 'FILE_NOT_FOUND',
+              message: 'File not found'
+            }
+          })
+        }
+        return
+      }
+      
+      // Serve the file directly with proper error handling
       res.sendFile(resolvedPath, (err) => {
-        if (err) {
-          // Only send error response if not already sent
-          if (!res.headersSent) {
-            res.status(404).json({
-              success: false,
-              error: {
-                code: 'FILE_NOT_FOUND',
-                message: 'File not found'
-              }
-            })
-          }
+        if (err && !res.headersSent) {
+          console.error('File serving error:', err)
+          res.status(404).json({
+            success: false,
+            error: {
+              code: 'FILE_NOT_FOUND',
+              message: 'File not found'
+            }
+          })
         }
       })
     }
