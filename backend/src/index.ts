@@ -1,6 +1,6 @@
 // backend/src/index.ts
-// Version: 1.1
-// Fixed: UserController constructor arguments - added missing followRepository and blockRepository
+// Version: 2.0 - Added missing posts and media router mounts + global error handling
+// Updated: Mount posts and media routers that were previously missing
 
 import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
@@ -9,12 +9,16 @@ import { PrismaClient } from '@prisma/client'
 // Import route creators
 import { createAuthRouter } from './routes/auth'
 import { createUsersRouter } from './routes/users'
+import { createPostsRouter } from './routes/posts'  // Added missing import
+import { createReportsRouter } from './routes/reports' // Added reports router
+import mediaRouter from './routes/media'            // Added missing import
 
 // Import controllers
 import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
 import { UserController } from './controllers/UserController'
 import { FollowController } from './controllers/FollowController'
+import { ReportController } from './controllers/ReportController' // Added ReportController
 
 // Import services
 import { AuthService } from './services/AuthService'
@@ -28,6 +32,7 @@ import { BlockRepository } from './repositories/BlockRepository'
 
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
+import { globalErrorHandler, notFoundHandler } from './middleware/globalError'  // Added missing import
 
 // ============================================================================
 // APPLICATION SETUP
@@ -61,11 +66,9 @@ const followService = new FollowService(followRepository, userRepository)
 // Controllers
 const authController = new AuthController(authService, userRepository)
 const postController = new PostController(postRepository, userRepository)
-
-// FIXED: UserController now receives all 3 required arguments
 const userController = new UserController(userRepository, followRepository, blockRepository)
-
 const followController = new FollowController(followService, userRepository)
+const reportController = new ReportController(userRepository, postRepository) // Added ReportController
 
 // Create middleware instances
 const authMiddleware = createAuthMiddleware(authService)
@@ -80,7 +83,7 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '2.0.0'
   })
 })
 
@@ -90,7 +93,7 @@ app.use('/auth', createAuthRouter({
   authMiddleware
 }))
 
-// User routes
+// User routes  
 app.use('/users', createUsersRouter({
   userController,
   postController,
@@ -99,17 +102,32 @@ app.use('/users', createUsersRouter({
   optionalAuthMiddleware
 }))
 
-// Global error handler
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error('Global error:', err)
-  res.status(500).json({
-    success: false,
-    error: {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'An internal server error occurred'
-    }
-  })
-})
+// Post routes - NEWLY ADDED
+app.use('/posts', createPostsRouter({
+  postController,
+  authMiddleware,
+  optionalAuthMiddleware
+}))
+
+// Media upload routes - NEWLY ADDED
+app.use('/media', mediaRouter)
+
+// Report/moderation routes - NEWLY ADDED
+app.use('/reports', createReportsRouter({
+  reportController,
+  authMiddleware,
+  optionalAuthMiddleware
+}))
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+// 404 handler for undefined routes (must be before global error handler)
+app.use(notFoundHandler)
+
+// Global error handling middleware (must be last)
+app.use(globalErrorHandler)
 
 // ============================================================================
 // SERVER START
@@ -119,4 +137,10 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`)
   console.log(`📚 API Documentation: http://localhost:${PORT}/health`)
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log('✅ Routes mounted:')
+  console.log('   - /auth/* (authentication)')
+  console.log('   - /users/* (user management)')  
+  console.log('   - /posts/* (post operations)')
+  console.log('   - /media/* (file uploads)')
+  console.log('   - /reports/* (content moderation)')
 })
