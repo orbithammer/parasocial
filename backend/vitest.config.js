@@ -1,6 +1,6 @@
-// backend/vitest.config.js
-// Version: 1.1
-// Fixed test discovery issues and aligned with frontend Vitest version
+// backend/vitest.config.ts
+// Version: 1.2.0 - Updated to ES modules to fix CJS deprecation warning
+// Changed: Converted from .js to .ts and used ES module syntax
 
 import { defineConfig } from 'vitest/config'
 import path from 'path'
@@ -9,9 +9,6 @@ export default defineConfig({
   test: {
     // Test environment setup
     environment: 'node',
-    
-    // Remove problematic globalSetup (causing pending tests)
-    // globalSetup: ['__tests__/setup.ts'],
     
     // Per-test setup files (run before each test file)
     setupFiles: [],

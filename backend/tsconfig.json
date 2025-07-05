@@ -4,7 +4,8 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    // Removed rootDir restriction to allow test files outside src
+    // "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,8 +13,28 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    // Add Vitest global types support to fix 'describe' not found error
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    // Add path aliases to match your project structure
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    // Include test files so TypeScript recognizes Vitest globals
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "__tests__/**/*"
+  ],
+  "exclude": [
+    "node_modules", 
+    "dist",
+    "coverage"
+  ]
 }
