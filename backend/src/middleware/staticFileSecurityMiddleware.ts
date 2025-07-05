@@ -1,311 +1,215 @@
-// backend/src/middleware/__tests__/staticFileSecurityMiddleware.test.ts
-// Version: 2.1
-// FIXED: Proper file creation and path handling for static file serving
+// backend/src/middleware/staticFileSecurityMiddleware.ts
+// Version: 1.0
+// Static file security middleware with path traversal protection and security headers
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import express from 'express'
-import request from 'supertest'
+import { Request, Response, NextFunction } from 'express'
 import path from 'path'
 import fs from 'fs'
-import { createSecureStaticFileHandler } from '../staticFileSecurityMiddleware'
 
 /**
- * Create test Express app with our middleware
+ * Validate file path to prevent directory traversal attacks
  */
-function createTestApp(): express.Application {
-  const app = express()
+const validateFilePath = (filePath: string): boolean => {
+  // Decode URL encoding first to catch encoded attacks
+  const decodedPath = decodeURIComponent(filePath)
   
-  // Add JSON parsing middleware (needed for error responses)
-  app.use(express.json())
+  // Check for path traversal patterns
+  const dangerousPatterns = [
+    /\.\./,           // Basic path traversal
+    /[/\\]\./,        // Hidden files/folders
+    /~[/\\]/,         // Home directory access
+    /\x00/,           // Null bytes
+    /[<>:"|?*]/       // Windows invalid chars
+  ]
   
-  // Create test uploads directory path - MUST match where files are created
-  const testUploadsPath = path.join(process.cwd(), 'test-uploads-middleware')
-  
-  // Ensure test directory exists before setting up middleware
-  if (!fs.existsSync(testUploadsPath)) {
-    fs.mkdirSync(testUploadsPath, { recursive: true })
-  }
-  
-  // Use our secure static file handler
-  app.use('/uploads', ...createSecureStaticFileHandler(testUploadsPath))
-  
-  return app
+  return !dangerousPatterns.some(pattern => pattern.test(decodedPath))
 }
 
 /**
- * Create test file in test directory
- * FIXED: Ensures directory exists and handles path correctly
+ * Determine appropriate Content-Disposition based on file type
  */
-function createTestFile(filename: string, content: string = 'test file content'): void {
-  const testDir = path.join(process.cwd(), 'test-uploads-middleware')
+const getContentDisposition = (filename: string): string => {
+  const ext = path.extname(filename).toLowerCase()
   
-  // Ensure directory exists
-  if (!fs.existsSync(testDir)) {
-    fs.mkdirSync(testDir, { recursive: true })
-  }
+  // Files that should be displayed inline (safe to display in browser)
+  const inlineExtensions = [
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
+    '.mp4', '.webm', '.mp3', '.wav', '.ogg',
+    '.txt', '.json'
+  ]
   
-  // Write test file
-  const filePath = path.join(testDir, filename)
-  fs.writeFileSync(filePath, content)
-  
-  // Verify file was created (debugging)
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Failed to create test file: ${filePath}`)
-  }
+  return inlineExtensions.includes(ext) ? 'inline' : 'attachment'
 }
 
 /**
- * Clean up test files and directory
+ * Set security headers for static file responses
  */
-function cleanupTestFiles(): void {
-  const testDir = path.join(process.cwd(), 'test-uploads-middleware')
+const setSecurityHeaders = (req: Request, res: Response, filename: string): void => {
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff')
   
-  try {
-    if (fs.existsSync(testDir)) {
-      // Remove all files
-      const files = fs.readdirSync(testDir)
-      files.forEach(file => {
-        const filePath = path.join(testDir, file)
-        try {
-          fs.unlinkSync(filePath)
-        } catch (error) {
-          console.warn(`Could not delete test file: ${filePath}`)
-        }
-      })
-      
-      // Remove directory
-      try {
-        fs.rmdirSync(testDir)
-      } catch (error) {
-        console.warn(`Could not remove test directory: ${testDir}`)
+  // Allow embedding for media files, prevent for others
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  
+  // Set appropriate Content-Disposition
+  const disposition = getContentDisposition(filename)
+  res.setHeader('Content-Disposition', disposition)
+  
+  // Add cache control for better performance
+  res.setHeader('Cache-Control', 'public, max-age=86400') // 24 hours
+}
+
+/**
+ * Path traversal protection middleware
+ */
+const pathTraversalProtection = (req: Request, res: Response, next: NextFunction): void => {
+  const requestedPath = req.path
+  
+  // Validate the requested path
+  if (!validateFilePath(requestedPath)) {
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_PATH',
+        message: 'Invalid file path'
       }
-    }
-  } catch (error) {
-    console.warn('Error during test cleanup:', error)
+    })
+    return
   }
+  
+  next()
 }
 
-describe('Static File Security Middleware', () => {
-  let app: express.Application
-  
-  beforeEach(() => {
-    // Clean up before each test
-    cleanupTestFiles()
+/**
+ * File existence and security check middleware
+ */
+const createFileSecurityHandler = (staticRoot: string) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const requestedFile = req.path
+    const fullPath = path.join(staticRoot, requestedFile)
     
-    // Create fresh app
-    app = createTestApp()
-  })
-  
-  afterEach(() => {
-    // Clean up after each test
-    cleanupTestFiles()
-  })
-
-  describe('Path Traversal Protection', () => {
-    it('should block basic path traversal attempts', async () => {
-      const pathTraversalUrls = [
-        '/uploads/../../../etc/passwd',
-        '/uploads/..\\..\\..\\windows\\system32',
-        '/uploads/....//....//....//etc/passwd'
-      ]
-      
-      for (const url of pathTraversalUrls) {
-        const response = await request(app)
-          .get(url)
-          .expect(400)
-        
-        expect(response.body).toEqual({
-          success: false,
-          error: {
-            code: 'INVALID_PATH',
-            message: 'Invalid file path'
-          }
-        })
-      }
-    })
-  })
-
-  describe('URL Encoded Path Traversal Protection', () => {
-    it('should block URL encoded path traversal', async () => {
-      const encodedUrls = [
-        '/uploads/..%2F..%2F..%2Fetc%2Fpasswd',
-        '/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2f/etc/passwd',
-        '/uploads/..%252F..%252F..%252F/etc/passwd'
-      ]
-      
-      for (const url of encodedUrls) {
-        const response = await request(app)
-          .get(url)
-          .expect(400)
-        
-        expect(response.body.error.code).toBe('INVALID_PATH')
-      }
-    })
+    // Ensure the resolved path is within the static directory
+    const resolvedPath = path.resolve(fullPath)
+    const resolvedRoot = path.resolve(staticRoot)
     
-    it('should block URL encoded backslashes', async () => {
-      const response = await request(app)
-        .get('/uploads/..%5C..%5C..%5Cwindows%5Csystem32')
-        .expect(400)
-      
-      expect(response.body.error.code).toBe('INVALID_PATH')
-    })
-  })
-
-  describe('Tilde Path Protection', () => {
-    it('should block tilde-based path traversal', async () => {
-      const response = await request(app)
-        .get('/uploads/~/sensitive-file.txt')
-        .expect(400)
-      
-      expect(response.body.error.code).toBe('INVALID_PATH')
-    })
-  })
-
-  describe('Dotfiles Protection', () => {
-    it('should block access to dotfiles', async () => {
-      // Create a dotfile
-      createTestFile('.env', 'SECRET_KEY=secret123')
-      
-      const response = await request(app)
-        .get('/uploads/.env')
-        .expect(403)
-      
-      expect(response.body).toEqual({
+    if (!resolvedPath.startsWith(resolvedRoot)) {
+      res.status(400).json({
         success: false,
         error: {
-          code: 'DOTFILE_ACCESS_DENIED',
-          message: 'Access to dotfiles is not allowed'
+          code: 'INVALID_PATH',
+          message: 'Invalid file path'
         }
       })
-    })
+      return
+    }
     
-    it('should block access to various dotfile types', async () => {
-      const dotfiles = ['.env', '.htaccess', '.git', '.ssh']
-      
-      for (const dotfile of dotfiles) {
-        createTestFile(dotfile, 'sensitive content')
-        
-        const response = await request(app)
-          .get(`/uploads/${dotfile}`)
-          .expect(403)
-        
-        expect(response.body.error.code).toBe('DOTFILE_ACCESS_DENIED')
-      }
-    })
-  })
+    // Check if file exists
+    if (!fs.existsSync(resolvedPath)) {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'FILE_NOT_FOUND',
+          message: 'File not found'
+        }
+      })
+      return
+    }
+    
+    // Set security headers
+    const filename = path.basename(requestedFile)
+    setSecurityHeaders(req, res, filename)
+    
+    next()
+  }
+}
 
-  describe('Legitimate File Access', () => {
-    it('should serve legitimate files correctly', async () => {
-      // Create a legitimate test file
-      createTestFile('test-image.jpg', 'fake image content')
+/**
+ * Create secure static file handler middleware array
+ * @param staticRoot - Root directory for static files
+ * @returns Array of middleware functions for secure static file serving
+ */
+export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: Request, res: Response, next: NextFunction) => void> => {
+  return [
+    pathTraversalProtection,
+    createFileSecurityHandler(staticRoot),
+    // Express static middleware (this will actually serve the file)
+    (req: Request, res: Response, next: NextFunction) => {
+      const requestedFile = req.path
+      const fullPath = path.join(staticRoot, requestedFile)
       
-      // Verify file exists before testing
-      const testFilePath = path.join(process.cwd(), 'test-uploads-middleware', 'test-image.jpg')
-      expect(fs.existsSync(testFilePath)).toBe(true)
-      
-      const response = await request(app)
-        .get('/uploads/test-image.jpg')
-        .expect(200)
-      
-      // FIXED: Verify file content is served correctly
-      expect(response.text).toBe('fake image content')
-      
-      // Verify security headers are set
-      expect(response.headers['x-content-type-options']).toBe('nosniff')
-      expect(response.headers['x-frame-options']).toBe('SAMEORIGIN')
-      expect(response.headers['content-disposition']).toBe('inline')
-    })
-    
-    it('should allow files with dots in names', async () => {
-      // Create file with dots in the name (but not starting with dot)
-      createTestFile('my.file.with.dots.txt', 'content with dots in filename')
-      
-      const response = await request(app)
-        .get('/uploads/my.file.with.dots.txt')
-        .expect(200)
-      
-      expect(response.text).toBe('content with dots in filename')
-    })
-    
-    it('should return 404 for non-existent files', async () => {
-      // Request a file that doesn't exist
-      const response = await request(app)
-        .get('/uploads/non-existent-file.jpg')
-        .expect(404)
-    })
-  })
+      // Serve the file directly
+      res.sendFile(path.resolve(fullPath), (err) => {
+        if (err) {
+          res.status(404).json({
+            success: false,
+            error: {
+              code: 'FILE_NOT_FOUND',
+              message: 'File not found'
+            }
+          })
+        }
+      })
+    }
+  ]
+}
 
-  describe('Security Headers', () => {
-    it('should set appropriate Content-Disposition for different file types', async () => {
-      // Test inline files (images, videos)
-      const inlineFiles = [
-        { name: 'image.jpg', disposition: 'inline' },
-        { name: 'video.mp4', disposition: 'inline' },
-        { name: 'audio.mp3', disposition: 'inline' }
-      ]
-      
-      for (const file of inlineFiles) {
-        createTestFile(file.name, 'test content')
-        
-        const response = await request(app)
-          .get(`/uploads/${file.name}`)
-          .expect(200)
-        
-        expect(response.headers['content-disposition']).toBe(file.disposition)
-      }
-      
-      // Test attachment files (documents, executables)
-      const attachmentFiles = [
-        { name: 'document.pdf', disposition: 'attachment' },
-        { name: 'script.js', disposition: 'attachment' },
-        { name: 'archive.zip', disposition: 'attachment' }
-      ]
-      
-      for (const file of attachmentFiles) {
-        createTestFile(file.name, 'test content')
-        
-        const response = await request(app)
-          .get(`/uploads/${file.name}`)
-          .expect(200)
-        
-        expect(response.headers['content-disposition']).toBe(file.disposition)
-      }
-    })
+/**
+ * Global security middleware for all requests
+ */
+export const createGlobalSecurityMiddleware = () => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // Set global security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Frame-Options', 'DENY')
+    res.setHeader('X-XSS-Protection', '1; mode=block')
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
     
-    it('should set all required security headers', async () => {
-      createTestFile('test-headers.txt', 'header test content')
-      
-      const response = await request(app)
-        .get('/uploads/test-headers.txt')
-        .expect(200)
-      
-      // Verify all security headers are present
-      expect(response.headers['x-content-type-options']).toBe('nosniff')
-      expect(response.headers['x-frame-options']).toBe('SAMEORIGIN')
-      expect(response.headers['content-disposition']).toBeDefined()
-    })
-  })
+    // Block requests with suspicious User-Agent patterns
+    const userAgent = req.headers['user-agent'] || ''
+    const suspiciousPatterns = [
+      /sqlmap/i,
+      /nikto/i,
+      /nmap/i,
+      /burp/i
+    ]
+    
+    if (suspiciousPatterns.some(pattern => pattern.test(userAgent))) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'BLOCKED_REQUEST',
+          message: 'Request blocked'
+        }
+      })
+      return
+    }
+    
+    next()
+  }
+}
 
-  describe('Express Auto-Fixed Patterns (Informational)', () => {
-    it('should demonstrate Express auto-normalization behavior', async () => {
-      // These patterns are automatically normalized by Express
-      // These tests document this behavior but don't need to be blocked by our middleware
-      createTestFile('normal-file.txt', 'normal content')
-      
-      const normalizedPaths = [
-        '/uploads/./normal-file.txt',
-        '/uploads//normal-file.txt',
-        '/uploads/subfolder/../normal-file.txt'
-      ]
-      
-      for (const normalizedPath of normalizedPaths) {
-        const response = await request(app)
-          .get(normalizedPath)
-        
-        // Express auto-normalizes these to the correct file
-        // This test documents Express behavior - not our security requirements
-        console.log(`Path ${normalizedPath} -> Status: ${response.status}`)
-      }
-    })
-  })
-})
+/**
+ * Enhanced request validation middleware
+ */
+export const createRequestValidationMiddleware = () => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // Validate Content-Length to prevent large requests
+    const contentLength = req.headers['content-length']
+    if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) { // 50MB limit
+      res.status(413).json({
+        success: false,
+        error: {
+          code: 'REQUEST_TOO_LARGE',
+          message: 'Request size exceeds limit'
+        }
+      })
+      return
+    }
+    
+    // Rate limiting headers (if using rate limiter)
+    res.setHeader('X-RateLimit-Limit', '100')
+    res.setHeader('X-RateLimit-Remaining', '99')
+    
+    next()
+  }
+}
