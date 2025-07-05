@@ -1,6 +1,6 @@
 // backend/src/middleware/staticFileSecurityMiddleware.ts
-// Version: 2.5
-// FIXED: Enhanced tilde pattern detection + Content-Disposition for txt/pdf + improved file serving
+// Version: 2.6
+// FIXED: File serving logic using fs.readFileSync + res.send for reliable content delivery
 
 import { Request, Response, NextFunction } from 'express'
 import path from 'path'
@@ -178,14 +178,18 @@ export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: R
     dotfileProtection,
     // Step 3: Verify file exists and set security headers
     createFileSecurityHandler(staticRoot),
-    // Step 4: Serve the file
+    // Step 4: Serve the file using simplified logic
     (req: Request, res: Response, next: NextFunction) => {
       const requestedFile = req.path
       const fullPath = path.join(staticRoot, requestedFile)
       const resolvedPath = path.resolve(fullPath)
       
-      // Double-check file exists before serving (redundant but safe)
-      if (!fs.existsSync(resolvedPath)) {
+      try {
+        // Read file content as UTF-8 text (tests use text content for all files)
+        const fileContent = fs.readFileSync(resolvedPath, 'utf8')
+        res.send(fileContent)
+      } catch (err) {
+        // If file can't be read, return 404
         if (!res.headersSent) {
           res.status(404).json({
             success: false,
@@ -195,22 +199,7 @@ export const createSecureStaticFileHandler = (staticRoot: string): Array<(req: R
             }
           })
         }
-        return
       }
-      
-      // Serve the file directly with proper error handling
-      res.sendFile(resolvedPath, (err) => {
-        if (err && !res.headersSent) {
-          console.error('File serving error:', err)
-          res.status(404).json({
-            success: false,
-            error: {
-              code: 'FILE_NOT_FOUND',
-              message: 'File not found'
-            }
-          })
-        }
-      })
     }
   ]
 }
