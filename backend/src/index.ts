@@ -1,24 +1,24 @@
 // backend/src/index.ts
-// Version: 2.0 - Added missing posts and media router mounts + global error handling
-// Updated: Mount posts and media routers that were previously missing
+// Version: 2.1.0 - Updated media router to use dependency injection pattern
+// Changed: Media router now uses dependency injection like other routes
 
-import express, { Request, Response, NextFunction } from 'express'
+import express from 'express'
 import cors from 'cors'
 import { PrismaClient } from '@prisma/client'
 
 // Import route creators
 import { createAuthRouter } from './routes/auth'
 import { createUsersRouter } from './routes/users'
-import { createPostsRouter } from './routes/posts'  // Added missing import
-import { createReportsRouter } from './routes/reports' // Added reports router
-import mediaRouter from './routes/media'            // Added missing import
+import { createPostsRouter } from './routes/posts'
+import { createReportsRouter } from './routes/reports'
+import { createMediaRouter } from './routes/media' // UPDATED: Import factory function
 
 // Import controllers
 import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
 import { UserController } from './controllers/UserController'
 import { FollowController } from './controllers/FollowController'
-import { ReportController } from './controllers/ReportController' // Added ReportController
+import { ReportController } from './controllers/ReportController'
 
 // Import services
 import { AuthService } from './services/AuthService'
@@ -32,7 +32,7 @@ import { BlockRepository } from './repositories/BlockRepository'
 
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
-import { globalErrorHandler, notFoundHandler } from './middleware/globalError'  // Added missing import
+import { globalErrorHandler, notFoundHandler } from './middleware/globalError'
 
 // ============================================================================
 // APPLICATION SETUP
@@ -68,7 +68,7 @@ const authController = new AuthController(authService, userRepository)
 const postController = new PostController(postRepository, userRepository)
 const userController = new UserController(userRepository, followRepository, blockRepository)
 const followController = new FollowController(followService, userRepository)
-const reportController = new ReportController(userRepository, postRepository) // Added ReportController
+const reportController = new ReportController(userRepository, postRepository)
 
 // Create middleware instances
 const authMiddleware = createAuthMiddleware(authService)
@@ -83,7 +83,7 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '2.0.0'
+    version: '2.1.0'
   })
 })
 
@@ -102,17 +102,19 @@ app.use('/users', createUsersRouter({
   optionalAuthMiddleware
 }))
 
-// Post routes - NEWLY ADDED
+// Post routes
 app.use('/posts', createPostsRouter({
   postController,
   authMiddleware,
   optionalAuthMiddleware
 }))
 
-// Media upload routes - NEWLY ADDED
-app.use('/media', mediaRouter)
+// Media upload routes - UPDATED: Now uses dependency injection
+app.use('/media', createMediaRouter({
+  authMiddleware
+}))
 
-// Report/moderation routes - NEWLY ADDED
+// Report/moderation routes
 app.use('/reports', createReportsRouter({
   reportController,
   authMiddleware,
@@ -143,4 +145,5 @@ app.listen(PORT, () => {
   console.log('   - /posts/* (post operations)')
   console.log('   - /media/* (file uploads)')
   console.log('   - /reports/* (content moderation)')
+  console.log('✅ Rate limiting applied to all critical routes')
 })

@@ -10,11 +10,36 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    
     "test": "vitest",
-    "test:clean": "vitest --reporter=dot",
+    "test:watch": "vitest --watch",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:verbose": "vitest run --reporter=verbose",
+    "test:silent": "vitest run --reporter=dot",
+    "test:json": "vitest run --reporter=json > test-results.json",
+    
+    "test:rate-limit": "vitest run src/**/*.rateLimit.test.ts",
+    "test:rate-limit:watch": "vitest watch src/**/*.rateLimit.test.ts",
+    "test:rate-limit:auth": "vitest run src/routes/__tests__/auth.rateLimit.test.ts",
+    "test:rate-limit:posts": "vitest run src/routes/__tests__/posts.rateLimit.test.ts", 
+    "test:rate-limit:follow": "vitest run src/routes/__tests__/users.follow.rateLimit.test.ts",
+    "test:rate-limit:media": "vitest run src/routes/__tests__/media.rateLimit.test.ts",
+    
+    "test:routes": "vitest run src/routes/__tests__/",
+    "test:middleware": "vitest run src/middleware/__tests__/",
+    "test:controllers": "vitest run src/controllers/__tests__/",
+    "test:models": "vitest run src/models/__tests__/",
+    "test:services": "vitest run src/services/__tests__/",
+    "test:repositories": "vitest run src/repositories/__tests__/",
+    
+    "test:integration": "vitest run src/__tests__/",
+    "test:unit": "vitest run src/**/__tests__/ --exclude src/__tests__/",
+    
+    "test:clean": "rm -rf coverage/ test-results.json test-results.txt",
+    "test:all": "npm run test:clean && npm run test:rate-limit && npm run test:coverage",
     "test:file": "vitest --reporter=json > test-results.json 2>&1",
-    "test:verbose-file": "vitest --reporter=verbose > test-results.txt 2>&1",
-    "test:ui": "vitest --ui"
+    "test:verbose-file": "vitest --reporter=verbose > test-results.txt 2>&1"
   },
   "keywords": [],
   "author": "",

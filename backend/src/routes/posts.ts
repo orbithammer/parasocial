@@ -1,8 +1,10 @@
 // backend/src/routes/posts.ts
-// Express routes for post operations using TypeScript
+// Version: 1.1.0 - Added rate limiting to post creation endpoint
+// Changed: Applied postCreationRateLimit to prevent spam posting
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { PostController } from '../controllers/PostController'
+import { postCreationRateLimit } from '../middleware/rateLimitMiddleware' // ADDED: Import rate limiting
 
 // Middleware function type
 type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
@@ -27,6 +29,7 @@ export function createPostsRouter(dependencies: PostsRouterDependencies): Router
    * GET /posts
    * Get public feed of all posts
    * Optional authentication (to filter out user's own posts)
+   * No rate limiting needed for reading posts
    */
   router.get('/', optionalAuthMiddleware, async (req: Request, res: Response) => {
     await postController.getPosts(req, res)
@@ -36,8 +39,9 @@ export function createPostsRouter(dependencies: PostsRouterDependencies): Router
    * POST /posts
    * Create a new post
    * Requires authentication
+   * UPDATED: Added rate limiting to prevent spam posting (10 posts per hour)
    */
-  router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  router.post('/', postCreationRateLimit, authMiddleware, async (req: Request, res: Response) => {
     await postController.createPost(req, res)
   })
 
@@ -45,6 +49,7 @@ export function createPostsRouter(dependencies: PostsRouterDependencies): Router
    * GET /posts/:id
    * Get specific post by ID
    * Optional authentication (for draft access)
+   * No rate limiting needed for reading individual posts
    */
   router.get('/:id', optionalAuthMiddleware, async (req: Request, res: Response) => {
     await postController.getPostById(req, res)
@@ -54,6 +59,7 @@ export function createPostsRouter(dependencies: PostsRouterDependencies): Router
    * DELETE /posts/:id
    * Delete own post
    * Requires authentication
+   * No rate limiting needed for deleting posts (users should be able to delete quickly if needed)
    */
   router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     await postController.deletePost(req, res)

@@ -1,16 +1,30 @@
 // backend/src/routes/media.ts
-// Media upload route with multer configuration and file handling
-// Version: 1.0.0 - Initial implementation of media upload endpoint
+// Version: 1.2.0 - Updated to use dependency injection pattern like other routes
+// Changed: Now uses dependency injection for authMiddleware instead of direct import
 
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs/promises'
-import { authMiddleware } from '../middleware/auth'
-import { rateLimit } from 'express-rate-limit'
+import { mediaUploadRateLimit } from '../middleware/rateLimitMiddleware'
 import { z } from 'zod'
 
-const router = Router()
+// Middleware function type
+type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
+
+// Dependencies interface for dependency injection
+interface MediaRouterDependencies {
+  authMiddleware: MiddlewareFunction
+}
+
+/**
+ * Create media router with dependency injection
+ * @param dependencies - Injected dependencies
+ * @returns Configured Express router
+ */
+export function createMediaRouter(dependencies: MediaRouterDependencies): Router {
+  const { authMiddleware } = dependencies
+  const router = Router()
 
 // ============================================================================
 // CONFIGURATION
@@ -104,10 +118,6 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
     return cb(new Error(`File type ${file.mimetype} not allowed`))
   }
   
-  // Determine if file is image or video for size checking
-  const isImage = file.mimetype.startsWith('image/')
-  const isVideo = file.mimetype.startsWith('video/')
-  
   // Note: Size checking happens in multer limits, not here
   // This is just for MIME type validation
   cb(null, true)
@@ -124,26 +134,6 @@ const upload = multer({
     fileSize: MAX_FILE_SIZE.video, // Use max size, we'll validate specifically in route
     files: 4 // Maximum 4 files per request
   }
-})
-
-// ============================================================================
-// RATE LIMITING
-// ============================================================================
-
-/**
- * Rate limiting for media uploads
- * More restrictive than regular API endpoints due to resource intensity
- */
-const mediaUploadRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 uploads per window
-  message: {
-    success: false,
-    error: 'Too many uploads. Please try again later.',
-    code: 'RATE_LIMIT_EXCEEDED'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
 })
 
 // ============================================================================
@@ -212,9 +202,10 @@ function generateFileMetadata(file: Express.Multer.File, metadata: any) {
  * POST /media/upload
  * Upload media files with metadata
  * Supports multiple files, validation, and organized storage
+ * UPDATED: Now uses centralized rate limiting (20 uploads per hour)
  */
 router.post('/upload', 
-  mediaUploadRateLimit,
+  mediaUploadRateLimit, // UPDATED: Use centralized rate limiting
   authMiddleware,
   upload.array('files', 4), // Accept up to 4 files with field name 'files'
   async (req: Request, res: Response) => {
@@ -255,36 +246,41 @@ router.post('/upload',
       }
 
       if (fileValidationErrors.length > 0) {
-        // Clean up uploaded files if validation fails
+        // Clean up uploaded files on validation error
         for (const file of files) {
           try {
             await fs.unlink(file.path)
-          } catch (error) {
-            console.error(`Failed to clean up file: ${file.path}`, error)
+          } catch (cleanupError) {
+            console.error(`Failed to clean up file: ${file.path}`, cleanupError)
           }
         }
-        
+
         return res.status(400).json({
           success: false,
           error: 'File validation failed',
-          details: fileValidationErrors,
-          code: 'FILE_VALIDATION_FAILED'
+          code: 'VALIDATION_ERROR',
+          details: fileValidationErrors
         })
       }
 
-      // Generate metadata for each uploaded file
+      // Process successful uploads
       const uploadedFiles = files.map(file => {
         const fileMetadata = generateFileMetadata(file, metadata)
         
-        // Generate public URL for the file
-        // In production, this would be your CDN or file server URL
-        const publicUrl = `/uploads/${path.relative(UPLOAD_DIR, file.path)}`
-        
         return {
-          id: `file_${Date.now()}_${Math.random().toString(36).substring(2)}`,
-          ...fileMetadata,
-          url: publicUrl,
-          thumbnail_url: fileMetadata.mimetype.startsWith('image/') ? publicUrl : null
+          id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          filename: file.filename,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          path: file.path,
+          altText: fileMetadata.alt_text,
+          description: fileMetadata.description,
+          contentWarning: fileMetadata.content_warning,
+          isSensitive: fileMetadata.is_sensitive,
+          uploadedAt: fileMetadata.uploaded_at,
+          // In production, this would be a proper URL
+          publicUrl: `/uploads/${path.relative(UPLOAD_DIR, file.path)}`.replace(/\\/g, '/') || null
         }
       })
 
@@ -378,4 +374,12 @@ router.delete('/:fileId', authMiddleware, async (req: Request, res: Response) =>
   }
 })
 
-export default router
+  return router
+}
+
+/**
+ * Export default router for backward compatibility
+ * This allows importing as either named export or default
+ * For new implementations, use createMediaRouter with dependency injection
+ */
+export default createMediaRouter

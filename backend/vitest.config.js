@@ -1,62 +1,77 @@
 // backend/vitest.config.ts
-// Version: 1.2.0 - Updated to ES modules to fix CJS deprecation warning
-// Changed: Converted from .js to .ts and used ES module syntax
+// Vitest configuration for colocated test structure
+// Version: 1.0.0 - Initial configuration with colocated support
 
 import { defineConfig } from 'vitest/config'
 import path from 'path'
 
 export default defineConfig({
   test: {
-    // Test environment setup
+    globals: true,
     environment: 'node',
     
-    // Per-test setup files (run before each test file)
-    setupFiles: [],
-    
-    // Simplified test file patterns that actually work
+    // Include patterns for colocated tests
     include: [
       'src/**/*.{test,spec}.{js,ts}',
-      '__tests__/**/*.{test,spec}.{js,ts}',
+      'src/**/__tests__/**/*.{test,spec}.{js,ts}',
+      '**/__tests__/**/*.{test,spec}.{js,ts}'
     ],
     
-    // Simple exclusion patterns
+    // Exclude patterns
     exclude: [
       'node_modules/**',
       'dist/**',
+      'build/**',
       'coverage/**',
       '**/*.d.ts',
       '**/*.config.{js,ts}',
+      '**/node_modules/**'
     ],
     
-    // Increase timeout for file system operations
-    testTimeout: 15000,
-    
-    // Enable globals for easier testing
-    globals: true,
+    // Test timeout (useful for rate limiting tests that include delays)
+    testTimeout: 30000,
     
     // Coverage configuration
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'html', 'json'],
       exclude: [
-        'coverage/**',
+        'node_modules/**',
         'dist/**',
-        '__tests__/**',
+        'coverage/**',
         '**/*.d.ts',
         '**/*.config.{js,ts}',
+        '**/__tests__/**',
+        '**/test/**',
+        'src/types/**'
+      ],
+      include: [
+        'src/**/*.{js,ts}'
       ]
+    },
+    
+    // Setup files (if you need global test setup)
+    // setupFiles: ['./src/test/setup.ts'],
+    
+    // Mock reset behavior
+    clearMocks: true,
+    restoreMocks: true,
+    
+    // Reporter configuration
+    reporter: process.env.CI ? ['junit', 'github-actions'] : ['verbose'],
+    
+    // Output configuration
+    outputFile: {
+      junit: './test-results.xml',
+      json: './test-results.json'
     }
   },
   
-  // TypeScript path resolution
+  // Resolve configuration for imports
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      '@tests': path.resolve(__dirname, './src/__tests__')
     }
-  },
-  
-  // Esbuild configuration for better TypeScript support
-  esbuild: {
-    target: 'node18'
   }
 })

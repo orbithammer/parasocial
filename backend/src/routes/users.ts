@@ -1,42 +1,36 @@
 // backend/src/routes/users.ts
-// Express 4.x compatible users router with FollowController integration
+// Version: 1.1.0 - Added rate limiting to follow operations
+// Changed: Applied followRateLimit to follow/unfollow endpoints to prevent automation abuse
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { UserController } from '../controllers/UserController'
 import { PostController } from '../controllers/PostController'
 import { FollowController } from '../controllers/FollowController'
+import { followRateLimit } from '../middleware/rateLimitMiddleware' // ADDED: Import rate limiting
 
 // Middleware function type
 type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
 
-// Updated dependencies interface with FollowController
+// Dependencies interface for dependency injection
 interface UsersRouterDependencies {
   userController: UserController
   postController: PostController
-  followController: FollowController  // Added for consistent follow operations
+  followController: FollowController
   authMiddleware: MiddlewareFunction
   optionalAuthMiddleware: MiddlewareFunction
 }
 
 /**
  * Create users router with dependency injection
- * Uses FollowController for all follow-related operations (Express 4.x compatible)
- * @param dependencies - Injected dependencies including FollowController
+ * @param dependencies - Injected dependencies
  * @returns Configured Express router
  */
 export function createUsersRouter(dependencies: UsersRouterDependencies): Router {
-  const { 
-    userController, 
-    postController, 
-    followController,  // Now using FollowController consistently
-    authMiddleware, 
-    optionalAuthMiddleware 
-  } = dependencies
-  
+  const { userController, postController, followController, authMiddleware, optionalAuthMiddleware } = dependencies
   const router = Router()
 
   // ============================================================================
-  // USER PROFILE ROUTES
+  // USER PROFILE OPERATIONS (no rate limiting needed)
   // ============================================================================
 
   /**
@@ -58,7 +52,7 @@ export function createUsersRouter(dependencies: UsersRouterDependencies): Router
   })
 
   // ============================================================================
-  // FOLLOW OPERATIONS (using FollowController consistently)
+  // FOLLOW OPERATIONS (with rate limiting)
   // ============================================================================
 
   /**
@@ -66,8 +60,9 @@ export function createUsersRouter(dependencies: UsersRouterDependencies): Router
    * Follow a user
    * Supports both authenticated ParaSocial users and external ActivityPub actors
    * Uses FollowController for consistency
+   * UPDATED: Added rate limiting to prevent automation abuse (20 actions per hour)
    */
-  router.post('/:username/follow', optionalAuthMiddleware, async (req: Request, res: Response) => {
+  router.post('/:username/follow', followRateLimit, optionalAuthMiddleware, async (req: Request, res: Response) => {
     await followController.followUser(req, res)
   })
 
@@ -76,10 +71,15 @@ export function createUsersRouter(dependencies: UsersRouterDependencies): Router
    * Unfollow a user
    * Requires authentication
    * Uses FollowController for consistency
+   * UPDATED: Added rate limiting to prevent automation abuse (20 actions per hour)
    */
-  router.delete('/:username/follow', authMiddleware, async (req: Request, res: Response) => {
+  router.delete('/:username/follow', followRateLimit, authMiddleware, async (req: Request, res: Response) => {
     await followController.unfollowUser(req, res)
   })
+
+  // ============================================================================
+  // FOLLOWER/FOLLOWING LISTS (no rate limiting needed for reading)
+  // ============================================================================
 
   /**
    * GET /users/:username/followers
@@ -87,49 +87,49 @@ export function createUsersRouter(dependencies: UsersRouterDependencies): Router
    * Public endpoint - uses FollowController for consistency
    */
   router.get('/:username/followers', async (req: Request, res: Response) => {
-    await followController.getUserFollowers(req, res)
+    await followController.getFollowers(req, res)
   })
 
   /**
    * GET /users/:username/following
-   * Get users that this user follows
+   * Get users that this user is following
    * Public endpoint - uses FollowController for consistency
    */
   router.get('/:username/following', async (req: Request, res: Response) => {
-    await followController.getUserFollowing(req, res)
+    await followController.getFollowing(req, res)
   })
 
   /**
    * GET /users/:username/stats
-   * Get user's follow statistics (followers count, following count)
-   * Public endpoint - handled by FollowController
+   * Get user's follow statistics (follower count, following count)
+   * Public endpoint - uses FollowController for consistency
    */
   router.get('/:username/stats', async (req: Request, res: Response) => {
     await followController.getUserFollowStats(req, res)
   })
 
   // ============================================================================
-  // USER MANAGEMENT OPERATIONS (still using UserController)
+  // BLOCKING OPERATIONS (no rate limiting needed - should be able to block quickly)
   // ============================================================================
 
   /**
    * POST /users/:username/block
    * Block a user
-   * Requires authentication - handled by UserController
-   * Note: Blocking is user management, not follow management
+   * Requires authentication
+   * Uses FollowController for consistency with follow operations
    */
   router.post('/:username/block', authMiddleware, async (req: Request, res: Response) => {
-    await userController.blockUser(req, res)
+    await followController.blockUser(req, res)
   })
 
   /**
    * DELETE /users/:username/block
    * Unblock a user
-   * Requires authentication - handled by UserController
-   * Note: Blocking is user management, not follow management
+   * Requires authentication
+   * Uses FollowController for consistency with follow operations
    */
   router.delete('/:username/block', authMiddleware, async (req: Request, res: Response) => {
-    await userController.unblockUser(req, res)
+    await followController.unblockUser(req, res)
   })
 
   return router
