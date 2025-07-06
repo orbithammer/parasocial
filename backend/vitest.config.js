@@ -1,77 +1,69 @@
 // backend/vitest.config.ts
-// Vitest configuration for colocated test structure
-// Version: 1.0.0 - Initial configuration with colocated support
+// Version: 1.2.0 - Added timeout management and test isolation
+// Changed: Added proper timeouts, setup files, and test categorization
 
 import { defineConfig } from 'vitest/config'
-import path from 'path'
 
 export default defineConfig({
   test: {
-    globals: true,
-    environment: 'node',
+    // Prevent hanging tests
+    testTimeout: 15000,        // 15 seconds max per test
+    hookTimeout: 10000,        // 10 seconds for setup/teardown
+    teardownTimeout: 5000,     // 5 seconds for cleanup
     
-    // Include patterns for colocated tests
-    include: [
-      'src/**/*.{test,spec}.{js,ts}',
-      'src/**/__tests__/**/*.{test,spec}.{js,ts}',
-      '**/__tests__/**/*.{test,spec}.{js,ts}'
+    // Test isolation and performance
+    isolate: true,             // Isolate tests in separate contexts
+    maxConcurrency: 1,         // Run rate limiting tests sequentially
+    
+    // Environment and setup
+    environment: 'node',
+    setupFiles: ['./test-setup.ts'],
+    
+    // Reporting
+    reporter: ['verbose', 'json'],
+    outputFile: './test-results.json',
+    
+    // Coverage (optional)
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'dist/',
+        '**/*.d.ts',
+        '**/*.config.{js,ts}',
+        '**/test-setup.ts',
+        '**/__tests__/**'
+      ]
+    },
+    
+    // Global settings
+    globals: true,
+    clearMocks: true,
+    restoreMocks: true,
+    
+    // Test categorization with different timeouts
+    testMatch: [
+      '**/*.test.ts',
+      '**/*.spec.ts'
     ],
     
-    // Exclude patterns
+    // Exclude patterns for problematic tests during development
     exclude: [
       'node_modules/**',
       'dist/**',
       'build/**',
-      'coverage/**',
-      '**/*.d.ts',
-      '**/*.config.{js,ts}',
-      '**/node_modules/**'
-    ],
-    
-    // Test timeout (useful for rate limiting tests that include delays)
-    testTimeout: 30000,
-    
-    // Coverage configuration
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html', 'json'],
-      exclude: [
-        'node_modules/**',
-        'dist/**',
-        'coverage/**',
-        '**/*.d.ts',
-        '**/*.config.{js,ts}',
-        '**/__tests__/**',
-        '**/test/**',
-        'src/types/**'
-      ],
-      include: [
-        'src/**/*.{js,ts}'
-      ]
-    },
-    
-    // Setup files (if you need global test setup)
-    // setupFiles: ['./src/test/setup.ts'],
-    
-    // Mock reset behavior
-    clearMocks: true,
-    restoreMocks: true,
-    
-    // Reporter configuration
-    reporter: process.env.CI ? ['junit', 'github-actions'] : ['verbose'],
-    
-    // Output configuration
-    outputFile: {
-      junit: './test-results.xml',
-      json: './test-results.json'
-    }
+      // Uncomment to temporarily exclude hanging tests:
+      // '**/*.rateLimit.test.ts',
+      // '__tests__/routes/auth*.test.ts'
+    ]
   },
   
-  // Resolve configuration for imports
+  // Resolver configuration
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@tests': path.resolve(__dirname, './src/__tests__')
+      '@': './src',
+      '@tests': './__tests__'
     }
   }
 })
