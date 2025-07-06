@@ -9,15 +9,10 @@ import { createUsersRouter } from '../users'
 
 /**
  * Mock controllers for testing
- * Include required properties to match controller interfaces
+ * Only include public methods, not private properties
  */
 const mockUserController = {
-  // Required properties from UserController class
-  userRepository: {} as any,
-  followRepository: {} as any,
-  blockRepository: {} as any,
-
-  // Method implementations
+  // Method implementations (only public interface)
   getUserProfile: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(200).json({
       success: true,
@@ -34,7 +29,6 @@ const mockUserController = {
     })
   }),
 
-  // Additional methods required by UserController interface
   followUser: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(201).json({
       success: true,
@@ -76,14 +70,10 @@ const mockUserController = {
       message: `Successfully unblocked ${req.params.username}`
     })
   })
-}
+} as any // Type assertion to bypass strict interface checking
 
 const mockPostController = {
-  // Required properties from PostController class
-  postRepository: {} as any,
-  userRepository: {} as any,
-
-  // Method implementations
+  // Method implementations (only public interface)  
   getUserPosts: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(200).json({
       success: true,
@@ -99,14 +89,10 @@ const mockPostController = {
       }
     })
   })
-}
+} as any // Type assertion to bypass strict interface checking
 
 const mockFollowController = {
-  // Required properties from FollowController class
-  followService: {} as any,
-  userRepository: {} as any,
-
-  // Method implementations
+  // Method implementations (only public interface)
   followUser: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(201).json({
       success: true,
@@ -126,7 +112,7 @@ const mockFollowController = {
     })
   }),
 
-  getFollowers: vi.fn().mockImplementation(async (req: any, res: any) => {
+  getUserFollowers: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(200).json({
       success: true,
       data: {
@@ -140,7 +126,7 @@ const mockFollowController = {
     })
   }),
 
-  getFollowing: vi.fn().mockImplementation(async (req: any, res: any) => {
+  getUserFollowing: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(200).json({
       success: true,
       data: {
@@ -177,7 +163,7 @@ const mockFollowController = {
       message: `Successfully unblocked ${req.params.username}`
     })
   })
-}
+} as any // Type assertion to bypass strict interface checking
 
 /**
  * Mock auth middleware for testing

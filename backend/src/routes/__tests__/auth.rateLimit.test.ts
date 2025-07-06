@@ -1,5 +1,5 @@
-// backend/__tests__/routes/auth.rateLimit.test.ts
-// Version: 1.0.0 - Initial unit tests for authentication rate limiting
+// backend/src/routes/__tests__/auth.rateLimit.test.ts
+// Version: 1.1.0 - Colocated test for authentication rate limiting
 // Tests rate limiting on login and register endpoints to prevent brute force attacks
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -10,8 +10,10 @@ import { createAuthRouter } from '../auth'
 /**
  * Mock AuthController for testing
  * Simulates successful authentication responses
+ * Only includes public methods, not private properties
  */
 const mockAuthController = {
+  // Method implementations (only public interface)
   register: vi.fn().mockImplementation(async (req: any, res: any) => {
     res.status(201).json({
       success: true,
@@ -77,7 +79,7 @@ const mockAuthController = {
       }
     })
   })
-}
+} as any // Type assertion to bypass strict interface checking
 
 /**
  * Mock auth middleware for testing
