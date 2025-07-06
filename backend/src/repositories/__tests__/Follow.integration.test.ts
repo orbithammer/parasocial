@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { FollowRepository } from '../../src/repositories/FollowRepository'
+import { FollowRepository } from '../FollowRepository'
 
 describe('Follow Integration Tests', () => {
   let prisma: PrismaClient

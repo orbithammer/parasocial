@@ -9,7 +9,7 @@ import {
   validateCreateReport,
   validateBlockUser,
   validateUsernameParam
-} from '../../src/middleware/mediaModerationValidationMiddleware'
+} from '../mediaModerationValidationMiddleware'
 
 // Extended request interface for file uploads
 interface TestFileUploadRequest extends Request {

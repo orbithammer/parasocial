@@ -2,7 +2,7 @@
 // Fixed tests to match actual authMiddleware implementation with proper TypeScript types
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createAuthMiddleware, createOptionalAuthMiddleware } from '../../src/middleware/authMiddleware'
+import { createAuthMiddleware, createOptionalAuthMiddleware } from '../authMiddleware'
 
 // Define the authenticated request interface that matches the middleware
 interface AuthenticatedRequest {

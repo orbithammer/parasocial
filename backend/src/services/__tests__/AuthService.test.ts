@@ -2,7 +2,7 @@
 // Fixed tests to match actual AuthService implementation with updated error messages
 
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest'
-import { AuthService } from '../../src/services/AuthService.js'
+import { AuthService } from '../AuthService.js'
 
 describe('AuthService', () => {
   let authService: AuthService

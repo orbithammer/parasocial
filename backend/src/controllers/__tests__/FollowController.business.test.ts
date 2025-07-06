@@ -2,7 +2,7 @@
 // Unit tests for FollowController business logic, service integration, and data validation
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { FollowController } from '../../src/controllers/FollowController'
+import { FollowController } from '../FollowController'
 
 /**
  * Mock authenticated request interface

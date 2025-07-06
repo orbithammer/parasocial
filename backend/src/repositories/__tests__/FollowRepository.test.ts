@@ -3,7 +3,7 @@
 // Tests all follow/unfollow functionality without requiring database connection
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { FollowRepository } from '../../src/repositories/FollowRepository'
+import { FollowRepository } from '../FollowRepository'
 '../src/repositories/FollowRepository'
 
 /**

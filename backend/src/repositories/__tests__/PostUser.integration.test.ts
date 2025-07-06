@@ -3,9 +3,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { PostRepository } from '../../src/repositories/PostRepository'
-import { Post, PostSchemas } from '../../src/models/Post'
-import { User, UserSchemas } from '../../src/models/User'
+import { PostRepository } from '../PostRepository'
+import { Post, PostSchemas } from '../../models/Post'
+import { User, UserSchemas } from '../../models/User'
 
 describe('Post-User Integration Tests', () => {
   let prisma: PrismaClient

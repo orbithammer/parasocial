@@ -2,8 +2,8 @@
 // Unit tests for Post model business logic methods
 
 import { describe, it, expect } from 'vitest'
-import { Post } from '../../src/models/Post'
-import type { PostData, PublicPost } from '../../src/models/Post'
+import { Post } from '../Post'
+import type { PostData, PublicPost } from '../Post'
 
 describe('Post Business Logic Methods', () => {
   // Helper function to create mock post data

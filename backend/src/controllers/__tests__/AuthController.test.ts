@@ -3,7 +3,7 @@
 // Fixed to match the current structured error response implementation
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { AuthController } from '../../src/controllers/AuthController'
+import { AuthController } from '../AuthController'
 
 describe('AuthController', () => {
   let authController: AuthController

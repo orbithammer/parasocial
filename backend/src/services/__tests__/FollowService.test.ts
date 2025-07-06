@@ -3,7 +3,7 @@
 // Tests business logic, validation, and error handling without database dependencies
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { FollowService } from '../../src/services/FollowService'
+import { FollowService } from '../FollowService'
 
 /**
  * Mock FollowRepository with all required methods
