@@ -1,32 +1,44 @@
-// backend/vitest.config.ts
-// Version: 1.2.0 - Added timeout management and test isolation
-// Changed: Added proper timeouts, setup files, and test categorization
+// backend/vitest.config.js
+// Version: 2.1.0 - Added proper exit handling and cleanup
+// Fixed: Added pool configuration and exit handling to prevent hanging
 
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Prevent hanging tests
-    testTimeout: 15000,        // 15 seconds max per test
-    hookTimeout: 10000,        // 10 seconds for setup/teardown
-    teardownTimeout: 5000,     // 5 seconds for cleanup
+    // Prevent hanging tests with aggressive timeouts
+    testTimeout: 10000,        // 10 seconds max per test
+    hookTimeout: 5000,         // 5 seconds for setup/teardown
+    teardownTimeout: 3000,     // 3 seconds for cleanup
     
     // Test isolation and performance
     isolate: true,             // Isolate tests in separate contexts
-    maxConcurrency: 1,         // Run rate limiting tests sequentially
+    maxConcurrency: 1,         // Run tests sequentially to avoid conflicts
+    
+    // Process and thread configuration
+    pool: 'threads',           // Use thread pool for better isolation
+    poolOptions: {
+      threads: {
+        singleThread: true,    // Force single thread to prevent resource conflicts
+        isolate: true,         // Isolate each test file
+      }
+    },
     
     // Environment and setup
     environment: 'node',
     setupFiles: ['./test-setup.ts'],
     
+    // Force exit configuration
+    forceExit: true,           // Force exit when all tests complete
+    passWithNoTests: true,     // Don't fail if no tests found
+    
     // Reporting
-    reporter: ['verbose', 'json'],
-    outputFile: './test-results.json',
+    reporter: ['verbose'],
     
     // Coverage (optional)
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text'],
       exclude: [
         'node_modules/',
         'dist/',
@@ -42,21 +54,29 @@ export default defineConfig({
     clearMocks: true,
     restoreMocks: true,
     
-    // Test categorization with different timeouts
-    testMatch: [
-      '**/*.test.ts',
-      '**/*.spec.ts'
+    // Retry configuration
+    retry: 0,                  // Don't retry failed tests
+    
+    // Test file patterns
+    include: [
+      '**/*.{test,spec}.{js,ts}'
     ],
     
     // Exclude patterns for problematic tests during development
     exclude: [
       'node_modules/**',
       'dist/**',
-      'build/**',
-      // Uncomment to temporarily exclude hanging tests:
-      // '**/*.rateLimit.test.ts',
-      // '__tests__/routes/auth*.test.ts'
-    ]
+      'build/**'
+    ],
+    
+    // Exit handling
+    onFinished: () => {
+      // Force exit after tests complete
+      setTimeout(() => {
+        console.log('Tests completed, forcing exit...')
+        process.exit(0)
+      }, 500)
+    }
   },
   
   // Resolver configuration

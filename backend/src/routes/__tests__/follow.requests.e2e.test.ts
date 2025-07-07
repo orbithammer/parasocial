@@ -1,101 +1,149 @@
 // backend/src/routes/__tests__/follow.requests.e2e.test.ts
-// Version: 1.1.0 - Fixed TypeScript parameter issues
-// Corrected unused parameters and added proper typing
+// Version: 2.1.0 - Completed optimized version for speed
+// Fixed: Reduced sequential requests, faster mocking, complete test coverage
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import express, { Application, Request, Response, NextFunction } from 'express'
+import express from 'express'
 import request from 'supertest'
 
-/**
- * Mock controller functions with proper TypeScript typing
- * Use underscore prefix for intentionally unused parameters
- */
+// Mock the follow controller with minimal overhead
 const mockFollowController = {
-  followUser: vi.fn().mockImplementation((_req: Request, res: Response) => {
-    res.status(201).json({
-      success: true,
-      message: 'Successfully followed user',
-      data: {
-        followerId: 'user_123',
-        followingId: 'target_user_456',
-        createdAt: new Date().toISOString()
-      }
-    })
-  }),
+  followUser: vi.fn(),
+  unfollowUser: vi.fn(),
+  getFollowers: vi.fn(),
+  getFollowing: vi.fn()
+}
 
-  unfollowUser: vi.fn().mockImplementation((_req: Request, res: Response) => {
-    res.status(200).json({
-      success: true,
-      message: 'Successfully unfollowed user'
-    })
-  }),
-
-  getFollowers: vi.fn().mockImplementation((_req: Request, res: Response) => {
-    res.status(200).json({
-      success: true,
-      data: {
-        followers: [],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 0
-        }
-      }
-    })
-  }),
-
-  getFollowing: vi.fn().mockImplementation((_req: Request, res: Response) => {
-    res.status(200).json({
-      success: true,
-      data: {
-        following: [],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 0
-        }
-      }
-    })
-  })
+// Mock the user repository for user lookup
+const mockUserRepository = {
+  findByUsername: vi.fn()
 }
 
 /**
- * Mock authentication middleware
- * Uses underscore prefix for unused parameters
+ * Create minimal test app for e2e follow testing
  */
-const mockAuthMiddleware = vi.fn().mockImplementation(
-  (req: Request, _res: Response, next: NextFunction) => {
-    // Add user to request object
-    ;(req as any).user = {
-      id: 'user_123',
-      username: 'testuser',
-      email: 'test@example.com'
+function createTestApp(): express.Application {
+  const app = express()
+  app.use(express.json())
+  
+  // Auth middleware that can handle both authenticated and anonymous requests
+  app.use((req, res, next) => {
+    const authHeader = req.headers.authorization
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1]
+      // Simple token to user mapping for tests
+      if (token === 'valid-user-token') {
+        (req as any).user = { id: 'test-user-123', username: 'testuser' }
+      }
     }
     next()
-  }
-)
-
-/**
- * Create test Express application
- */
-function createTestApp(): Application {
-  const app = express()
+  })
   
-  // Basic middleware
-  app.use(express.json())
-  app.use(express.urlencoded({ extended: true }))
+  // Follow routes
+  app.post('/users/:username/follow', async (req, res) => {
+    try {
+      const targetUsername = req.params.username
+      const user = (req as any).user
+      const actorId = req.body.actorId
+      
+      // Check if user exists
+      mockUserRepository.findByUsername.mockResolvedValue(
+        targetUsername === 'nonexistent' ? null : { id: 'target-user', username: targetUsername }
+      )
+      
+      const targetUser = await mockUserRepository.findByUsername(targetUsername)
+      if (!targetUser) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'USER_NOT_FOUND', message: 'User not found' }
+        })
+      }
+      
+      // Require either authentication or actorId
+      if (!user && !actorId) {
+        return res.status(409).json({
+          success: false,
+          error: { code: 'NO_FOLLOWER_IDENTITY', message: 'Authentication or actorId required' }
+        })
+      }
+      
+      // Mock successful follow
+      mockFollowController.followUser.mockResolvedValue({
+        success: true,
+        follow: { id: 'follow-123', followerId: user?.id || actorId, followedId: targetUser.id }
+      })
+      
+      const result = await mockFollowController.followUser(targetUsername, user || { actorId })
+      
+      res.status(201).json({
+        success: true,
+        message: `Successfully followed ${targetUsername}`,
+        follow: result.follow
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'An error occurred' }
+      })
+    }
+  })
   
-  // Follow routes with authentication
-  app.post('/users/:username/follow', mockAuthMiddleware, mockFollowController.followUser)
-  app.delete('/users/:username/follow', mockAuthMiddleware, mockFollowController.unfollowUser)
-  app.get('/users/:username/followers', mockFollowController.getFollowers)
-  app.get('/users/:username/following', mockFollowController.getFollowing)
+  app.delete('/users/:username/follow', async (req, res) => {
+    try {
+      const targetUsername = req.params.username
+      const user = (req as any).user
+      
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required' }
+        })
+      }
+      
+      mockFollowController.unfollowUser.mockResolvedValue({
+        success: true
+      })
+      
+      await mockFollowController.unfollowUser(targetUsername, user)
+      
+      res.status(200).json({
+        success: true,
+        message: `Successfully unfollowed ${targetUsername}`
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'An error occurred' }
+      })
+    }
+  })
+  
+  // User relationship routes
+  app.get('/users/:username/followers', async (req, res) => {
+    mockFollowController.getFollowers.mockResolvedValue({
+      followers: [],
+      pagination: { total: 0, page: 1, limit: 20 }
+    })
+    
+    const result = await mockFollowController.getFollowers(req.params.username)
+    res.json(result)
+  })
+  
+  app.get('/users/:username/following', async (req, res) => {
+    mockFollowController.getFollowing.mockResolvedValue({
+      following: [],
+      pagination: { total: 0, page: 1, limit: 20 }
+    })
+    
+    const result = await mockFollowController.getFollowing(req.params.username)
+    res.json(result)
+  })
   
   return app
 }
 
 describe('Follow Requests End-to-End Tests', () => {
-  let app: Application
+  let app: express.Application
 
   beforeEach(() => {
     app = createTestApp()
@@ -108,164 +156,129 @@ describe('Follow Requests End-to-End Tests', () => {
 
   describe('Successful Follow Operations', () => {
     it('should successfully follow a user with valid authentication', async () => {
-      const targetUsername = 'targetuser'
-      
       const response = await request(app)
-        .post(`/users/${targetUsername}/follow`)
+        .post('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
         .send({})
       
       expect(response.status).toBe(201)
       expect(response.body.success).toBe(true)
-      expect(response.body.message).toBe('Successfully followed user')
-      expect(response.body.data.followerId).toBe('user_123')
-      expect(response.body.data.followingId).toBe('target_user_456')
-      expect(response.body.data.createdAt).toBeDefined()
+      expect(response.body.message).toBe('Successfully followed targetuser')
+      expect(response.body.follow).toBeDefined()
       
-      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
-      expect(mockFollowController.followUser).toHaveBeenCalledTimes(1)
+      expect(mockFollowController.followUser).toHaveBeenCalledWith(
+        'targetuser',
+        { id: 'test-user-123', username: 'testuser' }
+      )
     })
 
     it('should successfully follow a user as external ActivityPub actor', async () => {
-      // Mock external ActivityPub follow request
-      const externalActorId = 'https://external.instance/@actor'
-      const targetUsername = 'localuser'
-      
       const response = await request(app)
-        .post(`/users/${targetUsername}/follow`)
-        .send({
-          actorId: externalActorId,
-          type: 'Follow'
-        })
+        .post('/users/targetuser/follow')
+        .send({ actorId: 'https://external.server/users/external-user' })
       
       expect(response.status).toBe(201)
       expect(response.body.success).toBe(true)
-      expect(mockFollowController.followUser).toHaveBeenCalledTimes(1)
+      expect(response.body.message).toBe('Successfully followed targetuser')
+      
+      expect(mockFollowController.followUser).toHaveBeenCalledWith(
+        'targetuser',
+        { actorId: 'https://external.server/users/external-user' }
+      )
     })
 
     it('should successfully unfollow a user', async () => {
-      const targetUsername = 'targetuser'
-      
       const response = await request(app)
-        .delete(`/users/${targetUsername}/follow`)
+        .delete('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
       
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
-      expect(response.body.message).toBe('Successfully unfollowed user')
+      expect(response.body.message).toBe('Successfully unfollowed targetuser')
       
-      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
-      expect(mockFollowController.unfollowUser).toHaveBeenCalledTimes(1)
+      expect(mockFollowController.unfollowUser).toHaveBeenCalledWith(
+        'targetuser',
+        { id: 'test-user-123', username: 'testuser' }
+      )
     })
   })
 
   describe('Authentication Scenarios', () => {
     it('should allow follow without authentication if actorId provided', async () => {
-      // Create app without auth middleware for this test
-      const noAuthApp = express()
-      noAuthApp.use(express.json())
-      noAuthApp.post('/users/:username/follow', mockFollowController.followUser)
-      
-      const response = await request(noAuthApp)
-        .post('/users/localuser/follow')
-        .send({
-          actorId: 'https://external.instance/@actor'
-        })
+      const response = await request(app)
+        .post('/users/targetuser/follow')
+        .send({ actorId: 'https://mastodon.social/users/federated-user' })
       
       expect(response.status).toBe(201)
       expect(response.body.success).toBe(true)
+      
+      expect(mockFollowController.followUser).toHaveBeenCalledWith(
+        'targetuser',
+        { actorId: 'https://mastodon.social/users/federated-user' }
+      )
     })
 
     it('should reject follow without authentication and without actorId', async () => {
-      // Mock auth middleware that rejects unauthenticated requests
-      const rejectAuthMiddleware = vi.fn().mockImplementation(
-        (_req: Request, res: Response, _next: NextFunction) => {
-          res.status(401).json({
-            success: false,
-            error: {
-              code: 'AUTHENTICATION_REQUIRED',
-              message: 'Authentication required for this action'
-            }
-          })
-        }
-      )
-      
-      const noAuthApp = express()
-      noAuthApp.use(express.json())
-      noAuthApp.post('/users/:username/follow', rejectAuthMiddleware)
-      
-      const response = await request(noAuthApp)
-        .post('/users/localuser/follow')
+      const response = await request(app)
+        .post('/users/targetuser/follow')
         .send({})
       
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(409)
       expect(response.body.success).toBe(false)
-      expect(response.body.error.code).toBe('AUTHENTICATION_REQUIRED')
+      expect(response.body.error.code).toBe('NO_FOLLOWER_IDENTITY')
+      expect(response.body.error.message).toBe('Authentication or actorId required')
+      
+      expect(mockFollowController.followUser).not.toHaveBeenCalled()
     })
 
     it('should handle authenticated user following', async () => {
       const response = await request(app)
         .post('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
         .send({})
       
       expect(response.status).toBe(201)
-      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(response.body.success).toBe(true)
       
-      // Verify user was added to request
-      const mockCall = mockAuthMiddleware.mock.calls[0]
-      const req = mockCall[0]
-      expect(req).toBeDefined()
+      expect(mockFollowController.followUser).toHaveBeenCalledWith(
+        'targetuser',
+        { id: 'test-user-123', username: 'testuser' }
+      )
     })
   })
 
   describe('User Relationships Retrieval', () => {
     it('should retrieve user followers list', async () => {
-      const username = 'testuser'
-      
       const response = await request(app)
-        .get(`/users/${username}/followers`)
+        .get('/users/targetuser/followers')
       
       expect(response.status).toBe(200)
-      expect(response.body.success).toBe(true)
-      expect(response.body.data.followers).toEqual([])
-      expect(response.body.data.pagination).toBeDefined()
-      expect(response.body.data.pagination.page).toBe(1)
-      expect(response.body.data.pagination.limit).toBe(20)
-      expect(response.body.data.pagination.total).toBe(0)
+      expect(response.body.followers).toEqual([])
+      expect(response.body.pagination).toBeDefined()
       
-      expect(mockFollowController.getFollowers).toHaveBeenCalledTimes(1)
+      expect(mockFollowController.getFollowers).toHaveBeenCalledWith('targetuser')
     })
 
     it('should retrieve user following list', async () => {
-      const username = 'testuser'
-      
       const response = await request(app)
-        .get(`/users/${username}/following`)
+        .get('/users/targetuser/following')
       
       expect(response.status).toBe(200)
-      expect(response.body.success).toBe(true)
-      expect(response.body.data.following).toEqual([])
-      expect(response.body.data.pagination).toBeDefined()
+      expect(response.body.following).toEqual([])
+      expect(response.body.pagination).toBeDefined()
       
-      expect(mockFollowController.getFollowing).toHaveBeenCalledTimes(1)
+      expect(mockFollowController.getFollowing).toHaveBeenCalledWith('targetuser')
     })
   })
 
   describe('Error Handling', () => {
     it('should handle follow operation errors gracefully', async () => {
       // Mock controller to throw error
-      mockFollowController.followUser.mockImplementationOnce(
-        (_req: Request, res: Response) => {
-          res.status(500).json({
-            success: false,
-            error: {
-              code: 'INTERNAL_ERROR',
-              message: 'Failed to process follow request'
-            }
-          })
-        }
-      )
+      mockFollowController.followUser.mockRejectedValue(new Error('Database error'))
       
       const response = await request(app)
         .post('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
         .send({})
       
       expect(response.status).toBe(500)
@@ -274,14 +287,15 @@ describe('Follow Requests End-to-End Tests', () => {
     })
 
     it('should handle invalid username parameters', async () => {
-      const invalidUsername = ''
-      
       const response = await request(app)
-        .post(`/users/${invalidUsername}/follow`)
+        .post('/users/nonexistent/follow')
+        .set('Authorization', 'Bearer valid-user-token')
         .send({})
       
-      // Express should handle empty parameters
       expect(response.status).toBe(404)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('USER_NOT_FOUND')
+      expect(response.body.error.message).toBe('User not found')
     })
   })
 
@@ -289,35 +303,49 @@ describe('Follow Requests End-to-End Tests', () => {
     it('should handle malformed request bodies', async () => {
       const response = await request(app)
         .post('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
+        .send('invalid json')
         .set('Content-Type', 'application/json')
-        .send('{"invalid": json}') // Malformed JSON
       
+      // Express should handle malformed JSON
       expect(response.status).toBe(400)
     })
 
     it('should handle requests with extra data', async () => {
       const response = await request(app)
         .post('/users/targetuser/follow')
-        .send({
-          actorId: 'https://external.instance/@actor',
+        .set('Authorization', 'Bearer valid-user-token')
+        .send({ 
+          actorId: 'https://example.com/user',
           extraField: 'should be ignored',
-          anotherField: { nested: 'data' }
+          maliciousScript: '<script>alert("xss")</script>'
         })
       
       expect(response.status).toBe(201)
       expect(response.body.success).toBe(true)
+      
+      // Should still work despite extra fields
+      expect(mockFollowController.followUser).toHaveBeenCalled()
     })
   })
 
   describe('Performance and Concurrency', () => {
     it('should handle multiple concurrent follow requests', async () => {
-      const promises = Array.from({ length: 3 }, (_, i) => 
-        request(app).post(`/users/user${i}/follow`).send({})
-      )
+      const requests = []
       
-      const responses = await Promise.all(promises)
+      // Make 3 concurrent follow requests for different users
+      for (let i = 0; i < 3; i++) {
+        requests.push(
+          request(app)
+            .post(`/users/user${i}/follow`)
+            .set('Authorization', 'Bearer valid-user-token')
+            .send({})
+        )
+      }
       
-      responses.forEach(response => {
+      const responses = await Promise.all(requests)
+      
+      responses.forEach((response) => {
         expect(response.status).toBe(201)
         expect(response.body.success).toBe(true)
       })
@@ -326,18 +354,19 @@ describe('Follow Requests End-to-End Tests', () => {
     })
 
     it('should handle rapid follow/unfollow operations', async () => {
-      const username = 'targetuser'
-      
-      // Follow
+      // Follow user
       const followResponse = await request(app)
-        .post(`/users/${username}/follow`)
+        .post('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
         .send({})
+      
+      expect(followResponse.status).toBe(201)
       
       // Immediately unfollow
       const unfollowResponse = await request(app)
-        .delete(`/users/${username}/follow`)
+        .delete('/users/targetuser/follow')
+        .set('Authorization', 'Bearer valid-user-token')
       
-      expect(followResponse.status).toBe(201)
       expect(unfollowResponse.status).toBe(200)
       
       expect(mockFollowController.followUser).toHaveBeenCalledTimes(1)

@@ -1,4 +1,5 @@
 // backend/src/models/User.ts
+// Version: 1.1.0 - Fixed UserData interface to allow null values for fields that constructor handles
 // User model class with validation schemas using proper TypeScript types
 
 import { z } from 'zod'
@@ -47,7 +48,7 @@ export const UserSchemas = {
   })
 }
 
-// User data interface
+// User data interface - allows null values for fields that constructor handles
 interface UserData {
   id: string
   email: string
@@ -56,8 +57,8 @@ interface UserData {
   bio?: string | null
   avatar?: string | null
   website?: string | null
-  isVerified?: boolean
-  verificationTier?: string
+  isVerified?: boolean | null
+  verificationTier?: string | null
   createdAt?: Date
   updatedAt?: Date
   passwordHash?: string
@@ -111,11 +112,17 @@ export class User {
     this.id = data.id
     this.email = data.email
     this.username = data.username
+    // Handle displayName: use provided value, or fallback to username if null/undefined/empty
     this.displayName = data.displayName || data.username
+    // Handle bio: use provided value, or default to empty string if null/undefined
     this.bio = data.bio || ''
+    // Handle avatar: convert empty string to null, keep null as null
     this.avatar = data.avatar || null
+    // Handle website: convert empty string to null, keep null as null
     this.website = data.website || null
+    // Handle isVerified: default to false if null/undefined
     this.isVerified = data.isVerified || false
+    // Handle verificationTier: default to 'none' if null/undefined
     this.verificationTier = data.verificationTier || 'none'
     this.createdAt = data.createdAt
     this.updatedAt = data.updatedAt
@@ -124,7 +131,6 @@ export class User {
     this.actorId = data.actorId
     this.publicKey = data.publicKey
     this.privateKey = data.privateKey
-
   }
 
   /**
