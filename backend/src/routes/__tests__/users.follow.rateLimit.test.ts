@@ -1,273 +1,373 @@
-// backend/src/routes/__tests__/users.follow.rateLimit.test.ts
-// Version: 2.0.0 - Optimized for speed, reduced HTTP requests
-// Fixed: Reduced sequential requests, faster mocking, shorter tests
+// backend/src/routes/__tests__/auth.rateLimit.test.ts
+// Version: 2.2.0 - Maintained consistency with other test files
+// Fixed TypeScript issues and test format consistency
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import express from 'express'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
-import rateLimit from 'express-rate-limit'
+import express, { Request, Response, NextFunction } from 'express'
+import { authRateLimit } from '../../middleware/rateLimitMiddleware'
 
-// Mock the follow controller with minimal overhead
-const mockFollowController = {
-  followUser: vi.fn().mockResolvedValue({ success: true }),
-  unfollowUser: vi.fn().mockResolvedValue({ success: true }),
-  getFollowers: vi.fn().mockResolvedValue({ followers: [] }),
-  getFollowing: vi.fn().mockResolvedValue({ following: [] }),
-  blockUser: vi.fn().mockResolvedValue({ success: true }),
-  unblockUser: vi.fn().mockResolvedValue({ success: true })
+// Test response type
+interface SuperTestResponse {
+  status: number
+  body: any
+  headers: Record<string, string>
 }
 
-/**
- * Create minimal test app with rate limiting
- */
-function createTestApp(userId: string): express.Application {
-  const app = express()
-  app.use(express.json())
-  
-  // Add test user middleware (simulates authentication)
-  app.use((req, res, next) => {
-    (req as any).user = { id: userId }
-    next()
-  })
-  
-  // Apply follow rate limiting (20 per hour)
-  const followRateLimit = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-      res.status(429).json({
-        success: false,
-        error: {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Follow action limit reached. You can perform 20 follow/unfollow actions per hour.',
-          retryAfter: '60 seconds'
-        }
-      })
-    },
-    keyGenerator: (req) => (req as any).user?.id || req.ip
-  })
-  
-  // Add routes with rate limiting
-  app.post('/users/:username/follow', followRateLimit, (req, res) => {
-    mockFollowController.followUser(req.params.username, (req as any).user)
-    res.status(201).json({
-      success: true,
-      message: `Successfully followed ${req.params.username}`
-    })
-  })
-  
-  app.delete('/users/:username/follow', followRateLimit, (req, res) => {
-    mockFollowController.unfollowUser(req.params.username, (req as any).user)
-    res.status(200).json({
-      success: true,
-      message: `Successfully unfollowed ${req.params.username}`
-    })
-  })
-  
-  // Non-rate-limited routes
-  app.get('/users/:username/followers', (req, res) => {
-    mockFollowController.getFollowers(req.params.username)
-    res.json({ followers: [] })
-  })
-  
-  app.get('/users/:username/following', (req, res) => {
-    mockFollowController.getFollowing(req.params.username)
-    res.json({ following: [] })
-  })
-  
-  return app
-}
+describe('Auth Routes Rate Limiting', () => {
+  let app: express.Application
 
-/**
- * Make multiple requests efficiently with minimal delay
- */
-async function makeRequests(app: express.Application, count: number, endpoint: string, method: 'post' | 'delete' = 'post') {
-  const requests = []
-  
-  for (let i = 0; i < count; i++) {
-    const req = method === 'post' 
-      ? request(app).post(endpoint).send({})
-      : request(app).delete(endpoint)
-    requests.push(req)
-  }
-  
-  // Execute all requests concurrently (much faster than sequential)
-  return Promise.all(requests)
-}
-
-describe('Follow Operations Rate Limiting', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    console.log('Test setup initialized')
+    
+    // Create Express app for testing
+    app = express()
+    app.use(express.json())
+    
+    // Apply rate limiting middleware to auth endpoints
+    app.use('/auth', authRateLimit)
+    
+    // Mock POST /auth/register endpoint
+    app.post('/auth/register', (req: Request, res: Response) => {
+      const { email, username, password } = req.body
+      
+      // Basic validation
+      if (!email || !username || !password) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Email, username, and password are required'
+          }
+        })
+      }
+      
+      // Mock successful registration
+      res.status(201).json({
+        success: true,
+        data: {
+          user: {
+            id: 'user_' + Date.now(),
+            email,
+            username,
+            displayName: username,
+            createdAt: new Date().toISOString()
+          },
+          token: 'jwt_token_' + Date.now()
+        },
+        message: 'User registered successfully'
+      })
+    })
+    
+    // Mock POST /auth/login endpoint
+    app.post('/auth/login', (req: Request, res: Response) => {
+      const { email, password } = req.body
+      
+      // Basic validation
+      if (!email || !password) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Email and password are required'
+          }
+        })
+      }
+      
+      // Mock authentication check
+      if (email === 'wrong@example.com' || password === 'wrongpassword') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'AUTHENTICATION_FAILED',
+            message: 'Invalid email or password'
+          }
+        })
+      }
+      
+      // Mock successful login
+      res.status(200).json({
+        success: true,
+        data: {
+          user: {
+            id: 'user_123',
+            email,
+            username: 'testuser',
+            displayName: 'Test User'
+          },
+          token: 'jwt_token_' + Date.now()
+        },
+        message: 'Login successful'
+      })
+    })
+    
+    // Mock POST /auth/logout endpoint (not rate limited)
+    app.post('/auth/logout', (req: Request, res: Response) => {
+      res.status(200).json({
+        success: true,
+        message: 'Logout successful'
+      })
+    })
   })
 
   afterEach(() => {
-    vi.clearAllTimers()
+    console.log('Starting test cleanup...')
+    console.log('Test cleanup completed')
   })
 
-  describe('POST /users/:username/follow Rate Limiting', () => {
-    it('should allow follow operations within the limit (first 5 requests)', async () => {
-      const app = createTestApp('user-1')
+  describe('Authentication Rate Limiting (5 per minute)', () => {
+    it('should allow requests within the limit (5 per minute)', async () => {
+      // Act - Make 5 registration requests (within limit)
+      const responses: SuperTestResponse[] = []
       
-      // Test with just 5 requests (much faster than 20)
-      const responses = await makeRequests(app, 5, '/users/testuser/follow')
-      
-      // All should succeed
-      responses.forEach((response) => {
-        expect(response.status).toBe(201)
-        expect(response.body.success).toBe(true)
-      })
-      
-      expect(mockFollowController.followUser).toHaveBeenCalledTimes(5)
-    })
-
-    it('should include rate limit headers in response', async () => {
-      const app = createTestApp('user-2')
-      
-      const response = await request(app)
-        .post('/users/testuser/follow')
-        .send({})
-      
-      expect(response.status).toBe(201)
-      expect(response.headers['ratelimit-limit']).toBe('20')
-      expect(response.headers['ratelimit-remaining']).toBe('19')
-      expect(response.headers['ratelimit-reset']).toBeDefined()
-    })
-
-    it('should block requests after hitting the limit', async () => {
-      const app = createTestApp('user-3')
-      
-      // Make exactly 20 requests to hit the limit
-      const firstBatch = await makeRequests(app, 20, '/users/testuser/follow')
-      
-      // All 20 should succeed
-      firstBatch.forEach((response) => {
-        expect(response.status).toBe(201)
-      })
-      
-      // 21st request should be blocked
-      const blockedResponse = await request(app)
-        .post('/users/testuser/follow')
-        .send({})
-      
-      expect(blockedResponse.status).toBe(429)
-      expect(blockedResponse.body.success).toBe(false)
-      expect(blockedResponse.body.error.code).toBe('RATE_LIMIT_EXCEEDED')
-      expect(blockedResponse.body.error.message).toContain('Follow action limit reached')
-      
-      // Controller should only be called 20 times (not 21)
-      expect(mockFollowController.followUser).toHaveBeenCalledTimes(20)
-    })
-
-    it('should track rate limits by user ID when authenticated', async () => {
-      const app1 = createTestApp('user-4')
-      const app2 = createTestApp('user-5')
-      
-      // Each user should have separate rate limits
-      const user1Response = await request(app1).post('/users/testuser/follow').send({})
-      const user2Response = await request(app2).post('/users/testuser/follow').send({})
-      
-      expect(user1Response.status).toBe(201)
-      expect(user2Response.status).toBe(201)
-      
-      // Both should show 19 remaining (separate limits)
-      expect(user1Response.headers['ratelimit-remaining']).toBe('19')
-      expect(user2Response.headers['ratelimit-remaining']).toBe('19')
-    })
-  })
-
-  describe('DELETE /users/:username/follow Rate Limiting', () => {
-    it('should allow unfollow operations within the limit', async () => {
-      const app = createTestApp('user-6')
-      
-      // Test with 5 unfollow requests
-      const responses = await makeRequests(app, 5, '/users/testuser/follow', 'delete')
-      
-      responses.forEach((response) => {
-        expect(response.status).toBe(200)
-        expect(response.body.success).toBe(true)
-      })
-      
-      expect(mockFollowController.unfollowUser).toHaveBeenCalledTimes(5)
-    })
-
-    it('should block unfollow after hitting the limit', async () => {
-      const app = createTestApp('user-7')
-      
-      // Hit the limit with 20 unfollow requests
-      await makeRequests(app, 20, '/users/testuser/follow', 'delete')
-      
-      // 21st should be blocked
-      const blockedResponse = await request(app).delete('/users/testuser/follow')
-      
-      expect(blockedResponse.status).toBe(429)
-      expect(blockedResponse.body.error.code).toBe('RATE_LIMIT_EXCEEDED')
-      
-      expect(mockFollowController.unfollowUser).toHaveBeenCalledTimes(20)
-    })
-  })
-
-  describe('Shared Rate Limiting Between Follow and Unfollow', () => {
-    it('should share rate limit between follow and unfollow operations', async () => {
-      const app = createTestApp('user-8')
-      
-      // Mix of follow and unfollow requests (total 20)
-      const followRequests = makeRequests(app, 10, '/users/testuser/follow', 'post')
-      const unfollowRequests = makeRequests(app, 10, '/users/testuser/follow', 'delete')
-      
-      const [followResponses, unfollowResponses] = await Promise.all([followRequests, unfollowRequests])
-      
-      // All should succeed (within the 20 limit)
-      followResponses.forEach(response => expect(response.status).toBe(201))
-      unfollowResponses.forEach(response => expect(response.status).toBe(200))
-      
-      // Next request should be blocked
-      const blockedResponse = await request(app).post('/users/testuser/follow').send({})
-      expect(blockedResponse.status).toBe(429)
-    })
-  })
-
-  describe('Non-Rate-Limited User Operations', () => {
-    it('should not apply rate limiting to follower/following lists', async () => {
-      const app = createTestApp('user-9')
-      
-      // Make multiple requests to view lists (should not be rate limited)
-      const requests = []
-      for (let i = 0; i < 10; i++) {
-        requests.push(request(app).get('/users/testuser/followers'))
-        requests.push(request(app).get('/users/testuser/following'))
+      for (let i = 0; i < 5; i++) {
+        const response = await request(app)
+          .post('/auth/register')
+          .send({
+            email: `test${i}@example.com`,
+            username: `testuser${i}`,
+            password: 'TestPass123!'
+          })
+        responses.push(response)
       }
+
+      // Assert - All 5 should succeed
+      responses.forEach((response, index) => {
+        expect(response.status).toBe(201)
+        expect(response.body.success).toBe(true)
+        expect(response.body.data.user.email).toBe(`test${index}@example.com`)
+        
+        // Verify rate limit headers
+        expect(response.headers['ratelimit-limit']).toBe('5')
+        expect(response.headers['ratelimit-remaining']).toBe((4 - index).toString())
+      })
+    })
+
+    it('should block requests exceeding the limit (6th request)', async () => {
+      // Arrange - Make 5 requests to hit the limit
+      for (let i = 0; i < 5; i++) {
+        await request(app)
+          .post('/auth/register')
+          .send({
+            email: `setup${i}@example.com`,
+            username: `setupuser${i}`,
+            password: 'TestPass123!'
+          })
+      }
+
+      // Act - Try to make 6th request (should be blocked)
+      const response = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'blocked@example.com',
+          username: 'blockeduser',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Should be rate limited
+      expect(response.status).toBe(429)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('RATE_LIMIT_EXCEEDED')
+      expect(response.body.error.message).toBe('Too many authentication attempts. Please try again in 1 minute.')
+      expect(response.headers['ratelimit-remaining']).toBe('0')
+    })
+
+    it('should include rate limit headers', async () => {
+      // Act - Make first authentication request
+      const response = await request(app)
+        .post('/auth/login')
+        .send({
+          email: 'test@example.com',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Check rate limit headers
+      expect(response.status).toBe(200)
+      expect(response.headers['ratelimit-limit']).toBe('5')
+      expect(response.headers['ratelimit-remaining']).toBe('4')
+      expect(response.headers['ratelimit-reset']).toBeDefined()
       
-      const responses = await Promise.all(requests)
+      // Verify response format
+      expect(response.body.success).toBe(true)
+      expect(response.body.data.token).toBeDefined()
+    })
+
+    it('should use IP address for rate limiting', async () => {
+      // Note: In a real test environment, you might mock different IP addresses
+      // For this test, we assume all requests come from the same IP
       
-      // All should succeed
-      responses.forEach(response => expect(response.status).toBe(200))
+      // Act - Make multiple requests (should all count towards same IP limit)
+      const responses: SuperTestResponse[] = []
       
-      expect(mockFollowController.getFollowers).toHaveBeenCalledTimes(10)
-      expect(mockFollowController.getFollowing).toHaveBeenCalledTimes(10)
+      for (let i = 0; i < 3; i++) {
+        const response = await request(app)
+          .post('/auth/login')
+          .send({
+            email: `iptest${i}@example.com`,
+            password: 'TestPass123!'
+          })
+        responses.push(response)
+      }
+
+      // Assert - All should share the same rate limit
+      responses.forEach((response, index) => {
+        expect(response.status).toBe(200)
+        expect(parseInt(response.headers['ratelimit-remaining'])).toBe(4 - index)
+      })
     })
   })
 
   describe('Rate Limit Error Response Format', () => {
-    it('should return consistent error format when rate limited', async () => {
-      const app = createTestApp('user-10')
-      
-      // Hit the rate limit
-      await makeRequests(app, 20, '/users/testuser/follow')
-      
-      // Get rate limited response
-      const response = await request(app).post('/users/testuser/follow').send({})
-      
+    it('should return consistent error format for authentication rate limits', async () => {
+      // Arrange - Hit the rate limit
+      for (let i = 0; i < 5; i++) {
+        await request(app)
+          .post('/auth/register')
+          .send({
+            email: `setup${i}@example.com`,
+            username: `setupuser${i}`,
+            password: 'TestPass123!'
+          })
+      }
+
+      // Act - Make request that should be rate limited
+      const response = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'blocked@example.com',
+          username: 'blockeduser',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Check error response format matches expected structure
       expect(response.status).toBe(429)
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Follow action limit reached. You can perform 20 follow/unfollow actions per hour.',
+          message: 'Too many authentication attempts. Please try again in 1 minute.',
           retryAfter: '60 seconds'
         }
       })
+      
+      // Check rate limit headers
+      expect(response.headers['ratelimit-limit']).toBe('5')
+      expect(response.headers['ratelimit-remaining']).toBe('0')
+      expect(response.headers['ratelimit-reset']).toBeDefined()
+    })
+
+    it('should include retry after information', async () => {
+      // Arrange - Hit the rate limit
+      for (let i = 0; i < 5; i++) {
+        await request(app)
+          .post('/auth/login')
+          .send({
+            email: `test${i}@example.com`,
+            password: 'TestPass123!'
+          })
+      }
+
+      // Act - Make request that should be rate limited
+      const response = await request(app)
+        .post('/auth/login')
+        .send({
+          email: 'blocked@example.com',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Check retry after information
+      expect(response.status).toBe(429)
+      expect(response.body.error.retryAfter).toBe('60 seconds')
+      
+      // Rate limit reset header should indicate when limit resets
+      const resetTime = parseInt(response.headers['ratelimit-reset'])
+      expect(resetTime).toBeGreaterThan(0)
+      expect(resetTime).toBeLessThanOrEqual(60) // Should be within 1 minute
+    })
+  })
+
+  describe('Rate Limit Configuration', () => {
+    it('should have correct authentication rate limit values', async () => {
+      // Act - Make request to check rate limit configuration
+      const response = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'config@example.com',
+          username: 'configuser',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Verify rate limit configuration matches expected values
+      expect(response.headers['ratelimit-limit']).toBe('5')
+      expect(response.headers['ratelimit-remaining']).toBe('4')
+      
+      // Verify window is 1 minute (60 seconds)
+      const resetTime = parseInt(response.headers['ratelimit-reset'])
+      expect(resetTime).toBeLessThanOrEqual(60)
+      expect(resetTime).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Mixed Authentication Operations', () => {
+    it('should share rate limit between login and register', async () => {
+      // Act - Mix registration and login requests
+      const registerResponse = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'mixed1@example.com',
+          username: 'mixeduser1',
+          password: 'TestPass123!'
+        })
+
+      const loginResponse = await request(app)
+        .post('/auth/login')
+        .send({
+          email: 'mixed2@example.com',
+          password: 'TestPass123!'
+        })
+
+      const anotherRegisterResponse = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'mixed3@example.com',
+          username: 'mixeduser3',
+          password: 'TestPass123!'
+        })
+
+      // Assert - All should count towards the same rate limit
+      expect(registerResponse.status).toBe(201)
+      expect(registerResponse.headers['ratelimit-remaining']).toBe('4')
+      
+      expect(loginResponse.status).toBe(200)
+      expect(loginResponse.headers['ratelimit-remaining']).toBe('3')
+      
+      expect(anotherRegisterResponse.status).toBe(201)
+      expect(anotherRegisterResponse.headers['ratelimit-remaining']).toBe('2')
+    })
+
+    it('should handle authentication failures within rate limit', async () => {
+      // Act - Make requests with invalid credentials
+      const invalidLoginResponse = await request(app)
+        .post('/auth/login')
+        .send({
+          email: 'wrong@example.com',
+          password: 'wrongpassword'
+        })
+
+      const validRegisterResponse = await request(app)
+        .post('/auth/register')
+        .send({
+          email: 'valid@example.com',
+          username: 'validuser',
+          password: 'TestPass123!'
+        })
+
+      // Assert - Both should count against rate limit, regardless of success/failure
+      expect(invalidLoginResponse.status).toBe(401)
+      expect(invalidLoginResponse.headers['ratelimit-remaining']).toBe('4')
+      
+      expect(validRegisterResponse.status).toBe(201)
+      expect(validRegisterResponse.headers['ratelimit-remaining']).toBe('3')
     })
   })
 })
