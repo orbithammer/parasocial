@@ -2,7 +2,7 @@
 // Unit tests for PostController - HTTP request handlers for post operations
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { PostController } from '../../src/controllers/PostController.js'
+import { PostController } from '../PostController'
 
 describe('PostController', () => {
   let postController

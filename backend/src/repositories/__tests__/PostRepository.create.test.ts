@@ -2,7 +2,7 @@
 // Fixed tests to match our enhanced PostRepository
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { PostRepository } from '../../src/repositories/PostRepository.js'
+import { PostRepository } from '../PostRepository'
 
 describe('PostRepository - Post Creation', () => {
   let postRepository

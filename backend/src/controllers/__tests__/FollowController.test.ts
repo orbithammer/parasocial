@@ -3,7 +3,7 @@
 // Tests HTTP request/response handling and proper error mapping
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { FollowController } from '../../src/controllers/FollowController'
+import { FollowController } from '../FollowController'
 
 /**
  * Mock FollowService with all required methods

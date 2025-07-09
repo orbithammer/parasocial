@@ -2,7 +2,7 @@
 // Unit tests for PostRepository database operations
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { PostRepository } from '../../src/repositories/PostRepository'
+import { PostRepository } from '../PostRepository'
 
 // Mock Prisma Client
 const mockPrismaClient = {
