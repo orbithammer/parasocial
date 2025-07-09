@@ -1,6 +1,6 @@
 // backend/src/middleware/rateLimitMiddleware.ts
-// Rate limiting middleware for Phase 2.5 - Input validation and basic security
-// Prevents spam and abuse across different endpoint categories
+// Version: 1.1.0 - Fixed media upload rate limiting to skip failed requests
+// Added skipFailedRequests option to prevent validation failures from counting against rate limit
 
 import rateLimit from 'express-rate-limit'
 import { Request, Response } from 'express'
@@ -24,7 +24,7 @@ const createRateLimitResponse = (message: string) => {
  * Custom rate limit handler that returns consistent JSON responses
  */
 const rateLimitHandler = (message: string) => {
-  return (req: Request, res: Response) => {
+  return (_req: Request, res: Response) => {
     res.status(429).json(createRateLimitResponse(message))
   }
 }
@@ -87,6 +87,7 @@ export const followRateLimit = rateLimit({
 /**
  * Strict rate limiting for media uploads
  * 20 uploads per hour to manage server resources
+ * FIXED: Now skips failed requests (4xx errors) so validation failures don't count against limit
  */
 export const mediaUploadRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour window
@@ -95,6 +96,8 @@ export const mediaUploadRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler('Media upload limit reached. You can upload 20 files per hour.'),
+  // CRITICAL FIX: Skip failed requests (4xx errors) so validation failures don't count
+  skipFailedRequests: true,
   keyGenerator: (req: Request) => {
     const authenticatedUser = (req as any).user
     return authenticatedUser?.id || req.ip || 'unknown'
@@ -157,7 +160,7 @@ export const rateLimitConfig = {
   mediaUpload: {
     windowMs: 60 * 60 * 1000,
     max: 20,
-    description: 'Media file uploads'
+    description: 'Media file uploads - now skips failed requests'
   },
   general: {
     windowMs: 1 * 60 * 1000,

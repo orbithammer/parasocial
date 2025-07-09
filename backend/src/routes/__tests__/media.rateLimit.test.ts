@@ -1,6 +1,6 @@
 // backend/src/routes/__tests__/media.rateLimit.test.ts
-// Version: 3.0.0 - Fixed supertest import and usage pattern
-// Fixed: Corrected supertest import syntax and removed .default usage
+// Version: 4.0.0 - Fixed rate limiting behavior to skip failed requests
+// Added skipFailedRequests logic to match the actual mediaUploadRateLimit middleware
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import express, { Application } from 'express'
@@ -18,6 +18,21 @@ interface RateLimitInfo {
   remaining: number
   reset: number
   used: number
+}
+
+// Multer file interface for testing
+interface MockFile {
+  originalname: string
+  mimetype: string
+  size: number
+  buffer: Buffer
+  filename: string
+}
+
+// Extended request interface to include file and user properties
+interface TestRequest extends express.Request {
+  file?: MockFile
+  user?: AuthenticatedUser
 }
 
 // Mock the dependencies
@@ -43,7 +58,8 @@ const rateLimitStore = new Map<string, RateLimitInfo>()
 const RATE_LIMIT_CONFIG = {
   windowMs: 60 * 1000, // 1 minute window
   max: 10, // 10 uploads per minute
-  message: 'Rate limit exceeded'
+  message: 'Rate limit exceeded',
+  skipFailedRequests: true // CRITICAL: Skip failed requests (4xx errors)
 }
 
 /**
@@ -57,7 +73,7 @@ function createTestApp(): Application {
   app.use(express.urlencoded({ extended: true }))
   
   // Mock authentication middleware (optional)
-  const mockOptionalAuthMiddleware = (req: any, res: any, next: any) => {
+  const mockOptionalAuthMiddleware = (req: TestRequest, res: any, next: any) => {
     const authHeader = req.headers.authorization
     if (authHeader && authHeader.startsWith('Bearer ')) {
       try {
@@ -75,13 +91,13 @@ function createTestApp(): Application {
     next()
   }
 
-  // Mock rate limiting middleware
-  const mockRateLimitMiddleware = (req: any, res: any, next: any) => {
+  // FIXED: Mock rate limiting middleware with skipFailedRequests behavior
+  const mockRateLimitMiddleware = (req: TestRequest, res: any, next: any) => {
     const now = Date.now()
     const windowStart = now - RATE_LIMIT_CONFIG.windowMs
     
     // Determine rate limit key - use user ID if authenticated, otherwise IP
-    const user = req.user as AuthenticatedUser | undefined
+    const user = req.user
     const rateLimitKey = user?.id || req.ip || 'anonymous'
     
     // Get current rate limit info
@@ -91,40 +107,65 @@ function createTestApp(): Application {
       // Reset rate limit window
       rateLimitInfo = {
         limit: RATE_LIMIT_CONFIG.max,
-        remaining: RATE_LIMIT_CONFIG.max - 1,
+        remaining: RATE_LIMIT_CONFIG.max,
         reset: now + RATE_LIMIT_CONFIG.windowMs,
-        used: 1
+        used: 0
       }
-    } else {
-      // Check if limit exceeded
-      if (rateLimitInfo.remaining <= 0) {
-        // Set rate limit headers
-        res.set({
-          'RateLimit-Limit': rateLimitInfo.limit.toString(),
-          'RateLimit-Remaining': '0',
-          'RateLimit-Reset': Math.ceil((rateLimitInfo.reset - now) / 1000).toString()
-        })
+    }
+    
+    // Check if limit already exceeded
+    if (rateLimitInfo.remaining <= 0) {
+      // Set rate limit headers
+      res.set({
+        'RateLimit-Limit': rateLimitInfo.limit.toString(),
+        'RateLimit-Remaining': '0',
+        'RateLimit-Reset': Math.ceil((rateLimitInfo.reset - now) / 1000).toString()
+      })
+      
+      return res.status(429).json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: RATE_LIMIT_CONFIG.message,
+          rateLimitKey,
+          retryAfter: '60 seconds'
+        }
+      })
+    }
+    
+    // CRITICAL FIX: Implement skipFailedRequests behavior
+    // Store original end function
+    const originalEnd = res.end
+    let hasEnded = false
+    
+    // Override res.end to check final status code
+    res.end = function(chunk?: any, encoding?: any) {
+      if (!hasEnded) {
+        hasEnded = true
         
-        return res.status(429).json({
-          success: false,
-          error: {
-            code: 'RATE_LIMIT_EXCEEDED',
-            message: RATE_LIMIT_CONFIG.message,
-            rateLimitKey,
-            retryAfter: '60 seconds'
-          }
+        // Only decrement rate limit if skipFailedRequests is false OR status < 400
+        const shouldCount = !RATE_LIMIT_CONFIG.skipFailedRequests || res.statusCode < 400
+        
+        if (shouldCount) {
+          // Decrement rate limit for successful requests or when not skipping failed requests
+          rateLimitInfo!.remaining--
+          rateLimitInfo!.used++
+          rateLimitStore.set(rateLimitKey, rateLimitInfo!)
+        }
+        
+        // Update headers with final count
+        res.set({
+          'RateLimit-Limit': rateLimitInfo!.limit.toString(),
+          'RateLimit-Remaining': rateLimitInfo!.remaining.toString(),
+          'RateLimit-Reset': Math.ceil((rateLimitInfo!.reset - now) / 1000).toString()
         })
       }
       
-      // Increment usage
-      rateLimitInfo.remaining--
-      rateLimitInfo.used++
+      // Call original end function
+      return originalEnd.call(this, chunk, encoding)
     }
     
-    // Update store
-    rateLimitStore.set(rateLimitKey, rateLimitInfo)
-    
-    // Set rate limit headers
+    // Set initial headers (these may be updated in res.end)
     res.set({
       'RateLimit-Limit': rateLimitInfo.limit.toString(),
       'RateLimit-Remaining': rateLimitInfo.remaining.toString(),
@@ -135,7 +176,7 @@ function createTestApp(): Application {
   }
 
   // Mock file upload middleware (simulates multer)
-  const mockFileUploadMiddleware = (req: any, res: any, next: any) => {
+  const mockFileUploadMiddleware = (req: TestRequest, res: any, next: any) => {
     // Simulate file parsing
     if (req.headers['content-type']?.includes('multipart/form-data')) {
       // Mock successful file upload
@@ -155,7 +196,7 @@ function createTestApp(): Application {
     mockOptionalAuthMiddleware,
     mockRateLimitMiddleware,
     mockFileUploadMiddleware,
-    async (req, res) => {
+    async (req: TestRequest, res) => {
       try {
         // Validate file exists
         if (!req.file) {
@@ -222,10 +263,10 @@ function createTestApp(): Application {
     }
   })
 
-  app.delete('/media/:fileId', mockOptionalAuthMiddleware, async (req, res) => {
+  app.delete('/media/:fileId', mockOptionalAuthMiddleware, async (req: TestRequest, res) => {
     try {
       const { fileId } = req.params
-      const user = req.user as AuthenticatedUser | undefined
+      const user = req.user
       
       const deleteResult = await mockMediaService.deleteFile(fileId, user)
       
@@ -517,7 +558,8 @@ describe('Media Upload Rate Limiting', () => {
       // Act - Make multiple info requests
       const responses = await Promise.all(
         Array.from({ length: 15 }, () =>
-          request(app).get('/media/info/file123')
+          request(app)
+            .get('/media/info/file123')
         )
       )
 
