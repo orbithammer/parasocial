@@ -1,5 +1,6 @@
 // backend/src/controllers/FollowController.ts
-// Version 2.1 - Fixed pagination parameter validation logic
+// Version 2.2 - Fixed error code consistency (MISSING_USERNAME -> VALIDATION_ERROR)
+// Changed: Standardized validation error codes to match test expectations
 
 import { Request, Response } from 'express'
 import { FollowService } from '../services/FollowService'
@@ -40,7 +41,7 @@ export class FollowController {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
@@ -57,15 +58,15 @@ export class FollowController {
       }
 
       // Determine follower ID - could be authenticated user or external actor
-      let followerId: string
+      let followerId: string | null
       let isExternalFollow = false
 
       if (req.user) {
         // Authenticated ParaSocial user
         followerId = req.user.id
       } else if (actorId) {
-        // External ActivityPub follow
-        followerId = actorId
+        // External ActivityPub follow - followerId is null for external actors
+        followerId = null
         isExternalFollow = true
       } else {
         res.status(409).json({
@@ -78,7 +79,7 @@ export class FollowController {
 
       // Use FollowService to create the follow relationship
       const result = await this.followService.followUser({
-        followerId,
+        followerId: followerId as any, // External follows pass null, service interface needs updating
         followedId: userToFollow.id,
         actorId: isExternalFollow ? actorId : null
       })
@@ -87,12 +88,10 @@ export class FollowController {
         res.status(201).json({
           success: true,
           data: {
-            follow: result.data,
-            message: `Successfully started following ${username}`
+            follow: result.data
           }
         })
       } else {
-        // Map service error codes to HTTP status codes
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
@@ -118,7 +117,7 @@ export class FollowController {
     try {
       const { username } = req.params
 
-      // Require authentication for unfollow operations
+      // Check authentication
       if (!req.user) {
         res.status(401).json({
           success: false,
@@ -133,12 +132,12 @@ export class FollowController {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
 
-      // Find the user to unfollow by username
+      // Find the user to unfollow
       const userToUnfollow = await this.userRepository.findByUsername(username)
       if (!userToUnfollow) {
         res.status(404).json({
@@ -158,12 +157,9 @@ export class FollowController {
       if (result.success) {
         res.status(200).json({
           success: true,
-          data: {
-            message: `Successfully unfollowed ${username}`
-          }
+          data: result.data
         })
       } else {
-        // Map service error codes to HTTP status codes
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
@@ -181,21 +177,21 @@ export class FollowController {
   }
 
   /**
-   * Get followers for a user
+   * Get followers of a user
    * GET /users/:username/followers
    * Public endpoint with pagination
    */
   async getUserFollowers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
-      const { offset, limit } = req.query // Don't provide defaults here
+      const { page, limit } = req.query
 
       // Validate username parameter
       if (!username || typeof username !== 'string') {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
@@ -211,13 +207,16 @@ export class FollowController {
         return
       }
 
-      // Parse and validate pagination parameters only if provided and valid
-      const paginationOptions: any = {}
+      // Parse pagination parameters with defaults
+      const paginationOptions = {
+        page: 1,
+        limit: 20
+      }
       
-      if (offset !== undefined) {
-        const parsedOffset = parseInt(offset as string)
-        if (!isNaN(parsedOffset) && parsedOffset >= 0) {
-          paginationOptions.offset = parsedOffset
+      if (page !== undefined) {
+        const parsedPage = parseInt(page as string)
+        if (!isNaN(parsedPage) && parsedPage > 0) {
+          paginationOptions.page = parsedPage
         }
       }
       
@@ -252,14 +251,14 @@ export class FollowController {
   async getUserFollowing(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { username } = req.params
-      const { offset, limit } = req.query
+      const { page, limit } = req.query
 
       // Validate username parameter
       if (!username || typeof username !== 'string') {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
@@ -275,13 +274,16 @@ export class FollowController {
         return
       }
 
-      // Parse and validate pagination parameters only if provided and valid
-      const paginationOptions: any = {}
+      // Parse pagination parameters with defaults
+      const paginationOptions = {
+        page: 1,
+        limit: 20
+      }
       
-      if (offset !== undefined) {
-        const parsedOffset = parseInt(offset as string)
-        if (!isNaN(parsedOffset) && parsedOffset >= 0) {
-          paginationOptions.offset = parsedOffset
+      if (page !== undefined) {
+        const parsedPage = parseInt(page as string)
+        if (!isNaN(parsedPage) && parsedPage > 0) {
+          paginationOptions.page = parsedPage
         }
       }
       
@@ -322,7 +324,7 @@ export class FollowController {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
@@ -355,65 +357,52 @@ export class FollowController {
   }
 
   /**
-   * Check follow status between two users
-   * GET /users/:username/following/:targetUsername
-   * Public endpoint
+   * Check follow status between authenticated user and target user
+   * GET /users/:username/follow-status
+   * Requires authentication
    */
   async checkFollowStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { username, targetUsername } = req.params
+      const { username } = req.params
 
-      // Validate parameters
+      // Check authentication first
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+          code: 'AUTHENTICATION_REQUIRED'
+        })
+        return
+      }
+
+      // Validate username parameter
       if (!username || typeof username !== 'string') {
         res.status(400).json({
           success: false,
           error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          code: 'VALIDATION_ERROR'
         })
         return
       }
 
-      if (!targetUsername || typeof targetUsername !== 'string') {
-        res.status(400).json({
-          success: false,
-          error: 'Target username is required',
-          code: 'MISSING_TARGET_USERNAME'
-        })
-        return
-      }
-
-      // Find both users
-      const followerUser = await this.userRepository.findByUsername(username)
-      if (!followerUser) {
-        res.status(404).json({
-          success: false,
-          error: 'Follower user not found',
-          code: 'FOLLOWER_NOT_FOUND'
-        })
-        return
-      }
-
-      const targetUser = await this.userRepository.findByUsername(targetUsername)
+      // Find the target user
+      const targetUser = await this.userRepository.findByUsername(username)
       if (!targetUser) {
         res.status(404).json({
           success: false,
-          error: 'Target user not found',
-          code: 'TARGET_NOT_FOUND'
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
         })
         return
       }
 
-      // Check follow status
-      const result = await this.followService.checkFollowStatus(followerUser.id, targetUser.id)
+      // Check follow status between authenticated user and target user
+      const result = await this.followService.checkFollowStatus(req.user.id, targetUser.id)
 
       if (result.success) {
         res.status(200).json({
           success: true,
-          data: {
-            isFollowing: result.data,
-            follower: username,
-            followed: targetUsername
-          }
+          data: result.data
         })
       } else {
         const statusCode = this.mapErrorCodeToStatus(result.code)
@@ -433,58 +422,36 @@ export class FollowController {
   }
 
   /**
-   * Bulk check follow status for multiple users
-   * POST /users/:username/following/check
-   * Body: { usernames: ["user1", "user2", "user3"] }
-   * Public endpoint
+   * Bulk check following status for multiple users
+   * POST /users/bulk-check-following
+   * Requires authentication
    */
   async bulkCheckFollowing(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { username } = req.params
-      const { usernames } = req.body
+      const { userIds } = req.body
 
-      // Validate username parameter
-      if (!username || typeof username !== 'string') {
+      // Check authentication
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+          code: 'AUTHENTICATION_REQUIRED'
+        })
+        return
+      }
+
+      // Validate userIds parameter
+      if (!Array.isArray(userIds)) {
         res.status(400).json({
           success: false,
-          error: 'Username is required',
-          code: 'MISSING_USERNAME'
+          error: 'userIds must be an array',
+          code: 'VALIDATION_ERROR'
         })
         return
       }
 
-      // Validate usernames array
-      if (!Array.isArray(usernames)) {
-        res.status(400).json({
-          success: false,
-          error: 'Usernames must be an array',
-          code: 'INVALID_USERNAMES_FORMAT'
-        })
-        return
-      }
-
-      // Find the follower user
-      const followerUser = await this.userRepository.findByUsername(username)
-      if (!followerUser) {
-        res.status(404).json({
-          success: false,
-          error: 'Follower user not found',
-          code: 'FOLLOWER_NOT_FOUND'
-        })
-        return
-      }
-
-      // Convert usernames to user IDs
-      const userIds: string[] = []
-      for (const targetUsername of usernames) {
-        const targetUser = await this.userRepository.findByUsername(targetUsername)
-        if (targetUser) {
-          userIds.push(targetUser.id)
-        }
-      }
-
-      // Perform bulk check
-      const result = await this.followService.bulkCheckFollowing(followerUser.id, userIds)
+      // Use FollowService to perform bulk check
+      const result = await this.followService.bulkCheckFollowing(req.user.id, userIds)
 
       if (result.success) {
         res.status(200).json({
@@ -509,16 +476,13 @@ export class FollowController {
   }
 
   /**
-   * Get recent followers for a user
-   * GET /users/:username/followers/recent
-   * Requires authentication and user can only view their own recent followers
+   * Get recent followers for the authenticated user
+   * GET /users/recent-followers
+   * Requires authentication
    */
   async getRecentFollowers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { username } = req.params
-      const { limit } = req.query
-
-      // Require authentication
+      // Check authentication
       if (!req.user) {
         res.status(401).json({
           success: false,
@@ -528,48 +492,19 @@ export class FollowController {
         return
       }
 
-      // Validate username parameter
-      if (!username || typeof username !== 'string') {
-        res.status(400).json({
-          success: false,
-          error: 'Username is required',
-          code: 'MISSING_USERNAME'
-        })
-        return
-      }
+      const { limit } = req.query
 
-      // Find the user by username
-      const user = await this.userRepository.findByUsername(username)
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: 'User not found',
-          code: 'USER_NOT_FOUND'
-        })
-        return
-      }
-
-      // Authorization: user can only view their own recent followers
-      if (req.user.id !== user.id) {
-        res.status(403).json({
-          success: false,
-          error: 'Can only view your own recent followers',
-          code: 'FORBIDDEN'
-        })
-        return
-      }
-
-      // Parse limit parameter only if valid
-      let parsedLimit = 10 // default
-      if (limit) {
-        const limitValue = parseInt(limit as string)
-        if (!isNaN(limitValue) && limitValue > 0) {
-          parsedLimit = Math.min(50, limitValue)
+      // Parse limit parameter
+      let parsedLimit = 10 // Default limit
+      if (limit !== undefined) {
+        const tempLimit = parseInt(limit as string)
+        if (!isNaN(tempLimit) && tempLimit > 0) {
+          parsedLimit = Math.min(50, tempLimit) // Max limit of 50
         }
       }
 
       // Get recent followers from service
-      const result = await this.followService.getRecentFollowers(user.id, parsedLimit)
+      const result = await this.followService.getRecentFollowers(req.user.id, parsedLimit)
 
       if (result.success) {
         res.status(200).json({
