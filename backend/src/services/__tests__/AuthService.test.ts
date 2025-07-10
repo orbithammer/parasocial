@@ -1,212 +1,198 @@
-// src/services/__tests__/AuthService.test.ts
-// v1.5.0 - Fixed UserTokenData interface mismatch (id input → userId in JWT payload)
-// AuthService unit tests with basic functionality
+// backend/src/services/__tests__/AuthService.test.ts
+// Version: 1.4.0 - Fixed import path to remove .js extension
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// Mock bcrypt before importing AuthService
-vi.mock('bcrypt', () => ({
-  default: {
-    hash: vi.fn(),
-    compare: vi.fn()
-  },
-  hash: vi.fn(),
-  compare: vi.fn()
-}))
-
-// Mock jsonwebtoken before importing AuthService  
-vi.mock('jsonwebtoken', () => ({
-  default: {
-    sign: vi.fn(),
-    verify: vi.fn()
-  },
-  sign: vi.fn(),
-  verify: vi.fn()
-}))
-
-// Import after mocks are set up
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
 import { AuthService } from '../AuthService'
-import bcrypt from 'bcrypt'
-import jwt from 'jsonwebtoken'
+
+// Create shared mock functions that can be reused
+const mockHash = vi.fn()
+const mockCompare = vi.fn()
+const mockGenSalt = vi.fn()
+
+// Mock bcrypt module with both default and named exports
+vi.mock('bcrypt', () => {
+  const bcryptMock = {
+    hash: mockHash,
+    compare: mockCompare,
+    genSalt: mockGenSalt
+  }
+  
+  return {
+    // Named exports
+    ...bcryptMock,
+    // Default export (same object)
+    default: bcryptMock
+  }
+})
 
 describe('AuthService', () => {
   let authService: AuthService
+  const testUser = {
+    id: 'user123',
+    email: 'test@example.com',
+    username: 'testuser'
+  }
+
+  beforeAll(() => {
+    // Set test environment variables that AuthService reads
+    process.env.JWT_SECRET = 'test-jwt-secret-for-testing-only'
+    process.env.JWT_EXPIRES_IN = '7d'
+    process.env.BCRYPT_ROUNDS = '12'
+  })
 
   beforeEach(() => {
     // Clear all mocks before each test
     vi.clearAllMocks()
+    mockHash.mockClear()
+    mockCompare.mockClear()
+    mockGenSalt.mockClear()
     
-    // Create fresh AuthService instance
+    // AuthService constructor reads from environment variables
     authService = new AuthService()
   })
 
   describe('Constructor', () => {
     it('should create AuthService instance', () => {
-      const service = new AuthService()
-      expect(service).toBeInstanceOf(AuthService)
+      expect(authService).toBeInstanceOf(AuthService)
+      expect(typeof authService.hashPassword).toBe('function')
+      expect(typeof authService.generateToken).toBe('function')
     })
   })
 
   describe('Password Hashing', () => {
     describe('hashPassword', () => {
       it('should hash a password successfully', async () => {
-        const password = 'testPassword123'
-        const hashedPassword = 'hashedPassword123'
+        const password = 'TestPassword123'
+        const expectedHash = 'hashedPassword123'
         
-        // Mock bcrypt.hash to return resolved value
-        vi.mocked(bcrypt.hash).mockResolvedValue(hashedPassword as never)
-
-        const result = await authService.hashPassword(password)
-
-        expect(bcrypt.hash).toHaveBeenCalledWith(password, 12)
-        expect(result).toBe(hashedPassword)
+        // Mock bcrypt.hash to return our test hash
+        mockHash.mockResolvedValue(expectedHash)
+        
+        const hashedPassword = await authService.hashPassword(password)
+        
+        expect(mockHash).toHaveBeenCalledWith(password, 12)
+        expect(hashedPassword).toBe(expectedHash)
       })
 
       it('should handle null password gracefully', async () => {
-        // AuthService returns undefined for null password instead of throwing
-        const result = await authService.hashPassword(null as any)
-        expect(result).toBeUndefined()
+        // Mock bcrypt.hash to reject with the expected error
+        mockHash.mockRejectedValue(new Error('data and salt arguments required'))
+        
+        await expect(authService.hashPassword(null as any))
+          .rejects.toThrow('Password hashing failed: data and salt arguments required')
       })
 
       it('should handle undefined password gracefully', async () => {
-        // AuthService returns undefined for undefined password instead of throwing
-        const result = await authService.hashPassword(undefined as any)
-        expect(result).toBeUndefined()
+        // Mock bcrypt.hash to reject with the expected error
+        mockHash.mockRejectedValue(new Error('data and salt arguments required'))
+        
+        await expect(authService.hashPassword(undefined as any))
+          .rejects.toThrow('Password hashing failed: data and salt arguments required')
       })
     })
 
     describe('verifyPassword', () => {
       it('should verify correct password', async () => {
         const password = 'testPassword123'
-        const hash = 'hashedPassword123'
+        const hashedPassword = 'hashedPassword123'
         
-        // Mock bcrypt.compare to return true
-        vi.mocked(bcrypt.compare).mockResolvedValue(true as never)
-
-        const result = await authService.verifyPassword(password, hash)
-
-        expect(bcrypt.compare).toHaveBeenCalledWith(password, hash)
-        expect(result).toBe(true)
+        // Mock bcrypt.compare to return true for correct password
+        mockCompare.mockResolvedValue(true)
+        
+        const isValid = await authService.verifyPassword(hashedPassword, password)
+        
+        // FIXED: bcrypt.compare is called with (password, hash), not (hash, password)
+        expect(mockCompare).toHaveBeenCalledWith(password, hashedPassword)
+        expect(isValid).toBe(true)
       })
 
       it('should reject incorrect password', async () => {
-        const password = 'wrongPassword'
-        const hash = 'hashedPassword123'
+        const wrongPassword = 'wrongPassword'
+        const hashedPassword = 'hashedPassword123'
         
-        // Mock bcrypt.compare to return false
-        vi.mocked(bcrypt.compare).mockResolvedValue(false as never)
-
-        const result = await authService.verifyPassword(password, hash)
-
-        expect(bcrypt.compare).toHaveBeenCalledWith(password, hash)
-        expect(result).toBe(false)
+        // Mock bcrypt.compare to return false for wrong password
+        mockCompare.mockResolvedValue(false)
+        
+        const isValid = await authService.verifyPassword(hashedPassword, wrongPassword)
+        
+        // FIXED: bcrypt.compare is called with (password, hash), not (hash, password)
+        expect(mockCompare).toHaveBeenCalledWith(wrongPassword, hashedPassword)
+        expect(isValid).toBe(false)
       })
 
       it('should handle null hash gracefully', async () => {
-        const password = 'testPassword'
+        const password = 'TestPassword123'
         
-        // AuthService returns undefined for null hash instead of throwing
-        const result = await authService.verifyPassword(password, null as any)
-        expect(result).toBeUndefined()
+        // Mock bcrypt.compare to reject with the expected error
+        mockCompare.mockRejectedValue(new Error('data and hash arguments required'))
+        
+        await expect(authService.verifyPassword(null as any, password))
+          .rejects.toThrow('Password verification failed: data and hash arguments required')
       })
     })
   })
 
   describe('JWT Token Management', () => {
     describe('generateToken', () => {
-      const mockUser = {
-        id: '123', // Input to generateToken uses 'id'
-        email: 'test@example.com',
-        username: 'testuser'
-      }
-
       it('should generate a valid JWT token', () => {
-        const mockToken = 'mock.jwt.token'
+        const token = authService.generateToken(testUser)
         
-        // Mock jwt.sign to return token
-        vi.mocked(jwt.sign).mockReturnValue(mockToken as never)
-
-        const result = authService.generateToken(mockUser)
-
-        expect(jwt.sign).toHaveBeenCalledWith(
-          expect.objectContaining({
-            userId: mockUser.id, // AuthService transforms id to userId internally
-            email: mockUser.email,
-            username: mockUser.username
-          }),
-          expect.any(String), // Specific JWT secret
-          { expiresIn: '7d' } // Specific expiration from your implementation
-        )
-        expect(result).toBe(mockToken)
+        expect(token).toBeDefined()
+        expect(typeof token).toBe('string')
+        expect(token.split('.')).toHaveLength(3) // JWT has 3 parts
       })
 
       it('should generate different tokens for different users', () => {
-        const user1 = { id: '1', email: 'user1@example.com', username: 'user1' }
-        const user2 = { id: '2', email: 'user2@example.com', username: 'user2' }
+        const user1 = { ...testUser, id: 'user1' }
+        const user2 = { ...testUser, id: 'user2' }
         
-        // Mock jwt.sign to return different tokens
-        vi.mocked(jwt.sign)
-          .mockReturnValueOnce('token1' as never)
-          .mockReturnValueOnce('token2' as never)
-
         const token1 = authService.generateToken(user1)
         const token2 = authService.generateToken(user2)
-
-        expect(token1).toBe('token1')
-        expect(token2).toBe('token2')
+        
         expect(token1).not.toBe(token2)
       })
     })
 
     describe('verifyToken', () => {
       it('should verify a valid token', () => {
-        const mockToken = 'valid.jwt.token'
-        const mockPayload = { userId: '123', email: 'test@example.com' }
+        const token = authService.generateToken(testUser)
         
-        // Mock jwt.verify to return payload
-        vi.mocked(jwt.verify).mockReturnValue(mockPayload as never)
-
-        const result = authService.verifyToken(mockToken)
-
-        expect(jwt.verify).toHaveBeenCalledWith(mockToken, expect.any(String))
-        expect(result).toBe(mockPayload)
+        const decoded = authService.verifyToken(token)
+        
+        expect(decoded).toBeDefined()
+        expect(decoded.userId).toBe(testUser.id)
+        expect(decoded.email).toBe(testUser.email)
       })
 
       it('should throw error for invalid token', () => {
-        const invalidToken = 'invalid.token'
+        const invalidToken = 'invalid.jwt.token'
         
-        // Mock jwt.verify to throw error
-        vi.mocked(jwt.verify).mockImplementation(() => {
-          throw new Error('Invalid token')
-        })
-
-        expect(() => authService.verifyToken(invalidToken)).toThrow('Invalid token')
+        expect(() => authService.verifyToken(invalidToken)).toThrow()
       })
 
       it('should handle empty token gracefully', () => {
-        // AuthService handles empty token gracefully instead of throwing
-        const result = authService.verifyToken('')
-        expect(result).toBeUndefined()
+        expect(() => authService.verifyToken('')).toThrow()
       })
     })
 
     describe('extractTokenFromHeader', () => {
       it('should extract token from Bearer header', () => {
-        const bearerToken = 'Bearer valid.jwt.token'
+        const token = 'test.jwt.token'
+        const header = `Bearer ${token}`
         
-        const result = authService.extractTokenFromHeader(bearerToken)
-
-        expect(result).toBe('valid.jwt.token')
+        const extractedToken = authService.extractTokenFromHeader(header)
+        
+        expect(extractedToken).toBe(token)
       })
 
       it('should throw error for invalid header format', () => {
-        const invalidHeader = 'InvalidFormat token'
+        const invalidHeader = 'InvalidToken'
         
         expect(() => authService.extractTokenFromHeader(invalidHeader)).toThrow()
       })
 
       it('should throw error for undefined header', () => {
-        expect(() => authService.extractTokenFromHeader(undefined as any)).toThrow()
+        expect(() => authService.extractTokenFromHeader(undefined)).toThrow()
       })
     })
   })
@@ -219,9 +205,9 @@ describe('AuthService', () => {
           username: 'testuser',
           password: 'Password123'
         }
-
+        
         const result = authService.validateRegistrationData(validData)
-
+        
         expect(result.success).toBe(true)
         expect(result.data).toEqual(validData)
       })
@@ -232,9 +218,9 @@ describe('AuthService', () => {
           username: 'testuser',
           password: 'Password123'
         }
-
+        
         const result = authService.validateRegistrationData(invalidData)
-
+        
         expect(result.success).toBe(false)
         expect(result.error).toBeDefined()
       })
@@ -246,9 +232,9 @@ describe('AuthService', () => {
           email: 'test@example.com',
           password: 'Password123'
         }
-
+        
         const result = authService.validateLoginData(validData)
-
+        
         expect(result.success).toBe(true)
         expect(result.data).toEqual(validData)
       })
@@ -258,9 +244,9 @@ describe('AuthService', () => {
           email: 'invalid-email',
           password: 'Password123'
         }
-
+        
         const result = authService.validateLoginData(invalidData)
-
+        
         expect(result.success).toBe(false)
         expect(result.error).toBeDefined()
       })
@@ -269,31 +255,36 @@ describe('AuthService', () => {
 
   describe('Integration Tests', () => {
     it('should complete full password hash and verify cycle', async () => {
-      const password = 'testPassword123'
-      const hashedPassword = 'hashedPassword123'
+      const password = 'TestPassword123'
+      const expectedHash = 'hashedPassword123'
       
-      // Mock both hash and compare
-      vi.mocked(bcrypt.hash).mockResolvedValue(hashedPassword as never)
-      vi.mocked(bcrypt.compare).mockResolvedValue(true as never)
-
-      const hash = await authService.hashPassword(password)
-      const isValid = await authService.verifyPassword(password, hash)
-
-      expect(isValid).toBe(true)
+      // Mock bcrypt methods for integration test
+      mockHash.mockResolvedValue(expectedHash)
+      mockCompare.mockResolvedValue(true)
+      
+      // Hash the password
+      const hashedPassword = await authService.hashPassword(password)
+      expect(hashedPassword).toBe(expectedHash)
+      
+      // Verify correct password
+      const isValidCorrect = await authService.verifyPassword(hashedPassword, password)
+      expect(isValidCorrect).toBe(true)
+      
+      // Verify bcrypt was called correctly
+      expect(mockHash).toHaveBeenCalledWith(password, 12)
+      expect(mockCompare).toHaveBeenCalledWith(password, hashedPassword)
     })
 
     it('should complete full token generation and verification cycle', () => {
-      const mockUser = { id: '123', email: 'test@example.com', username: 'testuser' }
-      const mockToken = 'mock.jwt.token'
+      // Generate token
+      const token = authService.generateToken(testUser)
       
-      // Mock both sign and verify
-      vi.mocked(jwt.sign).mockReturnValue(mockToken as never)
-      vi.mocked(jwt.verify).mockReturnValue(mockUser as never)
-
-      const token = authService.generateToken(mockUser)
-      const payload = authService.verifyToken(token)
-
-      expect(payload).toEqual(mockUser)
+      // Verify token
+      const decoded = authService.verifyToken(token)
+      
+      expect(decoded.userId).toBe(testUser.id)
+      expect(decoded.email).toBe(testUser.email)
+      expect(decoded.username).toBe(testUser.username)
     })
   })
 })
