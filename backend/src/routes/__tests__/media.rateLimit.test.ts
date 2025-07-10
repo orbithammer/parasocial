@@ -1,10 +1,13 @@
 // backend/src/routes/__tests__/media.rateLimit.test.ts
-// Version: 4.0.0 - Fixed rate limiting behavior to skip failed requests
-// Added skipFailedRequests logic to match the actual mediaUploadRateLimit middleware
+// Version: 4.2.0 - Fixed TypeScript Response type issues and concurrent request race conditions
+// Fixed: Changed Promise.all() to sequential requests to prevent race conditions
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import express, { Application } from 'express'
 import request from 'supertest'
+
+// Type for supertest response
+type SuperTestResponse = request.Response
 
 // Type definitions for better type safety
 interface AuthenticatedUser {
@@ -153,11 +156,11 @@ function createTestApp(): Application {
           rateLimitStore.set(rateLimitKey, rateLimitInfo!)
         }
         
-        // Update headers with final count
+        // Set rate limit headers
         res.set({
-          'RateLimit-Limit': rateLimitInfo!.limit.toString(),
-          'RateLimit-Remaining': rateLimitInfo!.remaining.toString(),
-          'RateLimit-Reset': Math.ceil((rateLimitInfo!.reset - now) / 1000).toString()
+          'ratelimit-limit': rateLimitInfo!.limit.toString(),
+          'ratelimit-remaining': rateLimitInfo!.remaining.toString(),
+          'ratelimit-reset': Math.ceil((rateLimitInfo!.reset - now) / 1000).toString()
         })
       }
       
@@ -165,170 +168,95 @@ function createTestApp(): Application {
       return originalEnd.call(this, chunk, encoding)
     }
     
-    // Set initial headers (these may be updated in res.end)
-    res.set({
-      'RateLimit-Limit': rateLimitInfo.limit.toString(),
-      'RateLimit-Remaining': rateLimitInfo.remaining.toString(),
-      'RateLimit-Reset': Math.ceil((rateLimitInfo.reset - now) / 1000).toString()
+    next()
+  }
+
+  // Apply middlewares
+  app.use(mockOptionalAuthMiddleware)
+  app.use('/media/upload', mockRateLimitMiddleware)
+
+  // Mock POST /media/upload endpoint
+  app.post('/media/upload', (req: TestRequest, res: any) => {
+    // Mock file validation
+    const validationResult = mockMediaService.validateFile(req.file)
+    if (!validationResult.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_FILE',
+          message: validationResult.message
+        }
+      })
+    }
+
+    // Mock successful upload
+    const uploadResult = mockMediaService.uploadFile(req.file)
+    res.json({
+      success: true,
+      data: uploadResult
     })
-    
-    next()
-  }
-
-  // Mock file upload middleware (simulates multer)
-  const mockFileUploadMiddleware = (req: TestRequest, res: any, next: any) => {
-    // Simulate file parsing
-    if (req.headers['content-type']?.includes('multipart/form-data')) {
-      // Mock successful file upload
-      req.file = {
-        originalname: 'test-image.jpg',
-        mimetype: 'image/jpeg',
-        size: 1024 * 100, // 100KB
-        buffer: Buffer.from('mock-file-data'),
-        filename: `upload_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`
-      }
-    }
-    next()
-  }
-  
-  // Media upload route with rate limiting
-  app.post('/media/upload', 
-    mockOptionalAuthMiddleware,
-    mockRateLimitMiddleware,
-    mockFileUploadMiddleware,
-    async (req: TestRequest, res) => {
-      try {
-        // Validate file exists
-        if (!req.file) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'NO_FILE_PROVIDED',
-              message: 'No file provided for upload'
-            }
-          })
-        }
-
-        // Mock file validation
-        const validationResult = mockMediaService.validateFile(req.file)
-        if (!validationResult.valid) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_FILE',
-              message: validationResult.message
-            }
-          })
-        }
-
-        // Mock file upload
-        const uploadResult = await mockMediaService.uploadFile(req.file, req.user)
-        
-        res.status(200).json({
-          success: true,
-          data: uploadResult,
-          message: 'File uploaded successfully'
-        })
-
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'UPLOAD_ERROR',
-            message: 'File upload failed'
-          }
-        })
-      }
-    }
-  )
-
-  // Non-rate-limited routes for comparison
-  app.get('/media/info/:fileId', async (req, res) => {
-    try {
-      const { fileId } = req.params
-      const fileInfo = await mockMediaService.getFileInfo(fileId)
-      
-      res.status(200).json({
-        success: true,
-        data: fileInfo
-      })
-    } catch (error) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'FILE_NOT_FOUND',
-          message: 'File not found'
-        }
-      })
-    }
   })
 
-  app.delete('/media/:fileId', mockOptionalAuthMiddleware, async (req: TestRequest, res) => {
-    try {
-      const { fileId } = req.params
-      const user = req.user
-      
-      const deleteResult = await mockMediaService.deleteFile(fileId, user)
-      
-      res.status(200).json({
-        success: true,
-        data: deleteResult,
-        message: 'File deleted successfully'
-      })
-    } catch (error) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'DELETE_ERROR',
-          message: 'File deletion failed'
-        }
-      })
-    }
+  // Mock GET /media/info/:fileId endpoint (not rate limited)
+  app.get('/media/info/:fileId', (req: any, res: any) => {
+    const fileInfo = mockMediaService.getFileInfo(req.params.fileId)
+    res.json({
+      success: true,
+      data: fileInfo
+    })
   })
-  
+
+  // Mock DELETE /media/:fileId endpoint (not rate limited)
+  app.delete('/media/:fileId', (req: any, res: any) => {
+    const deleteResult = mockMediaService.deleteFile(req.params.fileId)
+    res.json({
+      success: true,
+      data: deleteResult
+    })
+  })
+
   return app
 }
 
-describe('Media Upload Rate Limiting', () => {
+describe('Media Upload Rate Limiting Tests', () => {
   let app: Application
 
   beforeEach(() => {
-    // Clear all mocks and rate limit store before each test
+    // Clear all mocks and rate limit storage
     vi.clearAllMocks()
     rateLimitStore.clear()
-    
-    // Reset mock implementations
+
+    // Setup default mock implementations
     mockAuthService.verifyToken.mockReturnValue({
       id: 'user123',
       username: 'testuser',
       email: 'test@example.com'
     })
-    
+
     mockMediaService.validateFile.mockReturnValue({
       valid: true,
       message: 'File is valid'
     })
-    
-    mockMediaService.uploadFile.mockResolvedValue({
-      id: 'file123',
-      filename: 'uploaded-file.jpg',
-      url: 'https://example.com/files/file123.jpg',
-      size: 102400,
-      mimeType: 'image/jpeg'
-    })
-    
-    mockMediaService.getFileInfo.mockResolvedValue({
-      id: 'file123',
-      filename: 'test-file.jpg',
-      size: 102400,
+
+    mockMediaService.uploadFile.mockReturnValue({
+      id: 'upload_' + Date.now(),
+      filename: 'test.jpg',
+      url: 'http://localhost:3000/uploads/test.jpg',
       uploadedAt: new Date()
     })
-    
+
+    mockMediaService.getFileInfo.mockReturnValue({
+      id: 'file123',
+      filename: 'test.jpg',
+      size: 1024,
+      uploadedAt: new Date()
+    })
+
     mockMediaService.deleteFile.mockResolvedValue({
       id: 'file123',
       deletedAt: new Date()
     })
-    
+
     // Create fresh app for each test
     app = createTestApp()
   })
@@ -342,18 +270,20 @@ describe('Media Upload Rate Limiting', () => {
       // Arrange - Set up authenticated user
       const uploadData = Buffer.from('mock-image-data')
 
-      // Act - Make uploads within the rate limit
-      const uploadPromises = Array.from({ length: 10 }, (_, index) =>
-        request(app)
+      // Act - Make uploads SEQUENTIALLY to ensure predictable rate limit counting
+      // FIXED: Changed from Promise.all() to sequential requests to avoid race conditions
+      const responses: SuperTestResponse[] = []
+      for (let i = 0; i < 10; i++) {
+        const response = await request(app)
           .post('/media/upload')
           .set('Authorization', 'Bearer valid_token')
           .set('Content-Type', 'multipart/form-data')
-          .attach('file', uploadData, `test-${index}.jpg`)
-      )
+          .attach('file', uploadData, `test-${i}.jpg`)
+        
+        responses.push(response)
+      }
 
-      const responses = await Promise.all(uploadPromises)
-
-      // Assert - All uploads should succeed
+      // Assert - All uploads should succeed with predictable rate limit counts
       responses.forEach((response, index) => {
         expect(response.status).toBe(200)
         expect(response.body.success).toBe(true)
@@ -460,16 +390,18 @@ describe('Media Upload Rate Limiting', () => {
         { data: Buffer.from('audio-data'), name: 'audio.mp3', type: 'audio/mpeg' }
       ]
 
-      // Act - Upload different file types
-      const responses = await Promise.all(
-        fileTypes.map(file =>
-          request(app)
-            .post('/media/upload')
-            .set('Authorization', 'Bearer valid_token')
-            .set('Content-Type', 'multipart/form-data')
-            .attach('file', file.data, file.name)
-        )
-      )
+      // Act - Upload different file types sequentially
+      const responses: SuperTestResponse[] = []
+      for (let i = 0; i < fileTypes.length; i++) {
+        const file = fileTypes[i]
+        const response = await request(app)
+          .post('/media/upload')
+          .set('Authorization', 'Bearer valid_token')
+          .set('Content-Type', 'multipart/form-data')
+          .attach('file', file.data, file.name)
+        
+        responses.push(response)
+      }
 
       // Assert - All should succeed
       responses.forEach((response, index) => {
@@ -556,7 +488,7 @@ describe('Media Upload Rate Limiting', () => {
   describe('Non-Rate-Limited Media Operations', () => {
     it('should not apply rate limiting to GET /media/info/:fileId', async () => {
       // Act - Make multiple info requests
-      const responses = await Promise.all(
+      const responses: SuperTestResponse[] = await Promise.all(
         Array.from({ length: 15 }, () =>
           request(app)
             .get('/media/info/file123')
@@ -572,7 +504,7 @@ describe('Media Upload Rate Limiting', () => {
 
     it('should not apply rate limiting to DELETE /media/:fileId', async () => {
       // Act - Make multiple delete requests
-      const responses = await Promise.all(
+      const responses: SuperTestResponse[] = await Promise.all(
         Array.from({ length: 15 }, (_, index) =>
           request(app)
             .delete(`/media/file${index}`)
@@ -624,7 +556,7 @@ describe('Media Upload Rate Limiting', () => {
     it('should handle rapid concurrent upload attempts', async () => {
       // Act - Make rapid concurrent uploads
       const uploadData = Buffer.from('concurrent-data')
-      const promises = Array.from({ length: 12 }, (_, index) =>
+      const promises: Promise<SuperTestResponse>[] = Array.from({ length: 12 }, (_, index) =>
         request(app)
           .post('/media/upload')
           .set('Authorization', 'Bearer valid_token')
@@ -632,7 +564,7 @@ describe('Media Upload Rate Limiting', () => {
           .attach('file', uploadData, `concurrent-${index}.jpg`)
       )
 
-      const responses = await Promise.all(promises)
+      const responses: SuperTestResponse[] = await Promise.all(promises)
 
       // Assert - First 10 should succeed, last 2 should be rate limited
       const successfulUploads = responses.filter(r => r.status === 200)

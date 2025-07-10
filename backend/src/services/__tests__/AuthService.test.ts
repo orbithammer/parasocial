@@ -1,5 +1,5 @@
 // backend/src/services/__tests__/AuthService.test.ts
-// Version: 1.4.0 - Fixed import path to remove .js extension
+// Version: 1.5.0 - Fixed bcrypt default export mocking for Vitest compatibility
 
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
 import { AuthService } from '../AuthService'
@@ -9,18 +9,17 @@ const mockHash = vi.fn()
 const mockCompare = vi.fn()
 const mockGenSalt = vi.fn()
 
-// Mock bcrypt module with both default and named exports
+// FIXED: Mock bcrypt with proper default export structure
 vi.mock('bcrypt', () => {
+  // Create the mock object that contains all bcrypt functions
   const bcryptMock = {
     hash: mockHash,
     compare: mockCompare,
     genSalt: mockGenSalt
   }
   
+  // Return ONLY the default export (bcrypt uses: import bcrypt from 'bcrypt')
   return {
-    // Named exports
-    ...bcryptMock,
-    // Default export (same object)
     default: bcryptMock
   }
 })
