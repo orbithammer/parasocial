@@ -492,6 +492,17 @@ export class FollowController {
         return
       }
 
+      // Check if user is trying to view someone else's recent followers
+      const { username } = req.params
+      if (username && username !== req.user.username) {
+        res.status(403).json({
+          success: false,
+          error: 'Can only view your own recent followers',
+          code: 'FORBIDDEN'
+        })
+        return
+      }
+
       const { limit } = req.query
 
       // Parse limit parameter
