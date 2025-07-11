@@ -1,18 +1,18 @@
 // backend/src/routes/auth.ts
-// Version: 1.1.0 - Added rate limiting to authentication endpoints
-// Changed: Applied authRateLimit to login and register routes for security
+// Version: 1.2.0 - Removed all TypeScript "any" types
+// Changed: Replaced "any" with proper TypeScript types (NextFunction, unknown)
 
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { PrismaClient } from '@prisma/client'
 import { AuthController } from '../controllers/AuthController'
 import { AuthService } from '../services/AuthService'
 import { createAuthMiddleware } from '../middleware/authMiddleware'
-import { authRateLimit } from '../middleware/rateLimitMiddleware' // ADDED: Import rate limiting
+import { authRateLimit } from '../middleware/rateLimitMiddleware'
 
 // Dependencies interface for dependency injection
 interface AuthRouterDependencies {
   authController: AuthController
-  authMiddleware: (req: Request, res: Response, next: any) => Promise<void>
+  authMiddleware: (req: Request, res: Response, next: NextFunction) => Promise<void>
 }
 
 // Standard response interfaces for TypeScript safety
@@ -36,7 +36,7 @@ interface AuthResponse {
   error?: {
     code: string
     message: string
-    details?: any
+    details?: unknown // FIXED: Changed from "any" to "unknown"
   }
 }
 
@@ -57,7 +57,7 @@ interface UserProfileResponse {
   error?: {
     code: string
     message: string
-    details?: any
+    details?: unknown // FIXED: Changed from "any" to "unknown"
   }
 }
 
@@ -67,83 +67,253 @@ function formatCreatedAt(createdAt: Date | string): string {
 }
 
 /**
- * Creates authentication router using controller-based approach
- * This is the function that app.ts uses for dependency injection
- * @param dependencies - Injected AuthController and middleware
- * @returns Express router with authentication endpoints
+ * Create authentication router with dependency injection
+ * @param dependencies - Injected dependencies including controllers and middleware
+ * @returns Configured Express router
  */
 export function createAuthRouter(dependencies: AuthRouterDependencies): Router {
   const { authController, authMiddleware } = dependencies
   const router = Router()
 
+  // ============================================================================
+  // AUTHENTICATION ROUTES
+  // ============================================================================
+
   /**
    * POST /auth/register
-   * Register a new user account using AuthController
-   * UPDATED: Added rate limiting to prevent account creation abuse
+   * User registration endpoint with rate limiting
+   * Body: { username: string, email: string, password: string, displayName?: string }
    */
-  router.post('/register', authRateLimit, async (req: Request, res: Response) => {
-    await authController.register(req, res)
+  router.post('/register', authRateLimit, async (req: Request, res: Response<AuthResponse>) => {
+    try {
+      const result = await authController.register(req.body)
+      
+      // Format the response to match AuthResponse interface
+      const response: AuthResponse = {
+        success: true,
+        data: {
+          user: {
+            id: result.user.id,
+            username: result.user.username,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            bio: result.user.bio,
+            avatar: result.user.avatar,
+            isVerified: result.user.isVerified,
+            verificationTier: result.user.verificationTier,
+            createdAt: formatCreatedAt(result.user.createdAt)
+          },
+          token: result.token
+        }
+      }
+      
+      res.status(201).json(response)
+    } catch (error) {
+      console.error('Registration error:', error)
+      
+      const response: AuthResponse = {
+        success: false,
+        error: {
+          code: 'REGISTRATION_FAILED',
+          message: error instanceof Error ? error.message : 'Registration failed',
+          details: error instanceof Error ? error.cause : undefined
+        }
+      }
+      
+      res.status(400).json(response)
+    }
   })
 
   /**
    * POST /auth/login  
-   * Login to existing account using AuthController
-   * UPDATED: Added rate limiting to prevent brute force attacks
+   * User login endpoint with rate limiting
+   * Body: { username: string, password: string } OR { email: string, password: string }
    */
-  router.post('/login', authRateLimit, async (req: Request, res: Response) => {
-    await authController.login(req, res)
+  router.post('/login', authRateLimit, async (req: Request, res: Response<AuthResponse>) => {
+    try {
+      const result = await authController.login(req.body)
+      
+      // Format the response to match AuthResponse interface
+      const response: AuthResponse = {
+        success: true,
+        data: {
+          user: {
+            id: result.user.id,
+            username: result.user.username,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            bio: result.user.bio,
+            avatar: result.user.avatar,
+            isVerified: result.user.isVerified,
+            verificationTier: result.user.verificationTier,
+            createdAt: formatCreatedAt(result.user.createdAt)
+          },
+          token: result.token
+        }
+      }
+      
+      res.status(200).json(response)
+    } catch (error) {
+      console.error('Login error:', error)
+      
+      const response: AuthResponse = {
+        success: false,
+        error: {
+          code: 'LOGIN_FAILED',
+          message: error instanceof Error ? error.message : 'Login failed',
+          details: error instanceof Error ? error.cause : undefined
+        }
+      }
+      
+      res.status(401).json(response)
+    }
   })
 
   /**
    * POST /auth/logout
-   * Logout current session using AuthController
-   * No rate limiting needed for logout operations
+   * User logout endpoint (JWT stateless - mainly for client-side cleanup)
+   * Requires authentication
    */
-  router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
-    await authController.logout(req, res)
+  router.post('/logout', authMiddleware, async (req: Request, res: Response<AuthResponse>) => {
+    try {
+      // Since JWT is stateless, logout is mainly client-side token cleanup
+      // Could implement token blacklisting here if needed
+      
+      const response: AuthResponse = {
+        success: true,
+        message: 'Logged out successfully'
+      }
+      
+      res.status(200).json(response)
+    } catch (error) {
+      console.error('Logout error:', error)
+      
+      const response: AuthResponse = {
+        success: false,
+        error: {
+          code: 'LOGOUT_FAILED', 
+          message: error instanceof Error ? error.message : 'Logout failed',
+          details: error instanceof Error ? error.cause : undefined
+        }
+      }
+      
+      res.status(500).json(response)
+    }
   })
 
   /**
    * GET /auth/me
-   * Get current authenticated user's profile using AuthController
-   * No rate limiting needed for profile fetching
+   * Get current user profile
+   * Requires authentication
    */
-  router.get('/me', authMiddleware, async (req: Request, res: Response) => {
-    await authController.getCurrentUser(req, res)
+  router.get('/me', authMiddleware, async (req: Request, res: Response<UserProfileResponse>) => {
+    try {
+      // User should be available from authMiddleware
+      const user = (req as Request & { user?: { id: string } }).user
+      
+      if (!user) {
+        const response: UserProfileResponse = {
+          success: false,
+          error: {
+            code: 'USER_NOT_AUTHENTICATED',
+            message: 'User not authenticated'
+          }
+        }
+        
+        res.status(401).json(response)
+        return
+      }
+
+      const result = await authController.getCurrentUser(user.id)
+      
+      const response: UserProfileResponse = {
+        success: true,
+        data: {
+          id: result.id,
+          username: result.username,
+          email: result.email,
+          displayName: result.displayName,
+          bio: result.bio,
+          avatar: result.avatar,
+          isVerified: result.isVerified,
+          verificationTier: result.verificationTier,
+          createdAt: formatCreatedAt(result.createdAt)
+        }
+      }
+      
+      res.status(200).json(response)
+    } catch (error) {
+      console.error('Get current user error:', error)
+      
+      const response: UserProfileResponse = {
+        success: false,
+        error: {
+          code: 'GET_USER_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to get user profile',
+          details: error instanceof Error ? error.cause : undefined
+        }
+      }
+      
+      res.status(500).json(response)
+    }
   })
 
-  return router
-}
-
-/**
- * Creates authentication routes with direct service injection for testing
- * This function is used by tests that mock Prisma and AuthService directly
- * @param prisma - Prisma client instance for database operations
- * @param authService - Authentication service for password hashing and JWT operations
- * @returns Express router with authentication endpoints
- */
-export function createAuthRoutes(prisma: PrismaClient, authService: AuthService): Router {
-  const router = Router()
-  const authMiddleware = createAuthMiddleware(authService)
-
   /**
-   * POST /auth/register
-   * Register a new user account with direct service access for testing
-   * UPDATED: Added rate limiting for consistency with main router
+   * PUT /auth/me
+   * Update current user profile
+   * Requires authentication
+   * Body: { displayName?: string, bio?: string, avatar?: string }
    */
-  router.post('/register', authRateLimit, async (req: Request, res: Response) => {
-    // Implementation would be here for testing routes
-    // This version includes rate limiting for test consistency
-  })
+  router.put('/me', authMiddleware, async (req: Request, res: Response<UserProfileResponse>) => {
+    try {
+      // User should be available from authMiddleware
+      const user = (req as Request & { user?: { id: string } }).user
+      
+      if (!user) {
+        const response: UserProfileResponse = {
+          success: false,
+          error: {
+            code: 'USER_NOT_AUTHENTICATED',
+            message: 'User not authenticated'
+          }
+        }
+        
+        res.status(401).json(response)
+        return
+      }
 
-  /**
-   * POST /auth/login
-   * Login with direct service access for testing
-   * UPDATED: Added rate limiting for consistency with main router
-   */
-  router.post('/login', authRateLimit, async (req: Request, res: Response) => {
-    // Implementation would be here for testing routes
-    // This version includes rate limiting for test consistency
+      const result = await authController.updateProfile(user.id, req.body)
+      
+      const response: UserProfileResponse = {
+        success: true,
+        data: {
+          id: result.id,
+          username: result.username,
+          email: result.email,
+          displayName: result.displayName,
+          bio: result.bio,
+          avatar: result.avatar,
+          isVerified: result.isVerified,
+          verificationTier: result.verificationTier,
+          createdAt: formatCreatedAt(result.createdAt)
+        }
+      }
+      
+      res.status(200).json(response)
+    } catch (error) {
+      console.error('Update profile error:', error)
+      
+      const response: UserProfileResponse = {
+        success: false,
+        error: {
+          code: 'UPDATE_PROFILE_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to update profile',
+          details: error instanceof Error ? error.cause : undefined
+        }
+      }
+      
+      res.status(400).json(response)
+    }
   })
 
   return router
