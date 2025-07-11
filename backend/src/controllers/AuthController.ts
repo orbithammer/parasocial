@@ -1,8 +1,9 @@
-// backend/src/controllers/AuthController.ts
-// Authentication controller with register, login, and logout endpoints using TypeScript
-// Fixed to match expected test response formats
+// src/controllers/AuthController.ts
+// Version: 1.4.0
+// Removed unused User import
 
 import { Request, Response } from 'express'
+import { AuthService } from '../services/AuthService'
 import { UserRepository } from '../repositories/UserRepository'
 
 // Extend Express Request to include user from auth middleware
@@ -14,20 +15,9 @@ interface AuthenticatedRequest extends Request {
   }
 }
 
-// Auth service interface
-interface AuthService {
-  validateRegistrationData(data: any): { success: boolean; data?: any; error?: any }
-  validateLoginData(data: any): { success: boolean; data?: any; error?: any }
-  hashPassword(password: string): Promise<string>
-  verifyPassword(hashedPassword: string, password: string): Promise<boolean>
-  generateToken(user: any): string
-  extractTokenFromHeader(header: string | undefined): string
-  verifyToken(token: string): any
-}
-
 /**
  * Authentication controller class
- * Handles HTTP requests for user authentication operations
+ * Handles user registration, login, logout, and profile operations
  */
 export class AuthController {
   constructor(
@@ -41,58 +31,86 @@ export class AuthController {
    */
   async register(req: Request, res: Response): Promise<void> {
     try {
-      // Validate input data
-      const validation = this.authService.validateRegistrationData(req.body)
+      const { username, email, password, displayName } = req.body
+
+      // Validate registration data
+      const validation = this.authService.validateRegistrationData({
+        username,
+        email,
+        password,
+        displayName
+      })
+
       if (!validation.success) {
+        // Safely extract validation details without assuming property names
+        let validationDetails = null
+        if (validation.error) {
+          if ('issues' in validation.error) {
+            validationDetails = validation.error.issues
+          } else if ('errors' in validation.error) {
+            validationDetails = validation.error.errors
+          } else {
+            validationDetails = validation.error
+          }
+        }
+
         res.status(400).json({
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid registration data',
-            details: validation.error?.errors || validation.error
+            details: validationDetails
           }
         })
         return
       }
 
-      const { email, username, password, displayName } = validation.data
-
       // Check if user already exists
-      const existingUser = await this.userRepository.findByEmailOrUsername(email, username)
-      if (existingUser) {
-        // Determine which field conflicts
-        const isEmailConflict = existingUser.email === email
+      const existingUserByEmail = await this.userRepository.findByEmail(email)
+      if (existingUserByEmail) {
         res.status(409).json({
           success: false,
           error: {
-            code: isEmailConflict ? 'EMAIL_EXISTS' : 'USERNAME_EXISTS',
-            message: isEmailConflict ? 'Email is already registered' : 'Username is already taken',
-            details: {
-              field: isEmailConflict ? 'email' : 'username',
-              value: isEmailConflict ? email : username
-            }
+            code: 'EMAIL_EXISTS',
+            message: 'An account with this email already exists'
+          }
+        })
+        return
+      }
+
+      const existingUserByUsername = await this.userRepository.findByUsername(username)
+      if (existingUserByUsername) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'USERNAME_EXISTS',
+            message: 'This username is already taken'
           }
         })
         return
       }
 
       // Hash password and create user
-      const hashedPassword = await this.authService.hashPassword(password)
+      const passwordHash = await this.authService.hashPassword(password)
       const userData = {
-        email,
         username,
-        passwordHash: hashedPassword,
-        displayName: displayName || username
+        email,
+        passwordHash,
+        displayName: displayName || username,
+        bio: null,
+        avatar: null,
+        website: null,
+        isVerified: false,
+        verificationTier: 'none' as const
       }
 
-      const newUser = await this.userRepository.create(userData)
-      const token = this.authService.generateToken(newUser)
+      const user = await this.userRepository.create(userData)
+      const token = this.authService.generateToken(user)
 
-      // Return user data and token (excluding password)
       res.status(201).json({
         success: true,
         data: {
-          user: newUser.getPrivateProfile(),
+          user: user.getPublicProfile(),
           token
         }
       })
@@ -108,26 +126,38 @@ export class AuthController {
   }
 
   /**
-   * Login to existing user account
+   * Login user with email and password
    * POST /auth/login
    */
   async login(req: Request, res: Response): Promise<void> {
     try {
-      // Validate input data
-      const validation = this.authService.validateLoginData(req.body)
+      const { email, password } = req.body
+
+      // Validate login data
+      const validation = this.authService.validateLoginData({ email, password })
       if (!validation.success) {
+        // Safely extract validation details without assuming property names
+        let validationDetails = null
+        if (validation.error) {
+          if ('issues' in validation.error) {
+            validationDetails = validation.error.issues
+          } else if ('errors' in validation.error) {
+            validationDetails = validation.error.errors
+          } else {
+            validationDetails = validation.error
+          }
+        }
+
         res.status(400).json({
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid login data',
-            details: validation.error?.errors || validation.error
+            details: validationDetails
           }
         })
         return
       }
-
-      const { email, password } = validation.data
 
       // Find user by email
       const user = await this.userRepository.findByEmail(email)
@@ -190,8 +220,9 @@ export class AuthController {
   /**
    * Logout current user session
    * POST /auth/logout
+   * Note: For JWT-based auth, logout is typically handled client-side
    */
-  async logout(req: AuthenticatedRequest, res: Response): Promise<void> {
+  async logout(_req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // For JWT-based auth, logout is typically handled client-side
       // Server can maintain a blacklist of tokens if needed

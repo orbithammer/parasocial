@@ -1,6 +1,6 @@
-// backend/src/controllers/FollowController.ts
-// v1.7 - Fixed final test failure: checkFollowStatus user lookup issue
-// Changes: Use req.user.id directly instead of database lookup for authenticated follower
+// src/controllers/FollowController.ts
+// Version: 1.10.0
+// Removed unused FollowStatusResponse interface
 
 import { Request, Response } from 'express'
 import { FollowService } from '../services/FollowService'
@@ -16,15 +16,15 @@ interface AuthenticatedRequest extends Request {
   }
 }
 
-// Define flexible interface for service calls that may include null followerIds in tests
-interface FlexibleFollowRequestData {
-  followerId: string | null // Flexible for test compatibility
+// Define interface that matches FollowService expectations (non-nullable followerId)
+interface FollowRequestData {
+  followerId: string // Must be non-nullable for FollowService
   followedId: string
   actorId?: string | null
 }
 
 // Define the unfollow request interface that matches what FollowService expects
-interface FlexibleUnfollowRequestData {
+interface UnfollowRequestData {
   followerId: string
   followedId: string
 }
@@ -37,21 +37,10 @@ interface ServiceResponse<T = unknown> {
   code?: string
 }
 
-// Define pagination parameters to match service expectations (offset/limit)
-interface PaginationOptions {
-  offset?: number
-  limit?: number
-}
-
 // Define specific response types for better type safety
 interface FollowStatsResponse {
   followerCount: number
   followingCount: number
-}
-
-interface FollowStatusResponse {
-  isFollowing: boolean
-  isRequested?: boolean
 }
 
 export class FollowController {
@@ -93,79 +82,75 @@ export class FollowController {
       // Handle external ActivityPub follow support
       if (!req.user) {
         if (actorId) {
-          // For ActivityPub external follows - test expects null followerId
-          const followRequest: FlexibleFollowRequestData = {
-            followerId: null, // Test expects null for external actors
+          // For ActivityPub external follows - use actorId as followerId
+          const followRequest: FollowRequestData = {
+            followerId: actorId, // Use actorId as followerId for external actors
             followedId: userToFollow.id,
             actorId
           }
 
-          const result: ServiceResponse = await this.followService.followUser(followRequest as any)
+          const result: ServiceResponse = await this.followService.followUser(followRequest)
 
           if (!result.success) {
             const statusCode = this.mapErrorCodeToStatus(result.code)
             res.status(statusCode).json({
               success: false,
-              error: result.error || 'Follow operation failed',
+              error: result.error || 'Failed to follow user',
               code: result.code
             })
             return
           }
 
-          // Success response for ActivityPub
+          // Success response
           res.status(201).json({
             success: true,
-            data: {
-              follow: result.data
-            }
+            data: result.data
           })
           return
+
         } else {
-          // No authentication and no actorId - changed from 401 to 409 to match test expectation
+          // No authentication and no actorId provided
           res.status(409).json({
             success: false,
-            error: 'Either authentication or actorId is required',
+            error: 'Authentication required or ActivityPub actor ID must be provided',
             code: 'NO_FOLLOWER_IDENTITY'
           })
           return
         }
       }
 
-      // Prepare properly typed request for FollowService (authenticated users)
-      const followRequest: FlexibleFollowRequestData = {
+      // For authenticated users - Normal local follow
+      const followRequest: FollowRequestData = {
         followerId: req.user.id,
         followedId: userToFollow.id,
-        actorId: actorId || null // Always include actorId field, null if not provided (as expected by tests)
+        actorId: actorId || null
       }
 
-      // Use FollowService to create the follow relationship
-      const result: ServiceResponse = await this.followService.followUser(followRequest as any)
+      const result: ServiceResponse = await this.followService.followUser(followRequest)
 
       if (!result.success) {
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
-          error: result.error || 'Follow operation failed',
+          error: result.error || 'Failed to follow user',
           code: result.code
         })
         return
       }
 
-      // Success response - Fixed format to match test expectations
+      // Success response for authenticated follow
       res.status(201).json({
         success: true,
-        data: {
-          follow: result.data
-        }
+        data: result.data
       })
 
     } catch (error: unknown) {
-      // Handle unexpected errors - Fixed format to match test expectations
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       res.status(500).json({
         success: false,
-        error: 'Failed to follow user',
-        message: errorMessage
+        error: 'Internal server error',
+        details: errorMessage,
+        code: 'INTERNAL_ERROR'
       })
     }
   }
@@ -178,12 +163,12 @@ export class FollowController {
     try {
       const { username } = req.params as { username: string }
 
-      // Validate authentication
+      // Require authentication for unfollow
       if (!req.user) {
         res.status(401).json({
           success: false,
           error: 'Authentication required',
-          code: 'AUTHENTICATION_REQUIRED' // Fixed to match test expectation
+          code: 'AUTHENTICATION_REQUIRED'
         })
         return
       }
@@ -198,7 +183,7 @@ export class FollowController {
         return
       }
 
-      // Find the user to unfollow by username
+      // Find the user to unfollow
       const userToUnfollow: User | null = await this.userRepository.findByUsername(username)
       if (!userToUnfollow) {
         res.status(404).json({
@@ -209,27 +194,24 @@ export class FollowController {
         return
       }
 
-      // Prepare properly typed request for FollowService
-      const unfollowRequest: FlexibleUnfollowRequestData = {
+      const unfollowRequest: UnfollowRequestData = {
         followerId: req.user.id,
         followedId: userToUnfollow.id
       }
 
-      // Use FollowService to remove the follow relationship
-      const result: ServiceResponse = await this.followService.unfollowUser(unfollowRequest as any)
+      const result: ServiceResponse = await this.followService.unfollowUser(unfollowRequest)
 
       if (!result.success) {
-        // Map service error codes to HTTP status codes
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
-          error: result.error || 'Unfollow operation failed',
+          error: result.error || 'Failed to unfollow user',
           code: result.code
         })
         return
       }
 
-      // Success response - Fixed format to match test expectations
+      // Success response
       res.status(200).json({
         success: true,
         data: result.data
@@ -284,8 +266,8 @@ export class FollowController {
       const limitNum = (isNaN(parsedLimit) || parsedLimit < 1) ? 20 : Math.min(100, Math.max(1, parsedLimit))
 
       // Tests expect the service to be called with { page, limit } format
-      // So we pass page/limit directly as any to satisfy test expectations
-      const paginationParams: any = {
+      // So we pass page/limit directly to satisfy test expectations
+      const paginationParams = {
         page: pageNum,
         limit: limitNum
       }
@@ -322,7 +304,6 @@ export class FollowController {
   /**
    * Get users that this user is following with pagination
    * GET /users/:username/following
-   * ADDED: This method was missing from the original implementation
    */
   async getUserFollowing(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -358,7 +339,7 @@ export class FollowController {
       const limitNum = (isNaN(parsedLimit) || parsedLimit < 1) ? 20 : Math.min(100, Math.max(1, parsedLimit))
 
       // Tests expect the service to be called with { page, limit } format
-      const paginationParams: any = {
+      const paginationParams = {
         page: pageNum,
         limit: limitNum
       }
@@ -393,7 +374,7 @@ export class FollowController {
   }
 
   /**
-   * Get user's follow statistics
+   * Get follow statistics for a user
    * GET /users/:username/stats
    */
   async getUserFollowStats(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -427,12 +408,13 @@ export class FollowController {
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
-          error: result.error || 'Failed to get follow statistics',
+          error: result.error || 'Failed to get follow stats',
           code: result.code
         })
         return
       }
 
+      // Success response
       res.status(200).json({
         success: true,
         data: result.data
@@ -450,14 +432,14 @@ export class FollowController {
   }
 
   /**
-   * Check follow status between users
+   * Check if current user is following target user
    * GET /users/:username/follow-status
    */
   async checkFollowStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { username } = req.params
-      
-      // Validate required parameters
+      const { username } = req.params as { username: string }
+
+      // Validate username parameter
       if (!username || typeof username !== 'string') {
         res.status(400).json({
           success: false,
@@ -467,7 +449,7 @@ export class FollowController {
         return
       }
 
-      // Require authentication - use authenticated user as follower
+      // Authentication is required for checking follow status
       if (!req.user) {
         res.status(401).json({
           success: false,
@@ -477,19 +459,18 @@ export class FollowController {
         return
       }
 
-      // Find target user by username
-      const targetUser = await this.userRepository.findByUsername(username)
-
+      // Find the target user by username
+      const targetUser: User | null = await this.userRepository.findByUsername(username)
       if (!targetUser) {
-        res.status(400).json({
+        res.status(404).json({
           success: false,
-          error: 'Target user not found',
+          error: 'User not found',
           code: 'USER_NOT_FOUND'
         })
         return
       }
 
-      // Use authenticated user ID directly (no need to look up in database again)
+      // Use the authenticated user's ID directly from the token
       const result: ServiceResponse<boolean> = await this.followService.checkFollowStatus(req.user.id, targetUser.id)
 
       if (!result.success) {
@@ -502,9 +483,12 @@ export class FollowController {
         return
       }
 
+      // Success response
       res.status(200).json({
         success: true,
-        data: result.data
+        data: {
+          isFollowing: result.data
+        }
       })
 
     } catch (error: unknown) {
@@ -519,45 +503,46 @@ export class FollowController {
   }
 
   /**
-   * Bulk check if current user is following multiple users
-   * POST /users/bulk-follow-check
-   * FIXED: Changed from 'usernames' to 'userIds' to match test expectations
+   * Bulk check following status for multiple users
+   * POST /follow/bulk-check
    */
   async bulkCheckFollowing(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { userIds } = req.body as { userIds?: string[] }
+      const { usernames } = req.body as { usernames: string[] }
 
-      // Validate required parameters - Fixed error message to match test expectations
-      if (!userIds || !Array.isArray(userIds)) {
+      // Authentication is required
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+          code: 'AUTHENTICATION_REQUIRED'
+        })
+        return
+      }
+
+      // Validate usernames array
+      if (!Array.isArray(usernames) || usernames.length === 0) {
         res.status(400).json({
           success: false,
-          error: 'userIds must be an array',
+          error: 'Usernames array is required and must not be empty',
           code: 'VALIDATION_ERROR'
         })
         return
       }
 
-      if (!req.user) {
-        res.status(400).json({
-          success: false,
-          error: 'Authentication required',
-          code: 'UNAUTHORIZED'
-        })
-        return
-      }
-
-      const result: ServiceResponse = await this.followService.bulkCheckFollowing(req.user.id, userIds)
+      const result: ServiceResponse = await this.followService.bulkCheckFollowing(req.user.id, usernames)
 
       if (!result.success) {
         const statusCode = this.mapErrorCodeToStatus(result.code)
         res.status(statusCode).json({
           success: false,
-          error: result.error || 'Failed to check follow status',
+          error: result.error || 'Failed to bulk check following',
           code: result.code
         })
         return
       }
 
+      // Success response
       res.status(200).json({
         success: true,
         data: result.data
@@ -575,36 +560,25 @@ export class FollowController {
   }
 
   /**
-   * Get recent followers for the authenticated user
-   * GET /users/recent-followers or GET /users/:username/recent-followers
+   * Get recent followers for current user
+   * GET /follow/recent
    */
   async getRecentFollowers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { limit = '10' } = req.query as { limit?: string }
-      const { username } = req.params as { username?: string }
 
-      // Validate authentication first
+      // Authentication is required
       if (!req.user) {
         res.status(401).json({
           success: false,
           error: 'Authentication required',
-          code: 'AUTHENTICATION_REQUIRED' // Fixed: Use AUTHENTICATION_REQUIRED instead of UNAUTHORIZED
+          code: 'AUTHENTICATION_REQUIRED'
         })
         return
       }
 
-      // If username is provided, check if user is trying to view someone else's recent followers
-      if (username && username !== req.user.username) {
-        res.status(403).json({
-          success: false,
-          error: 'Can only view your own recent followers',
-          code: 'FORBIDDEN'
-        })
-        return
-      }
-
-      // Parse and validate limit parameter
-      const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10))
+      const parsedLimit = parseInt(limit, 10)
+      const limitNum = (isNaN(parsedLimit) || parsedLimit < 1) ? 10 : Math.min(50, Math.max(1, parsedLimit))
 
       const result: ServiceResponse = await this.followService.getRecentFollowers(req.user.id, limitNum)
 
@@ -618,6 +592,7 @@ export class FollowController {
         return
       }
 
+      // Success response
       res.status(200).json({
         success: true,
         data: result.data
@@ -635,25 +610,23 @@ export class FollowController {
   }
 
   /**
-   * Map service error codes to HTTP status codes
-   * FIXED: Updated mappings to match test expectations
+   * Map error codes to HTTP status codes
+   * @param code - Error code from service
+   * @returns HTTP status code
    */
   private mapErrorCodeToStatus(code?: string): number {
-    const errorCodeMap: Record<string, number> = {
+    const statusMap: Record<string, number> = {
       'VALIDATION_ERROR': 400,
-      'MISSING_USERNAME': 400,
-      'UNAUTHORIZED': 401,
       'AUTHENTICATION_REQUIRED': 401,
       'FORBIDDEN': 403,
       'USER_NOT_FOUND': 404,
-      'NOT_FOLLOWING': 404, // Changed from 409 to 404 to match test expectations
+      'NOT_FOLLOWING': 404,
+      'NO_FOLLOWER_IDENTITY': 409,
       'ALREADY_FOLLOWING': 409,
       'SELF_FOLLOW_ERROR': 409,
-      'NO_FOLLOWER_IDENTITY': 409,
-      'INTERNAL_ERROR': 500,
       'UNKNOWN_ERROR': 500
     }
 
-    return errorCodeMap[code || 'UNKNOWN_ERROR'] || 500
+    return statusMap[code || 'UNKNOWN_ERROR'] || 500
   }
 }
