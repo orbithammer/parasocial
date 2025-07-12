@@ -2,8 +2,8 @@
 // Unit tests for Post model state transitions and workflows
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { Post } from '../../src/models/Post'
-import type { PostData } from '../../src/models/Post'
+import { Post } from '../Post'
+import type { PostData } from '../Post'
 
 describe('Post State Transitions', () => {
   // Helper function to create mock post data

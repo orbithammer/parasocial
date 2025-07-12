@@ -2,8 +2,8 @@
 // Unit tests for Post model creation and validation schemas
 
 import { describe, it, expect } from 'vitest'
-import { PostSchemas, Post } from '../../src/models/Post'
-import type { PostData } from '../../src/models/Post'
+import { PostSchemas, Post } from '../Post'
+import type { PostData } from '../Post'
 
 describe('Post Creation Validation', () => {
   describe('Content Validation', () => {
