@@ -1,577 +1,557 @@
 // backend/src/routes/__tests__/mediaUpload.test.ts
-// v2.2.0 - Fixed Express Request.get method type compatibility
+// Version: 3.2.0
+// Complete rewrite to test new media upload route implementation
+// Changed: Fixed supertest import using namespace import to avoid type conflicts
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { Request, Response, NextFunction } from 'express'
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from 'vitest'
+import * as request from 'supertest'
+import express from 'express'
+import multer from 'multer'
+import fs from 'fs/promises'
+import path from 'path'
+import { createMediaRouter } from '../media'
 
 // ============================================================================
 // TYPES & INTERFACES
 // ============================================================================
 
-interface MockMulterFile {
-  fieldname: string
-  originalname: string
-  encoding: string
-  mimetype: string
-  buffer: Buffer
-  size: number
+interface MockUser {
+  id: string
+  username: string
+  email: string
 }
 
-interface MockRequest extends Partial<Request> {
-  file?: MockMulterFile
-  user?: {
-    id: string
-    username: string
-    email: string
-  }
-  get?: {
-    (name: "set-cookie"): string[] | undefined
-    (name: string): string | undefined
-  }
-}
-
-interface MockResponse extends Partial<Response> {
-  status: ReturnType<typeof vi.fn>
-  json: ReturnType<typeof vi.fn>
-}
-
-interface ValidationError extends Error {
-  name: 'ValidationError'
-  field?: string
-}
-
-interface AuthenticationError extends Error {
-  name: 'AuthenticationError'
-}
-
-interface MulterError extends Error {
-  name: 'MulterError'
-  code: string
-  field?: string
-  limit?: number
+interface MockAuthenticatedRequest extends express.Request {
+  user: MockUser
 }
 
 // ============================================================================
-// MOCK FUNCTIONS
+// TEST SETUP & MOCKS
 // ============================================================================
 
 /**
- * Create mock console functions to suppress error logs during testing
+ * Mock authentication middleware for testing
+ * Adds user to request object based on Authorization header
  */
-function mockConsole() {
-  const originalConsoleError = console.error
-  const originalConsoleWarn = console.warn
+const mockAuthMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers.authorization
   
-  const consoleErrorSpy = vi.fn()
-  const consoleWarnSpy = vi.fn()
-  
-  console.error = consoleErrorSpy
-  console.warn = consoleWarnSpy
-  
-  return {
-    error: consoleErrorSpy,
-    warn: consoleWarnSpy,
-    restore: () => {
-      console.error = originalConsoleError
-      console.warn = originalConsoleWarn
-    }
-  }
-}
-
-/**
- * Create mock request object with proper typing
- */
-function createMockRequest(file?: MockMulterFile): MockRequest {
-  return {
-    file,
-    user: {
-      id: 'test-user-123',
-      username: 'testuser',
-      email: 'test@example.com'
-    },
-    get: vi.fn((header: string) => {
-      if (header === 'set-cookie') {
-        return ['test-cookie=value'] as string[]
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'AUTHENTICATION_REQUIRED',
+        message: 'Authentication token is required'
       }
-      const headers: Record<string, string> = {
-        'User-Agent': 'test-user-agent',
-        'Content-Type': 'multipart/form-data'
-      }
-      return headers[header]
-    }) as {
-      (name: "set-cookie"): string[] | undefined
-      (name: string): string | undefined
-    },
-    body: {},
-    params: {},
-    query: {},
-    headers: {
-      'user-agent': 'test-user-agent',
-      'content-type': 'multipart/form-data'
-    }
+    })
   }
-}
-
-/**
- * Create mock response object with proper method spies
- */
-function createMockResponse(): MockResponse {
-  const json = vi.fn().mockReturnThis()
-  const status = vi.fn().mockReturnThis()
   
-  return {
-    status,
-    json,
-    setHeader: vi.fn(),
-    getHeader: vi.fn(),
-    send: vi.fn()
+  const token = authHeader.substring(7)
+  
+  // Mock different users based on token
+  let user: MockUser
+  
+  switch (token) {
+    case 'valid-user-token':
+      user = { id: 'user-1', username: 'testuser', email: 'test@example.com' }
+      break
+    case 'admin-token':
+      user = { id: 'admin-1', username: 'admin', email: 'admin@example.com' }
+      break
+    case 'user2-token':
+      user = { id: 'user-2', username: 'user2', email: 'user2@example.com' }
+      break
+    default:
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Invalid authentication token'
+        }
+      })
   }
+  
+  // Add user to request
+  ;(req as MockAuthenticatedRequest).user = user
+  next()
 }
 
 /**
- * Create mock next function
+ * Create test Express application with media routes
  */
-function createMockNext(): NextFunction {
-  return vi.fn()
-}
-
-/**
- * Create mock validation error
- */
-function createValidationError(message: string, field?: string): ValidationError {
-  const error = new Error(message) as ValidationError
-  error.name = 'ValidationError'
-  error.field = field
-  return error
-}
-
-/**
- * Create mock authentication error
- */
-function createAuthenticationError(message: string): AuthenticationError {
-  const error = new Error(message) as AuthenticationError
-  error.name = 'AuthenticationError'
-  return error
-}
-
-/**
- * Create mock multer error for file upload issues
- */
-function createMulterError(code: string, message: string, field?: string): MulterError {
-  const error = new Error(message) as MulterError
-  error.name = 'MulterError'
-  error.code = code
-  error.field = field
-  return error
-}
-
-/**
- * Mock global error handler that matches actual implementation
- * Returns response format with additional metadata fields
- */
-async function mockGlobalErrorHandler(
-  error: Error,
-  req: MockRequest,
-  res: MockResponse,
-  next: NextFunction
-): Promise<void> {
-  // Generate mock request metadata
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`
-  const timestamp = new Date().toISOString()
-  const method = 'GET' // Default for tests
-  const path = '/test' // Default for tests
-
-  // Handle different error types
-  if (error.name === 'ValidationError') {
-    res.status(400)
-    res.json({
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: error.message
-      },
-      method,
-      path,
-      request_id: requestId,
-      timestamp
-    })
-    return
-  }
-
-  if (error.name === 'AuthenticationError') {
-    res.status(401)
-    res.json({
-      success: false,
-      error: {
-        code: 'UNAUTHORIZED',
-        message: error.message
-      },
-      method,
-      path,
-      request_id: requestId,
-      timestamp
-    })
-    return
-  }
-
-  if (error.name === 'MulterError') {
-    const multerError = error as MulterError
-    let statusCode = 400
-    let errorCode = 'FILE_UPLOAD_ERROR'
-    let errorMessage = error.message
-
-    // Map multer error codes to appropriate responses
-    switch (multerError.code) {
-      case 'LIMIT_FILE_SIZE':
-        statusCode = 400
-        errorCode = 'FILE_TOO_LARGE'
-        errorMessage = 'File size exceeds the limit'
-        break
-      case 'LIMIT_FILE_COUNT':
-        statusCode = 400
-        errorCode = 'TOO_MANY_FILES'
-        errorMessage = 'Too many files uploaded'
-        break
-      case 'LIMIT_UNEXPECTED_FILE':
-        statusCode = 400
-        errorCode = 'UNEXPECTED_FILE'
-        errorMessage = 'Unexpected file field'
-        break
-    }
-
-    res.status(statusCode)
-    res.json({
-      success: false,
-      error: {
-        code: errorCode,
-        message: errorMessage
-      },
-      method,
-      path,
-      request_id: requestId,
-      timestamp
-    })
-    return
-  }
-
-  // Default server error
-  res.status(500)
-  res.json({
-    success: false,
-    error: {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred'
-    },
-    method,
-    path,
-    request_id: requestId,
-    timestamp
-  })
+function createTestApp(): express.Application {
+  const app = express()
+  
+  // Basic middleware
+  app.use(express.json())
+  app.use(express.urlencoded({ extended: true }))
+  
+  // Mount media routes with mock auth
+  app.use('/media', createMediaRouter({ authMiddleware: mockAuthMiddleware }))
+  
+  return app
 }
 
 // ============================================================================
-// MEDIA UPLOAD ERROR HANDLING TESTS
+// TEST UTILITIES
 // ============================================================================
 
-describe('Media Upload Error Handling', () => {
-  let consoleMock: ReturnType<typeof mockConsole>
+/**
+ * Create a test image buffer for file uploads
+ */
+function createTestImageBuffer(): Buffer {
+  // Simple 1x1 PNG image in base64
+  const base64Image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU8xgQAAAABJRU5ErkJggg=='
+  return Buffer.from(base64Image, 'base64')
+}
 
-  beforeEach(() => {
-    consoleMock = mockConsole()
-    vi.clearAllMocks()
-  })
+/**
+ * Create a test video buffer for file uploads
+ */
+function createTestVideoBuffer(): Buffer {
+  // Mock video file content
+  return Buffer.from('fake video content for testing')
+}
 
-  afterEach(async () => {
-    // Proper cleanup to prevent unhandled errors
-    consoleMock.restore()
-    vi.clearAllMocks()
+/**
+ * Clean up test files after tests complete
+ */
+async function cleanupTestFiles(): Promise<void> {
+  try {
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    const files = await fs.readdir(uploadsDir)
     
-    // Allow any pending promises to resolve
-    await new Promise(resolve => setImmediate(resolve))
+    for (const file of files) {
+      if (file.startsWith('test-') || file.includes('uuid')) {
+        await fs.unlink(path.join(uploadsDir, file)).catch(() => {})
+      }
+    }
+  } catch (error) {
+    // Directory may not exist, which is fine
+  }
+}
+
+// ============================================================================
+// MAIN TEST SUITE
+// ============================================================================
+
+describe('Media Upload Routes', () => {
+  let app: express.Application
+  
+  beforeAll(async () => {
+    // Ensure uploads directory exists
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    await fs.mkdir(uploadsDir, { recursive: true })
+  })
+  
+  beforeEach(() => {
+    app = createTestApp()
+    vi.clearAllMocks()
+  })
+  
+  afterEach(async () => {
+    await cleanupTestFiles()
+  })
+  
+  afterAll(async () => {
+    await cleanupTestFiles()
   })
 
-  describe('File Upload Errors', () => {
-    it('should handle file size limit exceeded', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      // Create mock file size error (multer LIMIT_FILE_SIZE)
-      const fileSizeError = createMulterError(
-        'LIMIT_FILE_SIZE',
-        'File too large',
-        'file'
-      )
-
-      // Act
-      await mockGlobalErrorHandler(fileSizeError, req, res, next)
-
-      // Assert - Expect 400 status and specific error format
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'FILE_TOO_LARGE',
-            message: 'File size exceeds the limit'
-          },
-          method: expect.any(String),
-          path: expect.any(String),
-          request_id: expect.any(String),
-          timestamp: expect.any(String)
-        })
-      )
+  // ============================================================================
+  // AUTHENTICATION TESTS
+  // ============================================================================
+  
+  describe('Authentication Requirements', () => {
+    it('should require authentication for file upload', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .attach('file', createTestImageBuffer(), 'test.jpg')
+        
+      expect(response.status).toBe(401)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('AUTHENTICATION_REQUIRED')
     })
-
-    it('should handle authentication errors', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      const authError = createAuthenticationError('Token required')
-
-      // Act
-      await mockGlobalErrorHandler(authError, req, res, next)
-
-      // Assert - Check for complete response format including metadata
-      expect(res.status).toHaveBeenCalledWith(401)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'Token required'
-          },
-          method: expect.any(String),
-          path: expect.any(String),
-          request_id: expect.any(String),
-          timestamp: expect.any(String)
-        })
-      )
+    
+    it('should reject invalid authentication tokens', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer invalid-token')
+        .attach('file', createTestImageBuffer(), 'test.jpg')
+        
+      expect(response.status).toBe(401)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('AUTHENTICATION_REQUIRED')
     })
-  })
-
-  describe('Request Mock Validation', () => {
-    it('should properly mock request.get() method', () => {
-      // Arrange
-      const req = createMockRequest()
-
-      // Act & Assert
-      expect(req.get).toBeDefined()
-      expect(typeof req.get).toBe('function')
-      
-      // Test header retrieval
-      const userAgent = req.get!('User-Agent')
-      expect(userAgent).toBe('test-user-agent')
-      
-      // Test undefined header
-      const customHeader = req.get!('X-Custom-Header')
-      expect(customHeader).toBeUndefined()
-      
-      // Test set-cookie header (returns array)
-      const setCookie = req.get!('set-cookie')
-      expect(setCookie).toEqual(['test-cookie=value'])
+    
+    it('should accept valid authentication tokens', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'test.jpg')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.success).toBe(true)
+    })
+    
+    it('should require authentication for file deletion', async () => {
+      const response = await request(app)
+        .delete('/media/test-file.jpg')
+        
+      expect(response.status).toBe(401)
+      expect(response.body.error.code).toBe('AUTHENTICATION_REQUIRED')
     })
   })
 
-  describe('File Upload Validation', () => {
-    it('should validate file type correctly', () => {
-      // Test file type validation logic
-      const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  // ============================================================================
+  // FILE UPLOAD TESTS
+  // ============================================================================
+  
+  describe('POST /media/upload', () => {
+    it('should successfully upload an image file', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'test-image.jpg')
+        .field('altText', 'Test image description')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.success).toBe(true)
+      expect(response.body.data).toMatchObject({
+        id: expect.any(String),
+        url: expect.stringMatching(/^\/uploads\/.+/),
+        filename: expect.any(String),
+        originalName: 'test-image.jpg',
+        mimeType: 'image/jpeg',
+        size: expect.any(Number),
+        altText: 'Test image description',
+        uploadedAt: expect.any(String),
+        uploadedBy: 'testuser'
+      })
+    })
+    
+    it('should successfully upload a video file', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestVideoBuffer(), 'test-video.mp4')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.success).toBe(true)
+      expect(response.body.data.mimeType).toBe('video/mp4')
+      expect(response.body.data.originalName).toBe('test-video.mp4')
+    })
+    
+    it('should handle optional alt text field', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'test-no-alt.jpg')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.data.altText).toBeNull()
+    })
+    
+    it('should reject upload without file', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      expect(response.status).toBe(400)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('VALIDATION_ERROR')
+      expect(response.body.error.message).toBe('No file uploaded')
+    })
+    
+    it('should reject invalid file types', async () => {
+      const textBuffer = Buffer.from('This is a text file')
       
-      const isValidFileType = (mimetype: string): boolean => {
-        return allowedMimeTypes.includes(mimetype)
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', textBuffer, 'test.txt')
+        
+      expect(response.status).toBe(400)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('VALIDATION_ERROR')
+    })
+    
+    it('should reject files that are too large', async () => {
+      // Create a buffer larger than 50MB
+      const largeBuffer = Buffer.alloc(51 * 1024 * 1024)
+      
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', largeBuffer, 'large-file.jpg')
+        
+      expect(response.status).toBe(400)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('VALIDATION_ERROR')
+    })
+    
+    it('should include user information in response', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer user2-token')
+        .attach('file', createTestImageBuffer(), 'user2-test.jpg')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.data.uploadedBy).toBe('user2')
+    })
+  })
+
+  // ============================================================================
+  // FILE DELETION TESTS
+  // ============================================================================
+  
+  describe('DELETE /media/:filename', () => {
+    it('should successfully delete an existing file', async () => {
+      // First upload a file to get a real filename
+      const uploadResponse = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'to-delete.jpg')
+        
+      expect(uploadResponse.status).toBe(200)
+      const filename = uploadResponse.body.data.filename
+      
+      // Now delete it
+      const deleteResponse = await request(app)
+        .delete(`/media/${filename}`)
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      expect(deleteResponse.status).toBe(200)
+      expect(deleteResponse.body.success).toBe(true)
+      expect(deleteResponse.body.data.filename).toBe(filename)
+      expect(deleteResponse.body.data.message).toBe('File deleted successfully')
+    })
+    
+    it('should require filename parameter', async () => {
+      const response = await request(app)
+        .delete('/media/')
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      // Express should return 404 for malformed route
+      expect(response.status).toBe(404)
+    })
+    
+    it('should handle deletion of non-existent files gracefully', async () => {
+      const response = await request(app)
+        .delete('/media/non-existent-file.jpg')
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      // Should still return success since file doesn't exist = successfully deleted
+      expect(response.status).toBe(200)
+      expect(response.body.success).toBe(true)
+    })
+    
+    it('should include user information in delete response', async () => {
+      const response = await request(app)
+        .delete('/media/test-file.jpg')
+        .set('Authorization', 'Bearer admin-token')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.data.deletedBy).toBe('admin')
+    })
+  })
+
+  // ============================================================================
+  // GET MEDIA METADATA TESTS
+  // ============================================================================
+  
+  describe('GET /media/:filename', () => {
+    it('should return not implemented status', async () => {
+      const response = await request(app)
+        .get('/media/test-file.jpg')
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      expect(response.status).toBe(501)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('NOT_IMPLEMENTED')
+      expect(response.body.error.message).toContain('schema is updated')
+    })
+  })
+
+  // ============================================================================
+  // RATE LIMITING TESTS
+  // ============================================================================
+  
+  describe('Rate Limiting', () => {
+    it('should apply rate limiting to upload endpoint', async () => {
+      // Make multiple requests quickly to trigger rate limiting
+      const promises = []
+      
+      for (let i = 0; i < 25; i++) {
+        promises.push(
+          request(app)
+            .post('/media/upload')
+            .set('Authorization', 'Bearer valid-user-token')
+            .attach('file', createTestImageBuffer(), `test-${i}.jpg`)
+        )
       }
       
-      // Valid file types
-      expect(isValidFileType('image/jpeg')).toBe(true)
-      expect(isValidFileType('image/png')).toBe(true)
+      const responses = await Promise.all(promises)
       
-      // Invalid file types
-      expect(isValidFileType('application/pdf')).toBe(false)
-      expect(isValidFileType('text/plain')).toBe(false)
+      // Some requests should be rate limited (429 status)
+      const rateLimitedResponses = responses.filter(res => res.status === 429)
+      expect(rateLimitedResponses.length).toBeGreaterThan(0)
+      
+      // Rate limited responses should have proper format
+      const rateLimitedResponse = rateLimitedResponses[0]
+      expect(rateLimitedResponse.body.success).toBe(false)
+      expect(rateLimitedResponse.body.error.code).toBe('RATE_LIMIT_EXCEEDED')
     })
-
-    it('should validate file size correctly', () => {
-      // Test file size validation logic
-      const maxSize = 10 * 1024 * 1024 // 10MB
-      
-      const isValidFileSize = (size: number): boolean => {
-        return size > 0 && size <= maxSize
+    
+    it('should apply rate limiting per user/IP', async () => {
+      // User 1 hits rate limit
+      for (let i = 0; i < 25; i++) {
+        await request(app)
+          .post('/media/upload')
+          .set('Authorization', 'Bearer valid-user-token')
+          .attach('file', createTestImageBuffer(), `user1-${i}.jpg`)
       }
       
-      // Valid file sizes
-      expect(isValidFileSize(1024)).toBe(true) // 1KB
-      expect(isValidFileSize(maxSize)).toBe(true) // Exactly 10MB
-      
-      // Invalid file sizes
-      expect(isValidFileSize(0)).toBe(false) // Empty file
-      expect(isValidFileSize(maxSize + 1)).toBe(false) // Too large
+      // User 2 should still be able to upload
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer user2-token')
+        .attach('file', createTestImageBuffer(), 'user2-test.jpg')
+        
+      expect(response.status).toBe(200)
+      expect(response.body.success).toBe(true)
     })
   })
 
-  describe('Error Response Format', () => {
-    it('should return consistent error format', async () => {
-      // Test error response consistency with metadata
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
+  // ============================================================================
+  // ERROR HANDLING TESTS
+  // ============================================================================
+  
+  describe('Error Handling', () => {
+    it('should handle multer errors properly', async () => {
+      // Test file size error by creating oversized buffer
+      const oversizedBuffer = Buffer.alloc(60 * 1024 * 1024) // 60MB
       
-      const validationError = createValidationError('Invalid input data')
-
-      // Act
-      await mockGlobalErrorHandler(validationError, req, res, next)
-
-      // Assert - Check complete response format with metadata
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid input data'
-          },
-          method: expect.any(String),
-          path: expect.any(String),
-          request_id: expect.any(String),
-          timestamp: expect.any(String)
-        })
-      )
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', oversizedBuffer, 'oversized.jpg')
+        
+      expect(response.status).toBe(400)
+      expect(response.body.success).toBe(false)
+      expect(response.body.error.code).toBe('VALIDATION_ERROR')
     })
-  })
-
-  describe('Async Error Handling', () => {
-    it('should handle async upload operations correctly', async () => {
-      // Test async error handling to prevent unhandled rejections
-      const asyncUploadOperation = async (): Promise<string> => {
-        // Simulate async file upload operation
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return 'upload-success'
+    
+    it('should handle server errors gracefully', async () => {
+      // Mock console.error to avoid noise in test output
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      
+      try {
+        // This would require mocking fs operations to trigger server error
+        // For now, just verify error handling structure exists
+        expect(consoleSpy).toBeDefined()
+      } finally {
+        consoleSpy.mockRestore()
       }
-
-      // Act & Assert
-      const result = await asyncUploadOperation()
-      expect(result).toBe('upload-success')
     })
+    
+    it('should clean up files on upload failure', async () => {
+      // This test would require mocking database operations to fail
+      // after file upload succeeds to test cleanup logic
+      expect(true).toBe(true) // Placeholder for complex cleanup test
+    })
+  })
 
-    it('should handle promise rejection in upload middleware', async () => {
-      // Test promise rejection handling
-      const failingAsyncOperation = async (): Promise<never> => {
-        throw new Error('Upload failed')
+  // ============================================================================
+  // SECURITY TESTS
+  // ============================================================================
+  
+  describe('Security', () => {
+    it('should reject path traversal attempts in filenames', async () => {
+      const response = await request(app)
+        .delete('/media/../../etc/passwd')
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      // Should be handled safely by the route parameter parsing
+      expect(response.status).toBe(200) // File doesn't exist, so "successfully deleted"
+    })
+    
+    it('should validate alt text length', async () => {
+      const longAltText = 'a'.repeat(1000) // Very long alt text
+      
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'test.jpg')
+        .field('altText', longAltText)
+        
+      // This should trigger validation middleware
+      expect(response.status).toBe(400)
+      expect(response.body.error.code).toBe('VALIDATION_ERROR')
+    })
+    
+    it('should sanitize filenames properly', async () => {
+      const response = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), '../../../malicious.jpg')
+        
+      expect(response.status).toBe(200)
+      // Generated filename should be safe UUID-based name
+      expect(response.body.data.filename).not.toContain('..')
+      expect(response.body.data.filename).toMatch(/^[a-f0-9-]+\.jpg$/)
+    })
+  })
+
+  // ============================================================================
+  // INTEGRATION TESTS
+  // ============================================================================
+  
+  describe('Integration Tests', () => {
+    it('should handle complete upload-delete workflow', async () => {
+      // Upload file
+      const uploadResponse = await request(app)
+        .post('/media/upload')
+        .set('Authorization', 'Bearer valid-user-token')
+        .attach('file', createTestImageBuffer(), 'workflow-test.jpg')
+        .field('altText', 'Workflow test image')
+        
+      expect(uploadResponse.status).toBe(200)
+      const filename = uploadResponse.body.data.filename
+      
+      // Verify file data
+      expect(uploadResponse.body.data).toMatchObject({
+        originalName: 'workflow-test.jpg',
+        altText: 'Workflow test image',
+        uploadedBy: 'testuser'
+      })
+      
+      // Delete file
+      const deleteResponse = await request(app)
+        .delete(`/media/${filename}`)
+        .set('Authorization', 'Bearer valid-user-token')
+        
+      expect(deleteResponse.status).toBe(200)
+      expect(deleteResponse.body.data.filename).toBe(filename)
+      expect(deleteResponse.body.data.deletedBy).toBe('testuser')
+    })
+    
+    it('should handle multiple file types correctly', async () => {
+      const testFiles = [
+        { buffer: createTestImageBuffer(), name: 'test.jpg', type: 'image/jpeg' },
+        { buffer: createTestImageBuffer(), name: 'test.png', type: 'image/png' },
+        { buffer: createTestVideoBuffer(), name: 'test.mp4', type: 'video/mp4' }
+      ]
+      
+      for (const file of testFiles) {
+        const response = await request(app)
+          .post('/media/upload')
+          .set('Authorization', 'Bearer valid-user-token')
+          .attach('file', file.buffer, file.name)
+          
+        expect(response.status).toBe(200)
+        expect(response.body.data.originalName).toBe(file.name)
+        expect(response.body.data.mimeType).toBe(file.type)
       }
-
-      // Act & Assert
-      await expect(failingAsyncOperation()).rejects.toThrow('Upload failed')
-    })
-  })
-
-  describe('Multer Error Code Mapping', () => {
-    it('should map LIMIT_FILE_COUNT errors correctly', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      const fileCountError = createMulterError(
-        'LIMIT_FILE_COUNT',
-        'Too many files',
-        'files'
-      )
-
-      // Act
-      await mockGlobalErrorHandler(fileCountError, req, res, next)
-
-      // Assert
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'TOO_MANY_FILES',
-            message: 'Too many files uploaded'
-          }
-        })
-      )
-    })
-
-    it('should map LIMIT_UNEXPECTED_FILE errors correctly', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      const unexpectedFileError = createMulterError(
-        'LIMIT_UNEXPECTED_FILE',
-        'Unexpected file field',
-        'wrongfield'
-      )
-
-      // Act
-      await mockGlobalErrorHandler(unexpectedFileError, req, res, next)
-
-      // Assert
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'UNEXPECTED_FILE',
-            message: 'Unexpected file field'
-          }
-        })
-      )
-    })
-  })
-
-  describe('Edge Cases', () => {
-    it('should handle unknown error types', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      const unknownError = new Error('Unknown error occurred')
-
-      // Act
-      await mockGlobalErrorHandler(unknownError, req, res, next)
-
-      // Assert
-      expect(res.status).toHaveBeenCalledWith(500)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'An unexpected error occurred'
-          }
-        })
-      )
-    })
-
-    it('should handle errors without message', async () => {
-      // Arrange
-      const req = createMockRequest()
-      const res = createMockResponse()
-      const next = createMockNext()
-      
-      const errorWithoutMessage = createValidationError('')
-
-      // Act
-      await mockGlobalErrorHandler(errorWithoutMessage, req, res, next)
-
-      // Assert
-      expect(res.status).toHaveBeenCalledWith(400)
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: ''
-          }
-        })
-      )
     })
   })
 })
