@@ -226,7 +226,7 @@ export const validateFollowerQuery = (
   next: NextFunction
 ): void => {
   const { username } = req.params
-  const { page, limit, includeInactive } = req.query
+  let { page, limit, includeInactive } = req.query
 
   // Validate username
   if (!username || !USERNAME_REGEX.test(username)) {
@@ -240,8 +240,10 @@ export const validateFollowerQuery = (
     return
   }
 
-  // Validate page parameter if provided
-  if (page !== undefined) {
+  // Set default values and convert to appropriate types
+  if (!page) {
+    req.query.page = 1
+  } else {
     const pageNum = Number(page)
     if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 1000) {
       res.status(400).json({
@@ -257,10 +259,12 @@ export const validateFollowerQuery = (
       })
       return
     }
+    req.query.page = pageNum
   }
 
-  // Validate limit parameter if provided
-  if (limit !== undefined) {
+  if (!limit) {
+    req.query.limit = 20
+  } else {
     const limitNum = Number(limit)
     if (!Number.isInteger(limitNum) || limitNum < 1 || limitNum > 100) {
       res.status(400).json({
@@ -276,10 +280,15 @@ export const validateFollowerQuery = (
       })
       return
     }
+    req.query.limit = limitNum
   }
 
-  // includeInactive validation is handled by checking if it's 'true' string
-  // No need to mutate req.query - let controller handle defaults and conversion
+  // Convert includeInactive to boolean
+  if (!includeInactive) {
+    req.query.includeInactive = false
+  } else {
+    req.query.includeInactive = includeInactive === 'true'
+  }
 
   next()
 }
