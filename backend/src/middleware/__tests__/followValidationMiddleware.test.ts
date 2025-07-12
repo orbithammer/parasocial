@@ -1,330 +1,856 @@
-// backend/src/middleware/followValidationMiddleware.ts
-// Version: 2.0
-// Added validateWebFingerQuery function and fixed export naming
+// backend/tests/middleware/followValidationMiddleware.test.ts
+// Version: 1.0
+// Comprehensive tests for follow operations validation middleware
 
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { Request, Response, NextFunction } from 'express'
-
-// Interface for follow request validation
-interface FollowRequest extends Request {
-  body: {
-    actorId?: string
-    followType?: 'local' | 'remote'
-  }
-  params: {
-    username: string
-  }
-  user?: {
-    id: string
-    email: string
-    username: string
-  }
-}
-
-// Validation error types
-export enum FollowValidationError {
-  INVALID_USERNAME = 'INVALID_USERNAME',
-  INVALID_ACTOR_ID = 'INVALID_ACTOR_ID',
-  MISSING_AUTHENTICATION = 'MISSING_AUTHENTICATION',
-  SELF_FOLLOW_ATTEMPT = 'SELF_FOLLOW_ATTEMPT',
-  INVALID_FOLLOW_TYPE = 'INVALID_FOLLOW_TYPE',
-  INVALID_WEBFINGER_RESOURCE = 'INVALID_WEBFINGER_RESOURCE',
-  MISSING_RESOURCE_PARAMETER = 'MISSING_RESOURCE_PARAMETER'
-}
-
-// Username validation regex - alphanumeric and underscores, 3-30 chars
-const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,30}$/
-
-// ActivityPub actor ID validation regex - basic URL format
-const ACTOR_ID_REGEX = /^https?:\/\/.+\/.+$/
-
-// WebFinger resource validation regexes
-const WEBFINGER_ACCT_REGEX = /^acct:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-const WEBFINGER_HTTPS_REGEX = /^https:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\/.+$/
-
-// Validate username parameter in follow requests
-export const validateUsernameParam = (
-  req: FollowRequest, 
-  res: Response, 
-  next: NextFunction
-): void => {
-  const { username } = req.params
-
-  // Check if username exists
-  if (!username) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_USERNAME,
-        message: 'Username parameter is required'
-      }
-    })
-    return
-  }
-
-  // Validate username format
-  if (!USERNAME_REGEX.test(username)) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_USERNAME,
-        message: 'Username must be 3-30 characters, alphanumeric and underscores only'
-      }
-    })
-    return
-  }
-
-  next()
-}
-
-// Validate follow request body and authentication
-export const validateFollowRequest = (
-  req: FollowRequest, 
-  res: Response, 
-  next: NextFunction
-): void => {
-  const { actorId, followType } = req.body
-  const { username } = req.params
-  const authenticatedUser = req.user
-
-  // Check if either authenticated user or actorId is provided
-  if (!authenticatedUser && !actorId) {
-    res.status(401).json({
-      success: false,
-      error: {
-        code: FollowValidationError.MISSING_AUTHENTICATION,
-        message: 'Authentication required or actorId must be provided'
-      }
-    })
-    return
-  }
-
-  // Validate actorId format if provided
-  if (actorId && !ACTOR_ID_REGEX.test(actorId)) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_ACTOR_ID,
-        message: 'Invalid ActivityPub actor ID format'
-      }
-    })
-    return
-  }
-
-  // Validate followType if provided
-  if (followType && !['local', 'remote'].includes(followType)) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_FOLLOW_TYPE,
-        message: 'Follow type must be either "local" or "remote"'
-      }
-    })
-    return
-  }
-
-  // Prevent self-follow attempts for authenticated users
-  if (authenticatedUser && authenticatedUser.username === username) {
-    res.status(409).json({
-      success: false,
-      error: {
-        code: FollowValidationError.SELF_FOLLOW_ATTEMPT,
-        message: 'Users cannot follow themselves'
-      }
-    })
-    return
-  }
-
-  next()
-}
-
-// Validate unfollow request - requires authentication
-export const validateUnfollowRequest = (
-  req: FollowRequest, 
-  res: Response, 
-  next: NextFunction
-): void => {
-  const { username } = req.params
-  const authenticatedUser = req.user
-
-  // Authentication is required for unfollow
-  if (!authenticatedUser) {
-    res.status(401).json({
-      success: false,
-      error: {
-        code: FollowValidationError.MISSING_AUTHENTICATION,
-        message: 'Authentication required for unfollow operation'
-      }
-    })
-    return
-  }
-
-  // Prevent self-unfollow attempts
-  if (authenticatedUser.username === username) {
-    res.status(409).json({
-      success: false,
-      error: {
-        code: FollowValidationError.SELF_FOLLOW_ATTEMPT,
-        message: 'Users cannot unfollow themselves'
-      }
-    })
-    return
-  }
-
-  next()
-}
-
-// Validate WebFinger query parameters for ActivityPub discovery
-export const validateWebFingerQuery = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  const { resource } = req.query
-
-  // Check if resource parameter exists
-  if (!resource || typeof resource !== 'string') {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.MISSING_RESOURCE_PARAMETER,
-        message: 'Resource parameter is required',
-        details: [{
-          field: 'resource',
-          message: 'Resource parameter is required'
-        }]
-      }
-    })
-    return
-  }
-
-  // Validate resource format - must be either acct: or https: format
-  const isValidAcct = WEBFINGER_ACCT_REGEX.test(resource)
-  const isValidHttps = WEBFINGER_HTTPS_REGEX.test(resource)
-
-  if (!isValidAcct && !isValidHttps) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_WEBFINGER_RESOURCE,
-        message: 'Invalid WebFinger resource format',
-        details: [{
-          field: 'resource',
-          message: 'Resource must be in acct:user@domain.com or https://domain.com/users/user format'
-        }]
-      }
-    })
-    return
-  }
-
-  next()
-}
-
-// Validate follower list requests (renamed from validateFollowerListRequest to match test imports)
-export const validateFollowerQuery = (
-  req: Request, 
-  res: Response, 
-  next: NextFunction
-): void => {
-  const { username } = req.params
-  let { page, limit, includeInactive } = req.query
-
-  // Validate username
-  if (!username || !USERNAME_REGEX.test(username)) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: FollowValidationError.INVALID_USERNAME,
-        message: 'Valid username parameter is required'
-      }
-    })
-    return
-  }
-
-  // Set default values and convert to appropriate types
-  if (!page) {
-    req.query.page = 1
-  } else {
-    const pageNum = Number(page)
-    if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 1000) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PAGINATION',
-          message: 'Invalid pagination parameters',
-          details: [{
-            field: 'page',
-            message: 'Page must be between 1 and 1000'
-          }]
-        }
-      })
-      return
-    }
-    req.query.page = pageNum
-  }
-
-  if (!limit) {
-    req.query.limit = 20
-  } else {
-    const limitNum = Number(limit)
-    if (!Number.isInteger(limitNum) || limitNum < 1 || limitNum > 100) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_PAGINATION',
-          message: 'Invalid pagination parameters',
-          details: [{
-            field: 'limit',
-            message: 'Limit must be between 1 and 100'
-          }]
-        }
-      })
-      return
-    }
-    req.query.limit = limitNum
-  }
-
-  // Convert includeInactive to boolean
-  if (!includeInactive) {
-    req.query.includeInactive = false
-  } else {
-    req.query.includeInactive = includeInactive === 'true'
-  }
-
-  next()
-}
-
-// Placeholder for ActivityPub inbox validation
-export const validateActivityPubInbox = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  // TODO: Implement ActivityPub inbox validation
-  // This should validate incoming ActivityPub activities
-  next()
-}
-
-// Combined validation middleware for follow endpoints
-export const validateFollowEndpoint = [
-  validateUsernameParam,
-  validateFollowRequest
-]
-
-// Combined validation middleware for unfollow endpoints
-export const validateUnfollowEndpoint = [
-  validateUsernameParam,
-  validateUnfollowRequest
-]
-
-// Export default validation middleware (keep existing export for backward compatibility)
-export default {
-  validateUsernameParam,
+import {
   validateFollowRequest,
   validateUnfollowRequest,
-  validateFollowEndpoint,
-  validateUnfollowEndpoint,
   validateFollowerQuery,
   validateWebFingerQuery,
-  validateActivityPubInbox,
-  FollowValidationError
-}
+  validateActivityPubInbox
+} from '../followValidationMiddleware'
+
+describe('Follow Validation Middleware', () => {
+  let mockReq: Partial<Request>
+  let mockRes: Partial<Response>
+  let mockNext: NextFunction
+  let jsonSpy: any
+  let statusSpy: any
+
+  beforeEach(() => {
+    // Reset all mocks before each test
+    vi.clearAllMocks()
+    
+    // Create fresh mock objects for each test
+    jsonSpy = vi.fn()
+    statusSpy = vi.fn().mockReturnThis()
+    
+    mockReq = {
+      body: {},
+      params: {},
+      query: {},
+      headers: {}
+    }
+    
+    mockRes = {
+      status: statusSpy,
+      json: jsonSpy
+    }
+    
+    mockNext = vi.fn()
+  })
+
+  describe('validateFollowRequest', () => {
+    describe('Valid Follow Requests', () => {
+      it('should pass validation with valid username and no actorId', () => {
+        // Arrange - Local follow request
+        mockReq.params = {
+          username: 'validuser123'
+        }
+        mockReq.body = {}
+
+        // Act
+        validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(statusSpy).not.toHaveBeenCalled()
+        expect(jsonSpy).not.toHaveBeenCalled()
+      })
+
+      it('should pass validation with valid ActivityPub actor ID', () => {
+        // Arrange - Federation follow request
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {
+          actorId: 'https://mastodon.social/users/testuser'
+        }
+
+        // Act
+        validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+      })
+
+      it('should pass validation with various valid usernames', () => {
+        const validUsernames = [
+          'user123',
+          'test_user',
+          'abc',           // minimum length
+          'a'.repeat(30)   // maximum length
+        ]
+
+        validUsernames.forEach(username => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username }
+          mockReq.body = {}
+
+          // Act
+          validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(mockNext).toHaveBeenCalledOnce()
+        })
+      })
+
+      it('should pass validation with various valid ActivityPub URLs', () => {
+        const validActorIds = [
+          'https://mastodon.social/users/testuser',
+          'https://pleroma.instance.com/users/username',
+          'https://pixelfed.social/users/photographer',
+          'https://friendica.example.org/profile/user123'
+        ]
+
+        validActorIds.forEach(actorId => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username: 'testuser' }
+          mockReq.body = { actorId }
+
+          // Act
+          validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(mockNext).toHaveBeenCalledOnce()
+        })
+      })
+
+      it('should pass validation with null actorId', () => {
+        // Arrange - Explicit null actorId
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {
+          actorId: null
+        }
+
+        // Act
+        validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('Invalid Follow Requests', () => {
+      it('should reject invalid username', () => {
+        const invalidUsernames = [
+          'ab',              // too short
+          'a'.repeat(31),    // too long
+          'user@domain',     // @ symbol
+          'user.name',       // dot
+          'user-name',       // hyphen
+          'user name',       // space
+          ''                 // empty
+        ]
+
+        invalidUsernames.forEach(username => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username }
+          mockReq.body = {}
+
+          // Act
+          validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              success: false,
+              error: expect.objectContaining({
+                code: 'VALIDATION_ERROR',
+                message: 'Invalid follow request data'
+              })
+            })
+          )
+        })
+      })
+
+      it('should reject invalid ActivityPub actor URLs', () => {
+        const invalidActorIds = [
+          'http://insecure.com/users/test',      // HTTP instead of HTTPS
+          'not-a-url',                           // not a URL at all
+          'ftp://wrong.protocol.com/user',       // wrong protocol
+          'https://',                            // incomplete URL
+          'https://domain-only.com',             // no path
+          'mailto:user@domain.com'               // wrong protocol
+        ]
+
+        invalidActorIds.forEach(actorId => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username: 'testuser' }
+          mockReq.body = { actorId }
+
+          // Act
+          validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              success: false,
+              error: expect.objectContaining({
+                details: expect.arrayContaining([
+                  expect.objectContaining({
+                    field: 'actorId',
+                    message: 'Actor ID must be a valid HTTPS URL'
+                  })
+                ])
+              })
+            })
+          )
+        })
+      })
+    })
+  })
+
+  describe('validateUnfollowRequest', () => {
+    describe('Valid Unfollow Requests', () => {
+      it('should pass validation with valid username', () => {
+        // Arrange - Valid unfollow request
+        mockReq.params = {
+          username: 'usertofollow'
+        }
+
+        // Act
+        validateUnfollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(statusSpy).not.toHaveBeenCalled()
+      })
+
+      it('should pass validation with various valid usernames', () => {
+        const validUsernames = [
+          'user123',
+          'test_user_name',
+          'abc',
+          'a'.repeat(30)
+        ]
+
+        validUsernames.forEach(username => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username }
+
+          // Act
+          validateUnfollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(mockNext).toHaveBeenCalledOnce()
+        })
+      })
+    })
+
+    describe('Invalid Unfollow Requests', () => {
+      it('should reject invalid usernames', () => {
+        const invalidUsernames = [
+          'ab',              // too short
+          'a'.repeat(31),    // too long
+          'user@domain',     // invalid characters
+          '',                // empty
+          'user space'       // contains space
+        ]
+
+        invalidUsernames.forEach(username => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username }
+
+          // Act
+          validateUnfollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              success: false,
+              error: expect.objectContaining({
+                code: 'VALIDATION_ERROR',
+                message: 'Invalid unfollow request'
+              })
+            })
+          )
+        })
+      })
+    })
+  })
+
+  describe('validateFollowerQuery', () => {
+    describe('Valid Follower Queries', () => {
+      it('should pass validation with default parameters', () => {
+        // Arrange - Default query parameters
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {}
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(mockReq.query.page).toBe(1)
+        expect(mockReq.query.limit).toBe(20)
+        expect(mockReq.query.includeInactive).toBe(false)
+      })
+
+      it('should pass validation with valid pagination parameters', () => {
+        // Arrange - Valid pagination
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {
+          page: '5',
+          limit: '50'
+        }
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(mockReq.query.page).toBe(5)
+        expect(mockReq.query.limit).toBe(50)
+      })
+
+      it('should pass validation with includeInactive flag', () => {
+        // Arrange - Include inactive followers
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {
+          includeInactive: 'true'
+        }
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(mockReq.query.includeInactive).toBe(true)
+      })
+
+      it('should handle includeInactive false correctly', () => {
+        // Arrange - Explicitly false includeInactive
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {
+          includeInactive: 'false'
+        }
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(mockReq.query.includeInactive).toBe(false)
+      })
+    })
+
+    describe('Invalid Follower Queries', () => {
+      it('should reject invalid username in params', () => {
+        // Arrange - Invalid username
+        mockReq.params = {
+          username: 'ab' // too short
+        }
+        mockReq.query = {}
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+      })
+
+      it('should reject page number that is too high', () => {
+        // Arrange - Page exceeding limit
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {
+          page: '1001' // exceeds maximum of 1000
+        }
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+        expect(jsonSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({
+              details: expect.arrayContaining([
+                expect.objectContaining({
+                  field: 'page',
+                  message: 'Page must be between 1 and 1000'
+                })
+              ])
+            })
+          })
+        )
+      })
+
+      it('should reject limit that is too high', () => {
+        // Arrange - Limit exceeding maximum
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.query = {
+          limit: '101' // exceeds maximum of 100
+        }
+
+        // Act
+        validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+        expect(jsonSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({
+              details: expect.arrayContaining([
+                expect.objectContaining({
+                  field: 'limit',
+                  message: 'Limit must be between 1 and 100'
+                })
+              ])
+            })
+          })
+        )
+      })
+
+      it('should reject zero or negative page numbers', () => {
+        const invalidPageNumbers = ['0', '-1', '-5']
+
+        invalidPageNumbers.forEach(page => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.params = { username: 'testuser' }
+          mockReq.query = { page }
+
+          // Act
+          validateFollowerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+        })
+      })
+    })
+  })
+
+  describe('validateWebFingerQuery', () => {
+    describe('Valid WebFinger Queries', () => {
+      it('should pass validation with acct: format', () => {
+        // Arrange - Standard acct: format
+        mockReq.query = {
+          resource: 'acct:user@mastodon.social'
+        }
+
+        // Act
+        validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(statusSpy).not.toHaveBeenCalled()
+      })
+
+      it('should pass validation with HTTPS URL format', () => {
+        // Arrange - HTTPS URL format
+        mockReq.query = {
+          resource: 'https://mastodon.social/users/testuser'
+        }
+
+        // Act
+        validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+      })
+
+      it('should pass validation with various acct: formats', () => {
+        const validAcctFormats = [
+          'acct:user@domain.com',
+          'acct:test.user@sub.domain.org',
+          'acct:user_name@mastodon.social',
+          'acct:123user@pleroma.site'
+        ]
+
+        validAcctFormats.forEach(resource => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.query = { resource }
+
+          // Act
+          validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(mockNext).toHaveBeenCalledOnce()
+        })
+      })
+
+      it('should pass validation with various HTTPS URL formats', () => {
+        const validUrlFormats = [
+          'https://mastodon.social/users/testuser',
+          'https://pleroma.example.com/users/username',
+          'https://sub.domain.org/profile/user123',
+          'https://pixelfed.social/users/photographer'
+        ]
+
+        validUrlFormats.forEach(resource => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.query = { resource }
+
+          // Act
+          validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(mockNext).toHaveBeenCalledOnce()
+        })
+      })
+    })
+
+    describe('Invalid WebFinger Queries', () => {
+      it('should reject invalid resource formats', () => {
+        const invalidResources = [
+          '',                                    // empty
+          'user@domain.com',                     // missing acct: prefix
+          'acct:user',                          // missing domain
+          'acct:@domain.com',                   // missing username
+          'http://insecure.com/users/test',     // HTTP instead of HTTPS
+          'ftp://wrong.protocol.com/user',      // wrong protocol
+          'not-a-valid-format',                 // completely invalid
+          'acct:user@',                         // incomplete acct format
+          'https://',                           // incomplete URL
+        ]
+
+        invalidResources.forEach(resource => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.query = { resource }
+
+          // Act
+          validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              success: false,
+              error: expect.objectContaining({
+                details: expect.arrayContaining([
+                  expect.objectContaining({
+                    field: 'resource',
+                    message: 'Resource must be in acct:user@domain.com or https://domain.com/users/user format'
+                  })
+                ])
+              })
+            })
+          )
+        })
+      })
+
+      it('should reject missing resource parameter', () => {
+        // Arrange - No resource parameter
+        mockReq.query = {}
+
+        // Act
+        validateWebFingerQuery(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+        expect(jsonSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({
+              details: expect.arrayContaining([
+                expect.objectContaining({
+                  field: 'resource',
+                  message: 'Resource parameter is required'
+                })
+              ])
+            })
+          })
+        )
+      })
+    })
+  })
+
+  describe('validateActivityPubInbox', () => {
+    describe('Valid ActivityPub Inbox Requests', () => {
+      it('should pass validation with valid ActivityPub request', () => {
+        // Arrange - Valid ActivityPub inbox request
+        mockReq.headers = {
+          'content-type': 'application/activity+json'
+        }
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {
+          '@context': 'https://www.w3.org/ns/activitystreams',
+          type: 'Follow',
+          actor: 'https://mastodon.social/users/follower'
+        }
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+        expect(statusSpy).not.toHaveBeenCalled()
+      })
+
+      it('should pass validation with extended ActivityPub content type', () => {
+        // Arrange - Content-Type with charset
+        mockReq.headers = {
+          'content-type': 'application/activity+json; charset=utf-8'
+        }
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {
+          '@context': 'https://www.w3.org/ns/activitystreams',
+          type: 'Undo',
+          actor: 'https://mastodon.social/users/follower',
+          object: {
+            type: 'Follow',
+            actor: 'https://mastodon.social/users/follower'
+          }
+        }
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+      })
+
+      it('should pass validation with all required ActivityPub fields', () => {
+        // Arrange - Complete ActivityPub activity
+        mockReq.headers = {
+          'content-type': 'application/activity+json'
+        }
+        mockReq.params = {
+          username: 'recipient'
+        }
+        mockReq.body = {
+          '@context': ['https://www.w3.org/ns/activitystreams'],
+          type: 'Create',
+          actor: 'https://example.com/users/creator',
+          object: {
+            type: 'Note',
+            content: 'Hello, ActivityPub world!'
+          }
+        }
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(mockNext).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('Invalid ActivityPub Inbox Requests', () => {
+      it('should reject non-ActivityPub content type', () => {
+        // Arrange - Wrong content type
+        mockReq.headers = {
+          'content-type': 'application/json'
+        }
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {}
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+        expect(jsonSpy).toHaveBeenCalledWith({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Content-Type must be application/activity+json for ActivityPub requests'
+          }
+        })
+      })
+
+      it('should reject missing content type', () => {
+        // Arrange - No content type header
+        mockReq.headers = {}
+        mockReq.params = {
+          username: 'testuser'
+        }
+        mockReq.body = {}
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+        expect(jsonSpy).toHaveBeenCalledWith({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Content-Type must be application/activity+json for ActivityPub requests'
+          }
+        })
+      })
+
+      it('should reject invalid username', () => {
+        // Arrange - Invalid username in params
+        mockReq.headers = {
+          'content-type': 'application/activity+json'
+        }
+        mockReq.params = {
+          username: 'ab' // too short
+        }
+        mockReq.body = {
+          '@context': 'https://www.w3.org/ns/activitystreams',
+          type: 'Follow',
+          actor: 'https://mastodon.social/users/follower'
+        }
+
+        // Act
+        validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+        // Assert
+        expect(statusSpy).toHaveBeenCalledWith(400)
+      })
+
+      it('should reject non-object request body', () => {
+        const invalidBodies = [
+          null,
+          'string',
+          123,
+          [],
+          undefined
+        ]
+
+        invalidBodies.forEach(body => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.headers = {
+            'content-type': 'application/activity+json'
+          }
+          mockReq.params = {
+            username: 'testuser'
+          }
+          mockReq.body = body
+
+          // Act
+          validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Request body must be a valid JSON object'
+            }
+          })
+        })
+      })
+
+      it('should reject ActivityPub activities missing required fields', () => {
+        const incompleteActivities = [
+          {
+            // Missing @context
+            type: 'Follow',
+            actor: 'https://mastodon.social/users/follower'
+          },
+          {
+            // Missing type
+            '@context': 'https://www.w3.org/ns/activitystreams',
+            actor: 'https://mastodon.social/users/follower'
+          },
+          {
+            // Missing actor
+            '@context': 'https://www.w3.org/ns/activitystreams',
+            type: 'Follow'
+          },
+          {
+            // Missing all required fields
+          }
+        ]
+
+        incompleteActivities.forEach(body => {
+          // Arrange - Reset mocks for each iteration
+          vi.clearAllMocks()
+          
+          mockReq.headers = {
+            'content-type': 'application/activity+json'
+          }
+          mockReq.params = {
+            username: 'testuser'
+          }
+          mockReq.body = body
+
+          // Act
+          validateActivityPubInbox(mockReq as Request, mockRes as Response, mockNext)
+
+          // Assert
+          expect(statusSpy).toHaveBeenCalledWith(400)
+          expect(jsonSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              success: false,
+              error: expect.objectContaining({
+                code: 'VALIDATION_ERROR',
+                message: expect.stringContaining('Missing required ActivityPub fields')
+              })
+            })
+          )
+        })
+      })
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should handle validation errors properly', () => {
+      // Arrange - Create invalid data that will trigger validation error
+      mockReq.params = {
+        username: 'ab' // Too short username will trigger validation error
+      }
+      mockReq.body = {}
+
+      // Act
+      validateFollowRequest(mockReq as Request, mockRes as Response, mockNext)
+
+      // Assert - Should return validation error
+      expect(statusSpy).toHaveBeenCalledWith(400)
+      expect(jsonSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid follow request data'
+          })
+        })
+      )
+      expect(mockNext).not.toHaveBeenCalled()
+    })
+  })
+})
