@@ -1,175 +1,280 @@
-// backend/src/middleware/rateLimitMiddleware.ts
-// Version: 1.1.0 - Fixed media upload rate limiting to skip failed requests
-// Added skipFailedRequests option to prevent validation failures from counting against rate limit
+// src/middleware/rateLimitMiddleware.ts
+// Version: 1.0.0
+// Initial implementation of rate limiting middleware
 
-import rateLimit from 'express-rate-limit'
-import { Request, Response } from 'express'
+import { Request, Response, NextFunction } from 'express'
 
-/**
- * Custom error response format for rate limiting
- * Matches the existing API response structure
- */
-const createRateLimitResponse = (message: string) => {
-  return {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message,
-      retryAfter: '60 seconds'
+// Interface for rate limit request
+interface RateLimitRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+  ip: string
+}
+
+// Rate limit configuration interface
+export interface RateLimitConfig {
+  windowMs: number // Time window in milliseconds
+  max: number // Maximum number of requests per window
+  keyGenerator?: (req: RateLimitRequest) => string // Custom key generator
+  skipSuccessfulRequests?: boolean // Skip counting successful requests
+  skipFailedRequests?: boolean // Skip counting failed requests
+  standardHeaders?: boolean // Include rate limit headers
+  legacyHeaders?: boolean // Include legacy X-RateLimit headers
+}
+
+// Rate limit error types
+export enum RateLimitError {
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+  INVALID_RATE_LIMIT_CONFIG = 'INVALID_RATE_LIMIT_CONFIG'
+}
+
+// In-memory store for rate limiting (in production, use Redis)
+interface RateLimitStore {
+  [key: string]: {
+    count: number
+    resetTime: number
+  }
+}
+
+const rateLimitStore: RateLimitStore = {}
+
+// Default rate limit configurations
+export const DEFAULT_CONFIGS = {
+  // Authentication endpoints (login, register)
+  auth: {
+    windowMs: 60 * 1000, // 1 minute
+    max: 5, // 5 attempts per minute
+    keyGenerator: (req: RateLimitRequest): string => req.ip,
+    standardHeaders: true
+  },
+  
+  // Post creation
+  postCreation: {
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // 10 posts per minute
+    keyGenerator: (req: RateLimitRequest): string => req.user?.id || req.ip,
+    standardHeaders: true
+  },
+  
+  // Media upload
+  mediaUpload: {
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // 10 uploads per minute
+    keyGenerator: (req: RateLimitRequest): string => req.user?.id || req.ip,
+    standardHeaders: true
+  },
+  
+  // Follow operations
+  followOperations: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 20, // 20 follow/unfollow operations per hour
+    keyGenerator: (req: RateLimitRequest): string => req.user?.id || req.ip,
+    standardHeaders: true
+  },
+  
+  // General API
+  general: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // 100 requests per 15 minutes
+    keyGenerator: (req: RateLimitRequest): string => req.user?.id || req.ip,
+    standardHeaders: true
+  }
+}
+
+// Clean up expired entries from rate limit store
+const cleanupExpiredEntries = (): void => {
+  const now = Date.now()
+  for (const key in rateLimitStore) {
+    const entry = rateLimitStore[key]
+    if (entry && entry.resetTime <= now) {
+      delete rateLimitStore[key]
     }
   }
 }
 
-/**
- * Custom rate limit handler that returns consistent JSON responses
- */
-const rateLimitHandler = (message: string) => {
-  return (_req: Request, res: Response) => {
-    res.status(429).json(createRateLimitResponse(message))
+// Create rate limit middleware with configuration
+export const createRateLimit = (config: RateLimitConfig) => {
+  // Validate configuration
+  if (!config.windowMs || config.windowMs <= 0) {
+    throw new Error('windowMs must be a positive number')
+  }
+  
+  if (!config.max || config.max <= 0) {
+    throw new Error('max must be a positive number')
+  }
+
+  // Default key generator uses user ID if authenticated, otherwise IP
+  const keyGenerator = config.keyGenerator || ((req: RateLimitRequest): string => {
+    return req.user?.id || req.ip
+  })
+
+  return (req: RateLimitRequest, res: Response, next: NextFunction): void => {
+    try {
+      // Clean up expired entries periodically
+      if (Math.random() < 0.01) { // 1% chance to clean up
+        cleanupExpiredEntries()
+      }
+
+      const key = keyGenerator(req)
+      const now = Date.now()
+      const windowStart = now
+      const resetTime = windowStart + config.windowMs
+
+      // Get or create rate limit entry
+      let entry = rateLimitStore[key]
+      
+      if (!entry || entry.resetTime <= now) {
+        // Create new entry or reset expired entry
+        entry = {
+          count: 0,
+          resetTime
+        }
+        rateLimitStore[key] = entry
+      }
+
+      // Check if limit exceeded
+      if (entry.count >= config.max) {
+        const retryAfter = Math.ceil((entry.resetTime - now) / 1000)
+        
+        // Set rate limit headers
+        if (config.standardHeaders !== false) {
+          res.set({
+            'RateLimit-Limit': config.max.toString(),
+            'RateLimit-Remaining': '0',
+            'RateLimit-Reset': Math.ceil(entry.resetTime / 1000).toString()
+          })
+        }
+
+        if (config.legacyHeaders) {
+          res.set({
+            'X-RateLimit-Limit': config.max.toString(),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': Math.ceil(entry.resetTime / 1000).toString()
+          })
+        }
+
+        res.status(429).json({
+          success: false,
+          error: {
+            code: RateLimitError.RATE_LIMIT_EXCEEDED,
+            message: 'Rate limit exceeded',
+            rateLimitKey: key,
+            retryAfter: `${retryAfter} seconds`
+          }
+        })
+        return
+      }
+
+      // Increment counter
+      entry.count++
+
+      // Set rate limit headers
+      if (config.standardHeaders !== false) {
+        res.set({
+          'RateLimit-Limit': config.max.toString(),
+          'RateLimit-Remaining': (config.max - entry.count).toString(),
+          'RateLimit-Reset': Math.ceil(entry.resetTime / 1000).toString()
+        })
+      }
+
+      if (config.legacyHeaders) {
+        res.set({
+          'X-RateLimit-Limit': config.max.toString(),
+          'X-RateLimit-Remaining': (config.max - entry.count).toString(),
+          'X-RateLimit-Reset': Math.ceil(entry.resetTime / 1000).toString()
+        })
+      }
+
+      next()
+    } catch (error) {
+      // Log error and continue (don't block requests due to rate limit errors)
+      console.error('Rate limit middleware error:', error)
+      next()
+    }
   }
 }
 
-/**
- * Strict rate limiting for authentication endpoints
- * 5 requests per minute to prevent brute force attacks
- */
-export const authRateLimit = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute window
-  max: 5, // Maximum 5 requests per window
-  message: 'Too many authentication attempts. Please try again in 1 minute.',
-  standardHeaders: true, // Include rate limit info in headers
-  legacyHeaders: false, // Disable legacy X-RateLimit headers
-  handler: rateLimitHandler('Too many authentication attempts. Please try again in 1 minute.'),
-  // Skip successful requests in the count for login/register
-  skipSuccessfulRequests: false,
-  // Use IP address for rate limiting
-  keyGenerator: (req: Request) => {
-    return req.ip || 'unknown'
-  }
-})
+// Pre-configured rate limit middleware for common use cases
+export const authRateLimit = createRateLimit(DEFAULT_CONFIGS.auth)
+export const postCreationRateLimit = createRateLimit(DEFAULT_CONFIGS.postCreation)
+export const mediaUploadRateLimit = createRateLimit(DEFAULT_CONFIGS.mediaUpload)
+export const followOperationsRateLimit = createRateLimit(DEFAULT_CONFIGS.followOperations)
+export const generalRateLimit = createRateLimit(DEFAULT_CONFIGS.general)
 
-/**
- * Moderate rate limiting for post creation
- * 10 posts per hour to prevent spam
- */
-export const postCreationRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour window
-  max: 10, // Maximum 10 posts per hour
-  message: 'Post creation limit reached. You can create 10 posts per hour.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Post creation limit reached. You can create 10 posts per hour.'),
-  // Use user ID if authenticated, otherwise IP
-  keyGenerator: (req: Request) => {
-    // Check if user is authenticated (assuming req.user is set by auth middleware)
-    const authenticatedUser = (req as any).user
-    return authenticatedUser?.id || req.ip || 'unknown'
-  }
-})
-
-/**
- * Moderate rate limiting for follow operations
- * 20 follow/unfollow actions per hour to prevent automation abuse
- */
-export const followRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour window  
-  max: 20, // Maximum 20 follow operations per hour
-  message: 'Follow action limit reached. You can perform 20 follow/unfollow actions per hour.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Follow action limit reached. You can perform 20 follow/unfollow actions per hour.'),
-  keyGenerator: (req: Request) => {
-    const authenticatedUser = (req as any).user
-    return authenticatedUser?.id || req.ip || 'unknown'
-  }
-})
-
-/**
- * Strict rate limiting for media uploads
- * 20 uploads per hour to manage server resources
- * FIXED: Now skips failed requests (4xx errors) so validation failures don't count against limit
- */
-export const mediaUploadRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour window
-  max: 20, // Maximum 20 uploads per hour
-  message: 'Media upload limit reached. You can upload 20 files per hour.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Media upload limit reached. You can upload 20 files per hour.'),
-  // CRITICAL FIX: Skip failed requests (4xx errors) so validation failures don't count
-  skipFailedRequests: true,
-  keyGenerator: (req: Request) => {
-    const authenticatedUser = (req as any).user
-    return authenticatedUser?.id || req.ip || 'unknown'
-  }
-})
-
-/**
- * General API rate limiting for all other endpoints
- * 100 requests per minute for general usage
- */
-export const generalRateLimit = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute window
-  max: 100, // Maximum 100 requests per minute
-  message: 'API rate limit exceeded. You can make 100 requests per minute.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('API rate limit exceeded. You can make 100 requests per minute.'),
-  keyGenerator: (req: Request) => {
-    // Use IP for general rate limiting
-    return req.ip || 'unknown'
-  }
-})
-
-/**
- * Very strict rate limiting for password reset attempts
- * 3 attempts per hour to prevent abuse of password reset system
- */
-export const passwordResetRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour window
-  max: 3, // Maximum 3 password reset attempts per hour
-  message: 'Password reset limit reached. You can request 3 password resets per hour.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Password reset limit reached. You can request 3 password resets per hour.'),
-  keyGenerator: (req: Request) => {
-    return req.ip || 'unknown'
-  }
-})
-
-/**
- * Rate limiting configuration object for easy reference
- * Use this to understand the current limits across the application
- */
-export const rateLimitConfig = {
-  auth: {
-    windowMs: 1 * 60 * 1000,
-    max: 5,
-    description: 'Authentication endpoints (login, register)'
+// Key generator functions for different strategies
+export const keyGenerators = {
+  // Rate limit by IP address
+  byIP: (req: RateLimitRequest): string => req.ip,
+  
+  // Rate limit by user ID (requires authentication)
+  byUserID: (req: RateLimitRequest): string => {
+    if (!req.user?.id) {
+      throw new Error('User authentication required for user-based rate limiting')
+    }
+    return req.user.id
   },
-  postCreation: {
-    windowMs: 60 * 60 * 1000,
-    max: 10,
-    description: 'Post creation endpoint'
-  },
-  follow: {
-    windowMs: 60 * 60 * 1000,
-    max: 20,
-    description: 'Follow/unfollow operations'
-  },
-  mediaUpload: {
-    windowMs: 60 * 60 * 1000,
-    max: 20,
-    description: 'Media file uploads - now skips failed requests'
-  },
-  general: {
-    windowMs: 1 * 60 * 1000,
-    max: 100,
-    description: 'General API endpoints'
-  },
-  passwordReset: {
-    windowMs: 60 * 60 * 1000,
-    max: 3,
-    description: 'Password reset requests'
+  
+  // Rate limit by user ID if authenticated, otherwise by IP
+  byUserOrIP: (req: RateLimitRequest): string => req.user?.id || req.ip,
+  
+  // Rate limit by a combination of user ID and endpoint
+  byUserAndEndpoint: (endpoint: string) => (req: RateLimitRequest): string => {
+    const userKey = req.user?.id || req.ip
+    return `${userKey}:${endpoint}`
   }
-} as const
+}
+
+// Utility function to create custom rate limits
+export const createCustomRateLimit = (
+  windowMs: number,
+  max: number,
+  keyGenerator?: (req: RateLimitRequest) => string
+) => {
+  return createRateLimit({
+    windowMs,
+    max,
+    keyGenerator: keyGenerator || keyGenerators.byUserOrIP,
+    standardHeaders: true
+  })
+}
+
+// Reset rate limit for a specific key (useful for testing)
+export const resetRateLimit = (key: string): void => {
+  delete rateLimitStore[key]
+}
+
+// Reset all rate limits (useful for testing)
+export const resetAllRateLimits = (): void => {
+  for (const key in rateLimitStore) {
+    delete rateLimitStore[key]
+  }
+}
+
+// Get current rate limit status for a key
+export const getRateLimitStatus = (key: string): { count: number, resetTime: number } | null => {
+  const entry = rateLimitStore[key]
+  if (!entry || entry.resetTime <= Date.now()) {
+    return null
+  }
+  return { ...entry }
+}
+
+// Export default rate limit configurations
+export default {
+  createRateLimit,
+  authRateLimit,
+  postCreationRateLimit,
+  mediaUploadRateLimit,
+  followOperationsRateLimit,
+  generalRateLimit,
+  keyGenerators,
+  createCustomRateLimit,
+  resetRateLimit,
+  resetAllRateLimits,
+  getRateLimitStatus,
+  RateLimitError,
+  DEFAULT_CONFIGS
+}
