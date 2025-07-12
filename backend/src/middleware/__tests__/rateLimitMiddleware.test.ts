@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express, { Application } from 'express'
 import request, { Response } from 'supertest'
-import { rateLimitConfig } from '../../src/middleware/rateLimitMiddleware'
+import rateLimitConfig from '../rateLimitMiddleware'
 
 /**
  * Helper function to create Express app with rate limiting middleware
