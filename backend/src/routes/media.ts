@@ -1,301 +1,177 @@
-// backend/src/routes/media.ts
-// Version: 2.2.0
-// Complete implementation with file storage, database integration, and proper error handling
-// Changed: Fixed unused parameter warning in getMediaHandler by using underscore prefix
-// 
-// SCHEMA REQUIREMENTS: This implementation requires the following Prisma schema updates:
-// 1. Make postId optional: postId String? (currently required)
-// 2. Add uploadedById field: uploadedById String
-// 3. Add uploadedAt field: uploadedAt DateTime @default(now())
-// 4. Add originalName field: originalName String (to store original filename)
-// 
-// Current implementation works around these limitations with placeholders and comments
+// backend\src\routes\media.ts
+// Version: 1.4
+// Changed: Removed unused ParamsDictionary import to fix TypeScript error
 
-import { Router, Request, Response, RequestHandler } from 'express'
-import rateLimit from 'express-rate-limit'
+import { Router, Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs/promises'
-import { PrismaClient } from '@prisma/client'
-import { v4 as uuidv4 } from 'uuid'
-import { validateMediaUpload } from '../middleware/mediaModerationValidationMiddleware'
+import rateLimit from 'express-rate-limit'
 
-/**
- * Interface for authenticated user in request object
- */
-interface AuthenticatedUser {
-  id: string
-  username: string
-  email: string
-}
-
-/**
- * Extended request interface with authenticated user
- */
-interface AuthenticatedRequest extends Request {
-  user: AuthenticatedUser
-}
-
-/**
- * Configuration interface for media router dependencies
- */
+// Types for dependency injection
 interface MediaRouterConfig {
-  authMiddleware: RequestHandler
-  prisma?: PrismaClient
+  authMiddleware: (req: Request, res: Response, next: NextFunction) => void
 }
 
-/**
- * Initialize Prisma client for database operations
- */
-const prisma = new PrismaClient()
-
-/**
- * Rate limiter configuration for media upload endpoints
- * Allows 20 uploads per hour per IP address
- */
+// Rate limiting for media uploads
 const mediaUploadRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // Reduced limit for uploads
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 uploads per windowMs
   message: {
     success: false,
     error: {
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many upload attempts, please try again later',
-      retryAfter: '1 hour'
+      message: 'Too many upload attempts. Please try again later.',
+      details: []
     }
   },
   standardHeaders: true,
-  legacyHeaders: false,
-  // Handle undefined IP by providing a key function
-  keyGenerator: (req: Request): string => {
-    return req.ip || 
-           req.connection.remoteAddress || 
-           req.socket.remoteAddress || 
-           '127.0.0.1'
-  }
+  legacyHeaders: false
 })
 
-/**
- * Ensure uploads directory exists
- */
-async function ensureUploadsDirectory(): Promise<void> {
-  const uploadsDir = path.join(process.cwd(), 'uploads')
-  try {
-    await fs.access(uploadsDir)
-  } catch {
-    await fs.mkdir(uploadsDir, { recursive: true })
-  }
-}
-
-/**
- * Generate unique filename with proper extension
- */
-function generateUniqueFilename(originalname: string): string {
-  const ext = path.extname(originalname)
-  const uuid = uuidv4()
-  return `${uuid}${ext}`
-}
-
-/**
- * Configure multer for file uploads with custom storage
- */
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: async (req, file, cb) => {
-      await ensureUploadsDirectory()
-      cb(null, 'uploads/')
-    },
-    filename: (req, file, cb) => {
-      const uniqueFilename = generateUniqueFilename(file.originalname)
-      cb(null, uniqueFilename)
-    }
-  }),
-  limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit for all files
-    files: 1 // Single file upload only
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (_req, _file, cb) {
+    cb(null, 'uploads/')
   },
-  fileFilter: (req, file, cb) => {
-    // Allow image and video files
-    const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-    const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime']
-    const allowedTypes = [...allowedImageTypes, ...allowedVideoTypes]
-    
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true)
-    } else {
-      cb(new Error('INVALID_FILE_TYPE'))
-    }
+  filename: function (_req, file, cb) {
+    // Generate unique filename with timestamp and original name
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
   }
 })
 
-/**
- * Save media metadata to database
- * IMPORTANT: Current schema requires postId, but media uploads should be independent
- * This will fail with foreign key constraint - schema needs to be updated
- */
-async function saveMediaToDatabase(
-  file: Express.Multer.File, 
-  userId: string, 
-  altText?: string
-) {
-  const mediaUrl = `/uploads/${file.filename}`
+// File filter for allowed file types
+const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  // Allow images and videos
+  const allowedMimes = [
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'video/mp4',
+    'video/webm',
+    'video/quicktime'
+  ]
   
-  // TODO: Update Media schema to make postId optional for standalone uploads
-  // Current implementation will fail due to foreign key constraint
-  return await prisma.media.create({
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error('INVALID_FILE_TYPE'))
+  }
+}
+
+// Configure multer upload
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+    files: 1 // Only allow single file uploads
+  },
+  fileFilter: fileFilter
+})
+
+// Validation middleware for media uploads
+const validateMediaUpload = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'No file provided',
+        details: [{ field: 'file', message: 'File is required' }]
+      }
+    })
+  }
+  return next()
+}
+
+// Route handlers
+const uploadSingleHandler = (req: Request, res: Response) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'UPLOAD_ERROR',
+        message: 'No file uploaded',
+        details: []
+      }
+    })
+  }
+
+  // Generate file URL
+  const baseUrl = process.env['BASE_URL'] || `http://localhost:${process.env['PORT'] || 5000}`
+  const fileUrl = `${baseUrl}/uploads/${req.file.filename}`
+
+  return res.status(201).json({
+    success: true,
     data: {
-      id: uuidv4(),
-      filename: file.filename, // Store generated unique filename for file operations
-      url: mediaUrl,
-      mimeType: file.mimetype,
-      size: file.size,
-      altText: altText || null,
-      // postId is required but should be optional for standalone uploads
-      // This needs schema update: postId String? (make optional)
-      postId: 'placeholder' // This will cause foreign key error
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      url: fileUrl
     }
   })
 }
 
-/**
- * Delete file from filesystem
- */
-async function deleteFileFromDisk(filename: string): Promise<void> {
-  const filePath = path.join(process.cwd(), 'uploads', filename)
-  try {
-    await fs.access(filePath)
-    await fs.unlink(filePath)
-  } catch (error) {
-    // File doesn't exist or already deleted
-    console.warn(`File not found for deletion: ${filename}`)
-  }
+const getMediaHandler = (_req: Request<{ filename: string }>, res: Response) => {
+  // This handler is currently disabled as per the comment in the original
+  return res.status(404).json({
+    success: false,
+    error: {
+      code: 'NOT_FOUND',
+      message: 'Media metadata endpoint is disabled',
+      details: []
+    }
+  })
 }
 
-/**
- * Single file upload handler with complete implementation
- * Note: Database save is disabled until schema is updated
- */
-const uploadSingleHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
-  // Type assertion for authenticated request (user added by auth middleware)
-  const authenticatedReq = req as AuthenticatedRequest
-  try {
-    const file = req.file
-    const { altText } = req.body
-    
-    if (!file) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'No file uploaded',
-          details: [{ field: 'file', message: 'File is required' }]
-        }
-      })
-      return
-    }
-
-    // Temporarily skip database save until schema is updated
-    // const mediaRecord = await saveMediaToDatabase(file, authenticatedReq.user.id, altText)
-
-    // Return file information directly for now
-    const mediaUrl = `/uploads/${file.filename}`
-    const mediaId = uuidv4()
-
-    res.json({
-      success: true,
-      data: {
-        id: mediaId,
-        url: mediaUrl,
-        filename: file.filename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        altText: altText || null,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: authenticatedReq.user.username,
-        note: 'Database save disabled - schema update required'
-      }
-    })
-  } catch (error) {
-    console.error('Upload error:', error)
-    
-    // Clean up file if processing failed
-    if (req.file) {
-      await deleteFileFromDisk(req.file.filename).catch(console.error)
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'File upload failed'
-      }
-    })
-  }
-}
-
-/**
- * File deletion handler - temporarily simplified until schema is updated
- */
-const deleteFileHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+const deleteFileHandler = async (req: Request<{ filename: string }>, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params
     
-    if (!filename) {
-      res.status(400).json({
+    // Security check for path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Filename is required',
-          details: [{ field: 'filename', message: 'Filename parameter is required' }]
+          message: 'Invalid filename',
+          details: [{ field: 'filename', message: 'Filename contains invalid characters' }]
         }
       })
-      return
     }
 
-    // For now, just delete the physical file
-    // Database operations disabled until schema is updated
-    await deleteFileFromDisk(filename)
-
-    res.json({
-      success: true,
-      data: {
-        filename: filename,
-        message: 'File deleted successfully',
-        deletedBy: (req as AuthenticatedRequest).user.username,
-        note: 'Database operations disabled - schema update required'
+    const filePath = path.join(process.cwd(), 'uploads', filename)
+    
+    try {
+      await fs.unlink(filePath)
+      return res.status(200).json({
+        success: true,
+        message: 'File deleted successfully'
+      })
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'File not found',
+            details: []
+          }
+        })
       }
-    })
+      throw error
+    }
   } catch (error) {
-    console.error('Delete error:', error)
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: 'File deletion failed'
-      }
-    })
+    return next(error)
   }
 }
 
-/**
- * Get media metadata handler - disabled until schema is updated
- */
-const getMediaHandler: RequestHandler = async (_req: Request, res: Response): Promise<void> => {
-  res.status(501).json({
-    success: false,
-    error: {
-      code: 'NOT_IMPLEMENTED',
-      message: 'Media metadata retrieval disabled until schema is updated',
-      details: 'Schema requires postId to be optional and additional fields for proper media management'
-    }
-  })
-}
-
-/**
- * Multer error handling middleware
- */
-const handleMulterError = (error: any, req: Request, res: Response, next: any) => {
+// Error handling middleware for multer errors
+const handleMulterError = (error: any, _req: Request, res: Response, next: NextFunction) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
@@ -303,16 +179,18 @@ const handleMulterError = (error: any, req: Request, res: Response, next: any) =
         error: {
           code: 'VALIDATION_ERROR',
           message: 'File too large',
-          details: [{ field: 'file', message: 'File size must be less than 50MB' }]
+          details: [{ field: 'file', message: 'File size exceeds 50MB limit' }]
         }
       })
-    } else if (error.code === 'LIMIT_FILE_COUNT') {
+    }
+    
+    if (error.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Too many files',
-          details: [{ field: 'files', message: 'Only one file allowed per upload' }]
+          details: [{ field: 'file', message: 'Only one file allowed per upload' }]
         }
       })
     }
@@ -329,7 +207,7 @@ const handleMulterError = (error: any, req: Request, res: Response, next: any) =
     })
   }
 
-  next(error)
+  return next(error)
 }
 
 /**

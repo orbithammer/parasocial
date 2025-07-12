@@ -25,6 +25,7 @@
     "test:clean": "rm -rf coverage/ node_modules/.cache/",
     "test:debug": "DEBUG=* vitest run --reporter=verbose --testTimeout=30000 --bail=1",
     "test:verbose": "vitest run --reporter=verbose",
+    "test:fail": "vitest run --reporter=basic",
     "test:ci": "vitest run --reporter=verbose --coverage=false --maxConcurrency=1",
     "test:quick": "vitest run --exclude=**/*.integration.test.ts --exclude=**/*.rateLimit.test.ts --exclude=**/*routes*.test.ts --testTimeout=10000"
   },
