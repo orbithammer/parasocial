@@ -10,7 +10,7 @@ import {
   validateFollowerQuery,
   validateWebFingerQuery,
   validateActivityPubInbox
-} from '../../src/middleware/followValidationMiddleware'
+} from '../followValidationMiddleware'
 
 describe('Follow Validation Middleware', () => {
   let mockReq: Partial<Request>
