@@ -1,6 +1,6 @@
 // backend/test-setup.ts
-// Version: 1.2.0 - Fixed TypeScript timer type issues
-// Ensures all resources are properly closed after tests
+// Version: 1.3.0 - Fixed aggressive process.exit that was interfering with Vitest
+// Changed: Removed forced process.exit that was causing test runner errors
 
 import { afterAll, beforeAll } from 'vitest'
 
@@ -48,7 +48,7 @@ beforeAll(() => {
   console.log('Test setup initialized')
 })
 
-// Global test cleanup
+// Global test cleanup - FIXED: Removed aggressive process.exit
 afterAll(async () => {
   console.log('Starting test cleanup...')
   
@@ -69,7 +69,12 @@ afterAll(async () => {
     if (server && typeof server.close === 'function') {
       try {
         await new Promise<void>((resolve, reject) => {
+          const closeTimeout = setTimeout(() => {
+            reject(new Error('Server close timeout'))
+          }, 1000)
+          
           server.close((err: any) => {
+            clearTimeout(closeTimeout)
             if (err) reject(err)
             else resolve()
           })
@@ -86,15 +91,8 @@ afterAll(async () => {
     global.gc()
   }
   
-  // Clear any remaining handles
-  if (process.env.NODE_ENV === 'test') {
-    // Force exit after a short delay if needed
-    setTimeout(() => {
-      console.log('Forcing process exit after cleanup')
-      process.exit(0)
-    }, 100).unref()
-  }
-  
+  // FIXED: Let Vitest handle process lifecycle naturally
+  // Removed the aggressive process.exit(0) that was causing test runner errors
   console.log('Test cleanup completed')
 })
 
