@@ -5,16 +5,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Request, Response, NextFunction } from 'express'
 import {
   setSecurityHeaders,
-  validateJsonContentType,
-  validateRequestSize,
-  validateUserAgent,
   sanitizeInput,
   validateIdParam,
-  validatePagination,
   validateAndLogIP,
-  applyBasicSecurity,
-  applyAPIValidation
-} from '../../src/middleware/securityValidationMiddleware'
+} from '../securityValidationMiddleware'
 
 interface MockSocket {
   remoteAddress?: string
