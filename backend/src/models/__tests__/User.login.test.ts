@@ -2,7 +2,7 @@
 // Unit tests for User model login validation
 
 import { describe, it, expect } from 'vitest'
-import { User, UserSchemas } from '../../src/models/User.js'
+import { User, UserSchemas } from '../User.ts'
 
 describe('User Model - Login Validation', () => {
   describe('Valid Login Data', () => {
