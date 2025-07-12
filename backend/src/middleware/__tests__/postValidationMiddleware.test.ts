@@ -20,7 +20,7 @@ import {
   validateUpdatePost,
   validatePostQuery,
   validatePostId
-} from '../../src/middleware/postValidationMiddleware'
+} from '../postValidationMiddleware'
 
 describe('Post Validation Middleware', () => {
   let mockReq: Partial<Request>
