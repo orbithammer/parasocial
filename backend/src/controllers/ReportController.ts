@@ -1,10 +1,11 @@
 // backend/src/controllers/ReportController.ts
-// Report controller for handling content and user reporting functionality
-// Version: 1.0.0 - Initial implementation with comprehensive report handling
+// Report controller for handling content and user reporting functionality  
+// Version: 1.2.0 - Fixed ReportType import to use enum from Report model instead of local type
 
 import { Request, Response } from 'express'
 import { UserRepository } from '../repositories/UserRepository'
 import { PostRepository } from '../repositories/PostRepository'
+import { buildCreateReportData, CreateReportData, ReportType } from '../models/Report'
 
 // Extend Express Request to include user from auth middleware
 interface AuthenticatedRequest extends Request {
@@ -16,32 +17,17 @@ interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Valid report types matching the validation middleware
- */
-type ReportType = 'HARASSMENT' | 'SPAM' | 'MISINFORMATION' | 'INAPPROPRIATE_CONTENT' | 'COPYRIGHT' | 'OTHER'
-
-/**
- * Report data interface for creating new reports
- */
-interface CreateReportData {
-  type: ReportType
-  description: string
-  reportedUserId?: string
-  reportedPostId?: string
-  reporterId?: string
-}
-
-/**
  * Report response interface for API responses
+ * Compatible with exactOptionalPropertyTypes: true
  */
 interface ReportResponse {
   id: string
   type: ReportType
   description: string
   status: 'PENDING' | 'REVIEWED' | 'RESOLVED' | 'DISMISSED'
-  reportedUserId?: string
-  reportedPostId?: string
-  reporterId?: string
+  reportedUserId?: string | undefined
+  reportedPostId?: string | undefined
+  reporterId?: string | undefined
   createdAt: Date
   updatedAt: Date
 }
@@ -131,14 +117,14 @@ export class ReportController {
         }
       }
 
-      // Create the report data
-      const reportData: CreateReportData = {
+      // Create the report data using utility function for type safety
+      const reportData: CreateReportData = buildCreateReportData({
         type: type as ReportType,
         description,
-        reportedUserId: reportedUserId || undefined,
-        reportedPostId: reportedPostId || undefined,
-        reporterId: reporterId || undefined
-      }
+        reportedUserId,
+        reportedPostId,
+        reporterId
+      })
 
       // In a real implementation, you would save to database
       // For now, simulate successful creation
@@ -253,107 +239,6 @@ export class ReportController {
       res.status(500).json({
         success: false,
         error: 'Failed to retrieve reports',
-        code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
-
-  /**
-   * Update report status (admin functionality)  
-   * PUT /reports/:id
-   * Allows moderators to update report status
-   */
-  async updateReportStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id } = req.params
-      const { status, moderatorNotes } = req.body
-
-      // TODO: Add admin role checking here
-      
-      // Validate status
-      const validStatuses = ['PENDING', 'REVIEWED', 'RESOLVED', 'DISMISSED']
-      if (!validStatuses.includes(status)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid status',
-          code: 'INVALID_STATUS'
-        })
-        return
-      }
-
-      // In real implementation, update database
-      // For now, return mock success response
-      const updatedReport: ReportResponse = {
-        id,
-        type: 'SPAM',
-        description: 'Mock report description',
-        status: status as any,
-        reportedUserId: 'user123',
-        reporterId: 'reporter456',
-        createdAt: new Date(Date.now() - 86400000),
-        updatedAt: new Date()
-      }
-
-      console.log('Report status updated:', {
-        reportId: id,
-        newStatus: status,
-        moderatorId: req.user?.id,
-        moderatorNotes,
-        timestamp: new Date()
-      })
-
-      res.json({
-        success: true,
-        message: 'Report status updated successfully',
-        data: updatedReport
-      })
-
-    } catch (error) {
-      console.error('Update report status error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to update report status',
-        code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
-
-  /**
-   * Get report by ID
-   * GET /reports/:id
-   * Returns specific report details for moderation
-   */
-  async getReportById(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id } = req.params
-
-      // TODO: Add admin role checking here
-
-      // In real implementation, query database
-      // For now, return mock data
-      const mockReport: ReportResponse = {
-        id,
-        type: 'HARASSMENT',
-        description: 'Detailed description of the reported content or behavior',
-        status: 'PENDING',
-        reportedUserId: 'user123',
-        reporterId: 'reporter456',
-        createdAt: new Date(Date.now() - 86400000),
-        updatedAt: new Date(Date.now() - 86400000)
-      }
-
-      res.json({
-        success: true,
-        data: mockReport
-      })
-
-    } catch (error) {
-      console.error('Get report by ID error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve report',
         code: 'INTERNAL_ERROR',
         message: error instanceof Error ? error.message : 'Unknown error'
       })
