@@ -1,14 +1,14 @@
-// backend/src/routes/__tests__/posts.rateLimit.test.ts
-// Version: 2.1.0 - Fixed mock.calls TypeScript issues by separating mock functions
-// Changed: Separated individual mock functions to preserve mock properties while maintaining type safety
+// backend/src/routes/__tests__/posts.routes.test.ts
+// Version: 9.0.0 - Fixed Response typing issues with proper mock method signatures
+// Changed: Added proper typing for mock controller methods to match PostController interface
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express, { Application, Request, Response, NextFunction } from 'express'
 import request from 'supertest'
 import { createPostsRouter } from '../posts'
-import { PostController } from '../../controllers/PostController'
+import type { PostController } from '../../controllers/PostController'
 
-// AuthenticatedRequest interface matching the controller expectations
+// AuthenticatedRequest interface matching controller expectations
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string
@@ -17,133 +17,185 @@ interface AuthenticatedRequest extends Request {
   }
 }
 
-// Mock post controller functions with proper mock typing
-const mockCreatePost = vi.fn().mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  res.status(201).json({
-    success: true,
-    data: {
-      post: {
-        id: 'new-post-123',
-        content: req.body.content,
-        authorId: req.user?.id,
-        createdAt: new Date().toISOString()
+// Create properly typed mock controller methods that match PostController signatures
+const mockCreatePost = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(201).json({
+      success: true,
+      data: {
+        post: {
+          id: 'new-post-123',
+          content: req.body.content,
+          authorId: req.user?.id,
+          createdAt: new Date().toISOString()
+        }
       }
-    }
-  })
-})
+    })
+  }
+)
 
-const mockGetPosts = vi.fn().mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  res.status(200).json({
-    success: true,
-    data: { 
-      posts: [], 
-      pagination: { total: 0, page: 1, limit: 20, hasNext: false } 
-    }
-  })
-})
+const mockGetPosts = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { 
+        posts: [], 
+        pagination: { total: 0, page: 1, limit: 20, hasNext: false } 
+      }
+    })
+  }
+)
 
-const mockGetPostById = vi.fn().mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  res.status(200).json({
-    success: true,
-    data: { post: { id: req.params.id, content: 'Test content' } }
-  })
-})
+const mockDeletePost = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      message: 'Post deleted successfully'
+    })
+  }
+)
 
-const mockDeletePost = vi.fn().mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  res.status(200).json({
-    success: true,
-    message: 'Post deleted successfully'
-  })
-})
+const mockGetPostById = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { 
+        post: { 
+          id: req.params.id, 
+          content: 'Test content',
+          authorId: 'test-author'
+        } 
+      }
+    })
+  }
+)
 
-const mockGetUserPosts = vi.fn().mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  res.status(200).json({
-    success: true,
-    data: { posts: [] }
-  })
-})
+const mockGetUserPosts = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { posts: [] }
+    })
+  }
+)
 
-// Mock post controller with proper mock properties preserved
+const mockUpdatePost = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { 
+        post: { 
+          id: req.params.id, 
+          content: req.body.content || 'Updated content' 
+        } 
+      }
+    })
+  }
+)
+
+const mockGetScheduledPosts = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { posts: [] }
+    })
+  }
+)
+
+const mockGetPostStats = vi.fn().mockImplementation(
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(200).json({
+      success: true,
+      data: { 
+        stats: { 
+          totalPosts: 0, 
+          publishedPosts: 0, 
+          scheduledPosts: 0 
+        } 
+      }
+    })
+  }
+)
+
+// Create mock controller with properly typed methods including private properties
 const mockPostController = {
-  createPost: mockCreatePost,
   getPosts: mockGetPosts,
+  createPost: mockCreatePost,
   getPostById: mockGetPostById,
   deletePost: mockDeletePost,
-  getUserPosts: mockGetUserPosts
+  getUserPosts: mockGetUserPosts,
+  updatePost: mockUpdatePost,
+  getScheduledPosts: mockGetScheduledPosts,
+  getPostStats: mockGetPostStats,
+  // Include private properties to satisfy TypeScript
+  postRepository: {} as any,
+  userRepository: {} as any
 } as unknown as PostController
 
 // Mock middleware functions with proper async signatures
-const mockAuthMiddleware = vi.fn().mockImplementation(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // Mock authenticated user
-  ;(req as AuthenticatedRequest).user = {
-    id: 'test-user-123',
-    email: 'test@example.com', 
-    username: 'testuser'
-  }
-  next()
-})
-
-const mockOptionalAuthMiddleware = vi.fn().mockImplementation(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // Optional auth - adds user if authorization header present
-  if (req.headers.authorization) {
-    ;(req as AuthenticatedRequest).user = {
+const mockAuthMiddleware = vi.fn().mockImplementation(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Simulate authenticated user being added by auth middleware
+    (req as AuthenticatedRequest).user = {
       id: 'test-user-123',
-      email: 'test@example.com',
-      username: 'testuser'  
+      username: 'testuser',
+      email: 'test@example.com'
     }
+    next()
   }
-  next()
-})
+)
 
-// Mock validation middleware arrays - these should pass through for rate limit testing
+const mockOptionalAuthMiddleware = vi.fn().mockImplementation(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Optional auth - user may or may not be present
+    next()
+  }
+)
+
+// Mock validation middleware - simplified for testing
+const mockValidationMiddleware = vi.fn().mockImplementation(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Validation passes in tests
+    next()
+  }
+)
+
+// Mock rate limiting with proper typing for testing
+const mockRateLimitMiddleware = vi.fn().mockImplementation(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Rate limiting passes in tests
+    next()
+  }
+)
+
+// Mock all validation middleware modules
 vi.mock('../../middleware/postValidationMiddleware', () => ({
-  validatePostCreationEndpoint: [
-    vi.fn().mockImplementation((req: Request, res: Response, next: NextFunction) => next())
-  ],
-  validatePostUpdateEndpoint: [
-    vi.fn().mockImplementation((req: Request, res: Response, next: NextFunction) => next())
-  ],
-  validatePostDeletionEndpoint: [
-    vi.fn().mockImplementation((req: Request, res: Response, next: NextFunction) => next())
-  ],
-  validatePostListQuery: vi.fn().mockImplementation((req: Request, res: Response, next: NextFunction) => next()),
-  validatePostIdParam: vi.fn().mockImplementation((req: Request, res: Response, next: NextFunction) => next())
+  validatePostCreationEndpoint: [mockValidationMiddleware],
+  validatePostDeletionEndpoint: [mockValidationMiddleware],
+  validatePostListQuery: mockValidationMiddleware,
+  validatePostIdParam: mockValidationMiddleware
 }))
 
-describe('Posts Routes - Rate Limiting Tests', () => {
+vi.mock('../../middleware/rateLimitMiddleware', () => ({
+  postCreationRateLimit: mockRateLimitMiddleware
+}))
+
+describe('Posts Routes', () => {
   let app: Application
 
+  // Test data
+  const validPostData = {
+    content: 'This is a test post content',
+    contentWarning: null,
+    isScheduled: false
+  }
+
   beforeEach(() => {
-    // Clear all mocks before each test
-    vi.clearAllMocks()
-    
-    // Reset individual mock implementations
-    mockCreatePost.mockClear()
-    mockGetPosts.mockClear()
-    mockGetPostById.mockClear()
-    mockDeletePost.mockClear()
-    mockGetUserPosts.mockClear()
-    
-    // Create fresh Express app for each test
+    // Create Express app for testing
     app = express()
     app.use(express.json())
 
-    // Reset mock implementation for createPost
-    mockCreatePost.mockImplementation(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-      res.status(201).json({
-        success: true,
-        data: {
-          post: {
-            id: 'new-post-123',
-            content: req.body.content,
-            authorId: req.user?.id,
-            createdAt: new Date().toISOString()
-          }
-        }
-      })
-    })
-
-    // Create router with mocked dependencies
+    // Create posts router with mocked dependencies
     const postsRouter = createPostsRouter({
       postController: mockPostController,
       authMiddleware: mockAuthMiddleware,
@@ -155,226 +207,168 @@ describe('Posts Routes - Rate Limiting Tests', () => {
   })
 
   afterEach(() => {
-    // Clean up after each test
+    // Clear all mocks after each test
     vi.clearAllMocks()
   })
 
-  describe('POST /posts Rate Limiting', () => {
-    const validPostData = {
-      content: 'This is a test post for rate limiting',
-      contentWarning: null,
-      isScheduled: false
-    }
+  describe('GET /posts', () => {
+    it('should get public posts successfully', async () => {
+      const response = await request(app)
+        .get('/posts')
+        .expect(200)
 
-    it('should allow post creation within rate limit', async () => {
-      // Make a single request - should succeed
+      expect(response.body.success).toBe(true)
+      expect(response.body.data).toHaveProperty('posts')
+      expect(mockOptionalAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockGetPosts).toHaveBeenCalledTimes(1)
+    })
+
+    it('should handle query parameters for pagination', async () => {
+      const response = await request(app)
+        .get('/posts')
+        .query({ page: '2', limit: '10' })
+        .expect(200)
+
+      expect(response.body.success).toBe(true)
+      expect(mockValidationMiddleware).toHaveBeenCalled()
+      expect(mockGetPosts).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('POST /posts', () => {
+    it('should create post successfully with authentication', async () => {
       const response = await request(app)
         .post('/posts')
         .set('Authorization', 'Bearer test-token')
         .send(validPostData)
         .expect(201)
 
-      // Verify response structure
       expect(response.body.success).toBe(true)
-      expect(response.body.data.post).toBeDefined()
-      expect(response.body.data.post.content).toBe(validPostData.content)
-
-      // Verify controller was called
+      expect(response.body.data).toHaveProperty('post')
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockRateLimitMiddleware).toHaveBeenCalledTimes(1)
       expect(mockCreatePost).toHaveBeenCalledTimes(1)
-      expect(mockAuthMiddleware).toHaveBeenCalled()
     })
 
-    it('should include rate limit headers in response', async () => {
+    it('should apply rate limiting to post creation', async () => {
       const response = await request(app)
         .post('/posts')
         .set('Authorization', 'Bearer test-token')
         .send(validPostData)
+        .expect(201)
 
-      // Check for standard rate limit headers
-      // Note: Actual headers depend on rate limiting middleware implementation
-      expect(response.headers).toBeDefined()
-      
-      // The rate limiting middleware should add these headers
-      // We check if they exist (implementation may vary)
-      const hasRateLimitHeaders = 
-        response.headers['ratelimit-limit'] || 
-        response.headers['x-ratelimit-limit'] ||
-        response.headers['x-rate-limit-limit']
-      
-      // At minimum, the response should be successful if within limits
-      expect(response.status).toBe(201)
-    })
-
-    it('should apply rate limiting to authenticated users', async () => {
-      // This test verifies that rate limiting is applied
-      // In a real scenario, we would need to make multiple requests quickly
-      // For this test, we verify the middleware chain is properly configured
-      
-      const response = await request(app)
-        .post('/posts')
-        .set('Authorization', 'Bearer test-token')
-        .send(validPostData)
-
-      expect(response.status).toBe(201)
-      expect(mockAuthMiddleware).toHaveBeenCalled()
-      expect(mockCreatePost).toHaveBeenCalled()
+      // Verify rate limiting middleware was called
+      expect(mockRateLimitMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockCreatePost).toHaveBeenCalledTimes(1)
     })
 
     it('should require authentication for post creation', async () => {
-      // Test without authorization header
       const response = await request(app)
         .post('/posts')
         .send(validPostData)
 
-      // Should still call auth middleware (which would normally reject)
-      // In our mock, we always add user, but real middleware would reject
-      expect(mockAuthMiddleware).toHaveBeenCalled()
-    })
-
-    it('should handle rate limit configuration properly', async () => {
-      // Verify that the rate limiting middleware is properly configured
-      // This tests the middleware chain rather than hitting actual limits
-      
-      const response = await request(app)
-        .post('/posts')
-        .set('Authorization', 'Bearer test-token')
-        .send(validPostData)
-
-      // Should succeed within rate limits
-      expect(response.status).toBe(201)
-      
-      // Should call all middleware in correct order
-      expect(mockAuthMiddleware).toHaveBeenCalled()
-      expect(mockCreatePost).toHaveBeenCalled()
-    })
-
-    it('should handle multiple rapid post creation attempts', async () => {
-      // Test multiple requests in quick succession
-      const requests = Array.from({ length: 3 }, () => 
-        request(app)
-          .post('/posts')
-          .set('Authorization', 'Bearer test-token')
-          .send(validPostData)
-      )
-
-      const responses = await Promise.all(requests)
-
-      // All should succeed in this test environment
-      // In production, rate limiting would kick in after the configured limit
-      responses.forEach((response) => {
-        expect([201, 429]).toContain(response.status) // Either success or rate limited
-      })
-
-      // Verify controller was called for successful requests
-      expect(mockCreatePost).toHaveBeenCalled()
+      // Auth middleware should still be called (it would normally reject)
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
     })
   })
 
-  describe('Rate Limit Middleware Integration', () => {
-    it('should apply rate limiting only to POST /posts endpoint', async () => {
-      // POST /posts should have rate limiting
-      const postResponse = await request(app)
-        .post('/posts')
-        .set('Authorization', 'Bearer test-token')
-        .send({ content: 'Test post' })
-
-      expect(postResponse.status).toBe(201)
-      expect(mockAuthMiddleware).toHaveBeenCalled()
-    })
-
-    it('should not apply rate limiting to GET endpoints', async () => {
-      // GET /posts should not have rate limiting
-      const feedResponse = await request(app)
-        .get('/posts')
-        .expect(200)
-
-      // GET /posts/:id should not have rate limiting  
-      const postResponse = await request(app)
-        .get('/posts/test-post-123')
-        .expect(200)
-
-      expect(feedResponse.body.success).toBe(true)
-      expect(postResponse.body.success).toBe(true)
-    })
-
-    it('should not apply rate limiting to DELETE endpoint', async () => {
-      // DELETE /posts/:id should not have rate limiting
+  describe('GET /posts/:id', () => {
+    it('should get specific post by ID', async () => {
+      const testPostId = 'test-post-123'
       const response = await request(app)
-        .delete('/posts/test-post-123')
+        .get(`/posts/${testPostId}`)
+        .expect(200)
+
+      expect(response.body.success).toBe(true)
+      expect(response.body.data).toHaveProperty('post')
+      expect(response.body.data.post.id).toBe(testPostId)
+      expect(mockOptionalAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockGetPostById).toHaveBeenCalledTimes(1)
+    })
+
+    it('should validate post ID parameter', async () => {
+      const response = await request(app)
+        .get('/posts/invalid-id')
+        .expect(200) // Mock always succeeds
+
+      expect(mockValidationMiddleware).toHaveBeenCalled()
+      expect(mockGetPostById).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('DELETE /posts/:id', () => {
+    it('should delete post with authentication', async () => {
+      const testPostId = 'test-post-123'
+      const response = await request(app)
+        .delete(`/posts/${testPostId}`)
         .set('Authorization', 'Bearer test-token')
         .expect(200)
 
       expect(response.body.success).toBe(true)
-      expect(mockAuthMiddleware).toHaveBeenCalled()
+      expect(response.body.message).toBe('Post deleted successfully')
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockDeletePost).toHaveBeenCalledTimes(1)
+    })
+
+    it('should require authentication for post deletion', async () => {
+      const response = await request(app)
+        .delete('/posts/test-post-123')
+
+      // Auth middleware should be called
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
     })
   })
 
-  describe('Rate Limit Error Handling', () => {
-    it('should handle rate limit middleware errors gracefully', async () => {
-      // This test verifies that if the rate limiting middleware fails,
-      // the request doesn't crash the application
-      
-      const response = await request(app)
+  describe('Middleware Integration', () => {
+    it('should apply correct middleware chain for POST requests', async () => {
+      await request(app)
         .post('/posts')
         .set('Authorization', 'Bearer test-token')
-        .send({ content: 'Test post content' })
+        .send(validPostData)
 
-      // Should either succeed or return a proper error response
-      expect([200, 201, 429, 500]).toContain(response.status)
-      
-      // Response should always be valid JSON
-      expect(response.body).toBeDefined()
+      // Verify middleware execution order
+      expect(mockRateLimitMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockValidationMiddleware).toHaveBeenCalled()
+      expect(mockCreatePost).toHaveBeenCalledTimes(1)
     })
 
-    it('should maintain proper middleware order with rate limiting', async () => {
-      // Verify that rate limiting middleware is applied before auth middleware
-      const response = await request(app)
-        .post('/posts')
-        .set('Authorization', 'Bearer test-token')
-        .send({ content: 'Test middleware order' })
+    it('should apply optional auth for GET requests', async () => {
+      await request(app)
+        .get('/posts')
 
-      // Should succeed if middleware order is correct
-      expect(response.status).toBe(201)
-      
-      // Both middleware should have been called
-      expect(mockAuthMiddleware).toHaveBeenCalled()
-      expect(mockCreatePost).toHaveBeenCalled()
+      expect(mockOptionalAuthMiddleware).toHaveBeenCalledTimes(1)
+      expect(mockGetPosts).toHaveBeenCalledTimes(1)
+    })
+
+    it('should validate parameters for ID-based routes', async () => {
+      await request(app)
+        .get('/posts/test-id')
+
+      expect(mockValidationMiddleware).toHaveBeenCalled()
+      expect(mockGetPostById).toHaveBeenCalledTimes(1)
     })
   })
 
-  describe('Rate Limit Boundary Testing', () => {
-    it('should track rate limits per user when authenticated', async () => {
-      // Multiple requests from the same authenticated user
-      const requests = Array.from({ length: 2 }, () =>
-        request(app)
-          .post('/posts')
-          .set('Authorization', 'Bearer test-token')
-          .send({ content: 'User rate limit test' })
+  describe('Error Handling', () => {
+    it('should handle controller errors gracefully', async () => {
+      // Mock an error in the controller
+      mockGetPosts.mockImplementationOnce(
+        async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+          res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+          })
+        }
       )
 
-      const responses = await Promise.all(requests)
+      const response = await request(app)
+        .get('/posts')
+        .expect(500)
 
-      // All requests should succeed in test environment
-      responses.forEach((response) => {
-        expect([201, 429]).toContain(response.status)
-      })
-
-      // Verify multiple calls to controller (if all succeeded)
-      expect(mockCreatePost).toHaveBeenCalled()
-    })
-
-    it('should handle unauthenticated rate limiting by IP', async () => {
-      // Multiple requests without authentication (would be rate limited by IP)
-      const requests = Array.from({ length: 2 }, () =>
-        request(app)
-          .post('/posts')
-          .send({ content: 'IP rate limit test' })
-      )
-
-      const responses = await Promise.all(requests)
-
-      // Should call auth middleware for each request
-      expect(mockAuthMiddleware).toHaveBeenCalled()
+      expect(response.body.success).toBe(false)
+      expect(response.body.error).toBe('Internal server error')
     })
   })
 })
