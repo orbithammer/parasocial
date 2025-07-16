@@ -47,7 +47,7 @@
     "src/**/*",
     "src/types/**/*",
     "**/*.d.ts"
-, "../frontend/src/components/error"  ],
+  ],
   "exclude": [
     "node_modules",
     "dist",
