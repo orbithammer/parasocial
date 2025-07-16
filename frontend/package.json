@@ -11,6 +11,7 @@
     "test:clean": "vitest --reporter=dot",
     "test:file": "vitest --reporter=json > test-results.json 2>&1",
     "test:verbose-file": "vitest --reporter=verbose > test-results.txt 2>&1",
+    "test:fail": "vitest run --reporter=basic",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest --coverage"
