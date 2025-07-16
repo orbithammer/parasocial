@@ -1,6 +1,6 @@
 // frontend/src/components/error/ErrorBoundary.tsx
-// Version: 1.3.1 - Fixed JSX namespace error by adding proper React import and type declarations
-// Added React import to resolve JSX namespace and ensure proper TypeScript compilation
+// Version: 1.4.0 - Fixed JSX namespace error by replacing JSX.Element with ReactNode
+// Removed JSX.Element type references and used ReactNode consistently for better TypeScript compatibility
 
 'use client'
 
@@ -265,11 +265,14 @@ interface ErrorBoundaryWrapperProps {
   onError?: (error: Error, errorInfo: ErrorInfo) => void
 }
 
+/**
+ * Wrapper component for ErrorBoundary with sensible defaults
+ */
 export function ErrorBoundaryWrapper({ 
   children, 
   fallback, 
   onError 
-}: ErrorBoundaryWrapperProps): JSX.Element {
+}: ErrorBoundaryWrapperProps): ReactNode {
   return (
     <ErrorBoundary
       fallback={fallback}
