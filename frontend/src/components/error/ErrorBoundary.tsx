@@ -1,11 +1,16 @@
 // frontend/src/components/error/ErrorBoundary.tsx
-// Version: 1.2.0 - Fixed exactOptionalPropertyTypes compatibility for ErrorDetails interface
-// Updated ErrorDetails interface and object creation to handle strict optional types
+// Version: 1.3.1 - Fixed JSX namespace error by adding proper React import and type declarations
+// Added React import to resolve JSX namespace and ensure proper TypeScript compilation
 
 'use client'
 
-import { Component, ReactNode, ErrorInfo } from 'react'
+import React, { Component, ReactNode, ErrorInfo } from 'react'
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
+
+/**
+ * Check if code is running in browser environment
+ */
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined'
 
 /**
  * Error information interface for consistent error tracking
@@ -46,6 +51,7 @@ interface ErrorBoundaryState {
  * React Error Boundary component
  * Catches JavaScript errors anywhere in the child component tree
  * Logs error information and displays fallback UI
+ * Compatible with Next.js SSR/SSG environments
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -84,12 +90,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       errorInfo
     })
 
-    // Create detailed error information
+    // Create detailed error information with proper browser detection
     const errorDetails: ErrorDetails = {
       message: error.message,
       timestamp: new Date().toISOString(),
-      userAgent: typeof window !== 'undefined' ? window.navigator.userAgent : 'Unknown',
-      url: typeof window !== 'undefined' ? window.location.href : 'Unknown',
+      userAgent: isBrowser ? window.navigator.userAgent : 'Server-side',
+      url: isBrowser ? window.location.href : 'Server-side',
       ...(error.stack && { stack: error.stack }),
       ...(errorInfo.componentStack && { componentStack: errorInfo.componentStack })
     }
@@ -108,8 +114,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       this.props.onError(error, errorInfo)
     }
 
-    // Report error to monitoring service if enabled
-    if (this.props.enableReporting) {
+    // Report error to monitoring service if enabled and in browser
+    if (this.props.enableReporting && isBrowser) {
       this.reportError(errorDetails)
     }
   }
@@ -117,14 +123,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   /**
    * Report error to external monitoring service
    * Can be extended to integrate with services like Sentry, LogRocket, etc.
+   * Only runs in browser environment
    */
   private reportError = async (errorDetails: ErrorDetails): Promise<void> => {
+    if (!isBrowser) {
+      return
+    }
+
     try {
       // In a real app, send to your error monitoring service
       // Example: Sentry, LogRocket, or custom endpoint
       console.log('Reporting error to monitoring service:', errorDetails)
       
-      // You can add API call here to send to your backend
+      // Example API call to send to your backend
       // await fetch('/api/errors/report', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -149,9 +160,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   /**
    * Navigate to home page
+   * Only works in browser environment
    */
   private handleGoHome = (): void => {
-    if (typeof window !== 'undefined') {
+    if (isBrowser) {
       window.location.href = '/'
     }
   }
@@ -206,24 +218,26 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </details>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={this.handleRetry}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Try Again
-              </button>
-              
-              <button
-                onClick={this.handleGoHome}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-              >
-                <Home className="w-4 h-4" />
-                Go Home
-              </button>
-            </div>
+            {/* Action Buttons - Only show if in browser */}
+            {isBrowser && (
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={this.handleRetry}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Try Again
+                </button>
+                
+                <button
+                  onClick={this.handleGoHome}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                >
+                  <Home className="w-4 h-4" />
+                  Go Home
+                </button>
+              </div>
+            )}
 
             {/* Error ID for support */}
             {this.state.errorId && (
