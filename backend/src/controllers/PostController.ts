@@ -1,13 +1,35 @@
-// backend/src/controllers/PostController.ts
-// Version: 1.0.0 - Complete PostController implementation
-// Full controller implementation for post management operations
+// backend/src/controllers/PostController.ts - Version 3.0.0
+// Complete PostController implementation with all CRUD operations and feed functionality
+// Added: getUserFeed() and updatePost() methods to complete Phase 2 requirements
 
 import { Request, Response } from 'express'
-import type { PostRepository } from '../repositories/PostRepository'
-import type { UserRepository } from '../repositories/UserRepository'
 import { z } from 'zod'
+import { PostRepository } from '../repositories/PostRepository'
+import { UserRepository } from '../repositories/UserRepository'
+import { FollowService } from '../services/FollowService'
 
-// Interface for authenticated requests (user from auth middleware)
+/**
+ * Interface for follow relationship objects
+ */
+interface FollowRelationship {
+  id: string
+  followerId: string
+  followedId: string
+  actorId: string | null
+  isAccepted: boolean
+  createdAt: Date
+  followed?: {
+    id: string
+    username: string
+    displayName: string
+    avatar: string | null
+    isVerified: boolean
+  }
+}
+
+/**
+ * Interface for authenticated requests
+ */
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string
@@ -16,130 +38,72 @@ interface AuthenticatedRequest extends Request {
   }
 }
 
-// Validation schemas
-const createPostSchema = z.object({
-  content: z.string().min(1, 'Content is required').max(280, 'Content must be 280 characters or less'),
-  contentWarning: z.string().optional().nullable(),
-  isScheduled: z.boolean().optional().default(false),
-  scheduledFor: z.string().datetime().optional().nullable(),
-  isPublished: z.boolean().optional()
-})
-
-const updatePostSchema = z.object({
-  content: z.string().min(1, 'Content is required').max(280, 'Content must be 280 characters or less').optional(),
-  contentWarning: z.string().optional().nullable(),
-  isPublished: z.boolean().optional()
-})
-
+/**
+ * Validation schema for post queries
+ */
 const postQuerySchema = z.object({
-  page: z.string().optional(),
-  limit: z.string().optional(),
-  authorId: z.string().optional(),
-  includeContentWarning: z.string().optional()
+  page: z.string().optional().default('1'),
+  limit: z.string().optional().default('20'),
+  author: z.string().optional(),
+  includeContentWarning: z.enum(['true', 'false']).optional()
 })
 
 /**
- * PostController handles all post-related HTTP requests
- * Manages post creation, retrieval, updates, and deletion
+ * Validation schema for post creation
+ */
+const createPostSchema = z.object({
+  content: z.string().min(1).max(5000),
+  contentWarning: z.string().max(500).optional(),
+  isScheduled: z.boolean().default(false),
+  scheduledFor: z.string().datetime().optional()
+})
+
+/**
+ * Controller for handling post-related operations
+ * Includes CRUD operations, feed generation, and user-specific post management
  */
 export class PostController {
   constructor(
     private postRepository: PostRepository,
-    private userRepository: UserRepository
+    private userRepository: UserRepository,
+    private followService: FollowService
   ) {}
 
   /**
-   * Create a new post
-   * POST /posts
-   */
-  async createPost(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      // Ensure user is authenticated
-      if (!req.user) {
-        res.status(401).json({
-          success: false,
-          error: 'Authentication required'
-        })
-        return
-      }
-
-      // Validate request body
-      const validationResult = createPostSchema.safeParse(req.body)
-      if (!validationResult.success) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid input data',
-          details: validationResult.error.issues
-        })
-        return
-      }
-
-      const validatedData = validationResult.data
-
-      // Prepare post data for creation
-      const postData = {
-        content: validatedData.content,
-        contentWarning: validatedData.contentWarning || null,
-        authorId: req.user.id,
-        isScheduled: validatedData.isScheduled || false,
-        scheduledFor: validatedData.scheduledFor ? new Date(validatedData.scheduledFor) : null,
-        isPublished: validatedData.isScheduled ? false : (validatedData.isPublished ?? true),
-        publishedAt: validatedData.isScheduled ? null : new Date()
-      }
-
-      // Create the post using repository
-      const post = await this.postRepository.create(postData)
-
-      // Return response with post wrapped in data.post structure as expected by tests
-      res.status(201).json({
-        success: true,
-        data: {
-          post
-        }
-      })
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to create post',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
-      })
-    }
-  }
-
-  /**
-   * Get paginated posts with proper parameter validation
+   * Get public posts feed with pagination and filtering
    * GET /posts
    */
   async getPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // Validate query parameters using the schema
+      const userId = req.user?.id
+
+      // Validate query parameters
       const queryValidation = postQuerySchema.safeParse(req.query)
       if (!queryValidation.success) {
         res.status(400).json({
           success: false,
-          error: 'Invalid query parameters',
-          details: queryValidation.error.issues
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid query parameters',
+            details: queryValidation.error.issues
+          }
         })
         return
       }
 
       const validatedQuery = queryValidation.data
-
-      // Parse pagination parameters with defaults using validated data
-      const page = parseInt(validatedQuery.page || '1') || 1
-      const limit = parseInt(validatedQuery.limit || '20') || 20 // Default to 20 as expected by tests
-      const authorId = validatedQuery.authorId
-      const userId = req.user?.id
-
-      // Calculate offset for repository
+      const page = parseInt(validatedQuery.page)
+      const limit = Math.min(parseInt(validatedQuery.limit), 50) // Max 50 posts per page
       const offset = (page - 1) * limit
+      const authorId = validatedQuery.author
 
-      // Build repository query options
+      // Build query options
       const queryOptions: any = {
         offset,
         limit,
-        orderBy: 'publishedAt',
-        orderDirection: 'desc'
+        onlyPublished: true,
+        includeAuthor: true,
+        includeMedia: true
       }
 
       // Add author filter if specified
@@ -152,14 +116,14 @@ export class PostController {
         queryOptions.hasContentWarning = validatedQuery.includeContentWarning === 'true'
       }
 
-      // Use the actual repository interface
+      // Get posts from repository
       const result = await this.postRepository.findPublished(queryOptions)
 
-      // Filter out current user's own posts if authenticated (as tests expect this behavior)
+      // Filter out current user's own posts if authenticated (unless specifically requesting author's posts)
       let { posts } = result
       const { totalCount, hasMore } = result
 
-      if (userId && !authorId) { // Only filter if not specifically requesting an author's posts
+      if (userId && !authorId) {
         posts = posts.filter(post => post.authorId !== userId)
       }
 
@@ -176,9 +140,210 @@ export class PostController {
         }
       })
     } catch (error) {
+      console.error('Error getting posts:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve posts'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve posts',
+          details: []
+        }
+      })
+    }
+  }
+
+  /**
+   * Get personalized feed for authenticated user
+   * Shows posts from users they follow, ordered by creation date
+   * GET /posts/feed
+   */
+  async getUserFeed(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required for personalized feed',
+            details: []
+          }
+        })
+        return
+      }
+
+      // Parse pagination parameters
+      const page = parseInt(req.query['page'] as string) || 1
+      const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 50) // Max 50 posts
+      const offset = (page - 1) * limit
+
+      // Get list of users that this user follows using FollowService
+      const followingResult = await this.followService.getFollowing(userId, { offset: 0, limit: 1000 })
+      
+      if (!followingResult.success) {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to retrieve following list',
+            details: []
+          }
+        })
+        return
+      }
+
+      const followingList = followingResult.data?.following as FollowRelationship[] | undefined
+      const followedUserIds = followingList?.map((follow: FollowRelationship) => follow.followedId) || []
+
+      if (followedUserIds.length === 0) {
+        // User doesn't follow anyone, return empty feed
+        res.status(200).json({
+          success: true,
+          data: {
+            posts: [],
+            pagination: {
+              currentPage: page,
+              totalPages: 0,
+              totalPosts: 0,
+              hasNext: false,
+              hasPrev: false
+            }
+          }
+        })
+        return
+      }
+
+      // Get posts from followed users
+      const posts = await this.postRepository.getPostsByUserIds(
+        followedUserIds,
+        limit,
+        offset
+      )
+
+      // Get total count for pagination
+      const totalPosts = await this.postRepository.countPostsByUserIds(followedUserIds)
+      const totalPages = Math.ceil(totalPosts / limit)
+
+      res.status(200).json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalPosts,
+            hasNext: page < totalPages,
+            hasPrev: page > 1
+          }
+        }
+      })
+
+    } catch (error) {
+      console.error('Error getting user feed:', error)
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve user feed',
+          details: []
+        }
+      })
+    }
+  }
+
+  /**
+   * Create a new post
+   * POST /posts
+   */
+  async createPost(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      // Ensure user is authenticated
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required to create posts',
+            details: []
+          }
+        })
+        return
+      }
+
+      // Validate request body
+      const validation = createPostSchema.safeParse(req.body)
+      if (!validation.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid post data',
+            details: validation.error.issues
+          }
+        })
+        return
+      }
+
+      const { content, contentWarning, isScheduled, scheduledFor } = validation.data
+
+      // Validate scheduled post logic
+      if (isScheduled && !scheduledFor) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Scheduled posts must have a scheduled date',
+            details: [{ field: 'scheduledFor', message: 'scheduledFor is required when isScheduled is true' }]
+          }
+        })
+        return
+      }
+
+      // Validate scheduled date is in the future
+      if (isScheduled && scheduledFor) {
+        const scheduledDate = new Date(scheduledFor)
+        if (scheduledDate <= new Date()) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Scheduled date must be in the future',
+              details: [{ field: 'scheduledFor', message: 'Cannot schedule posts for past dates' }]
+            }
+          })
+          return
+        }
+      }
+
+      // Prepare post data
+      const postData = {
+        content: content.trim(),
+        contentWarning: contentWarning?.trim() || null,
+        isScheduled,
+        scheduledFor: isScheduled ? new Date(scheduledFor!) : null,
+        isPublished: !isScheduled, // Scheduled posts are not published immediately
+        authorId: req.user.id
+      }
+
+      // Create the post
+      const post = await this.postRepository.create(postData)
+
+      res.status(201).json({
+        success: true,
+        data: { post },
+        message: isScheduled ? 'Post scheduled successfully' : 'Post created successfully'
+      })
+
+    } catch (error) {
+      console.error('Error creating post:', error)
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to create post',
+          details: []
+        }
       })
     }
   }
@@ -189,25 +354,33 @@ export class PostController {
    */
   async getPostById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const postId = req.params['id'] // Use bracket notation for params
+      const postId = req.params['id']
       const userId = req.user?.id
 
       // Validate post ID parameter
-      if (!postId) {
+      if (!postId || typeof postId !== 'string') {
         res.status(400).json({
           success: false,
-          error: 'Post ID is required'
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Post ID is required',
+            details: []
+          }
         })
         return
       }
 
-      // Find the post with author and media information using the correct method
+      // Find the post with author and media information
       const post = await this.postRepository.findByIdWithAuthorAndMedia(postId)
 
       if (!post) {
         res.status(404).json({
           success: false,
-          error: 'Post not found'
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Post not found',
+            details: []
+          }
         })
         return
       }
@@ -216,7 +389,11 @@ export class PostController {
       if (!post.isPublished && post.authorId !== userId) {
         res.status(404).json({
           success: false,
-          error: 'Post not found'
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Post not found',
+            details: []
+          }
         })
         return
       }
@@ -226,144 +403,223 @@ export class PostController {
         data: { post }
       })
     } catch (error) {
+      console.error('Error getting post by ID:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve post',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve post',
+          details: []
+        }
       })
     }
   }
 
   /**
    * Update an existing post
+   * Only allows the post author to edit their own posts
    * PUT /posts/:id
    */
   async updatePost(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // Ensure user is authenticated
-      if (!req.user) {
+      const postId = req.params['id']
+      const userId = req.user?.id
+
+      if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'Authentication required'
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required to update posts',
+            details: []
+          }
         })
         return
       }
 
-      const postId = req.params['id']
-      const userId = req.user.id
-
-      // Validate post ID
-      if (!postId) {
+      // Validate post ID parameter
+      if (!postId || typeof postId !== 'string') {
         res.status(400).json({
           success: false,
-          error: 'Post ID is required'
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Post ID is required',
+            details: []
+          }
         })
         return
       }
 
-      // Validate request body
-      const validationResult = updatePostSchema.safeParse(req.body)
-      if (!validationResult.success) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid input data',
-          details: validationResult.error.issues
-        })
-        return
-      }
-
-      // Check if post exists and user owns it
-      const postExists = await this.postRepository.existsByIdAndAuthor(postId, userId)
-      if (!postExists) {
+      // Check if post exists
+      const existingPost = await this.postRepository.findById(postId)
+      if (!existingPost) {
         res.status(404).json({
           success: false,
-          error: 'Post not found or access denied'
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Post not found',
+            details: []
+          }
         })
         return
       }
 
-      // Update the post
-      const validatedData = validationResult.data
-      const updateData: any = { ...validatedData }
+      // Check if user owns the post
+      if (existingPost.authorId !== userId) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You can only edit your own posts',
+            details: []
+          }
+        })
+        return
+      }
 
-      // Set publishedAt if publishing for the first time
-      if (validatedData.isPublished === true) {
-        const existingPost = await this.postRepository.findById(postId)
-        if (existingPost && !existingPost.isPublished) {
-          updateData.publishedAt = new Date()
+      // Extract update data from request body
+      const { content, contentWarning, isScheduled, scheduledFor } = req.body
+
+      // Validate required fields
+      if (!content || content.trim().length === 0) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Post content is required',
+            details: [{ field: 'content', message: 'Content cannot be empty' }]
+          }
+        })
+        return
+      }
+
+      // Validate content length (max 5000 characters)
+      if (content.length > 5000) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Post content is too long',
+            details: [{ field: 'content', message: 'Content must be 5000 characters or less' }]
+          }
+        })
+        return
+      }
+
+      // Validate scheduled post logic
+      if (isScheduled && !scheduledFor) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Scheduled posts must have a scheduled date',
+            details: [{ field: 'scheduledFor', message: 'scheduledFor is required when isScheduled is true' }]
+          }
+        })
+        return
+      }
+
+      // Validate scheduled date is in the future
+      if (isScheduled && scheduledFor) {
+        const scheduledDate = new Date(scheduledFor)
+        if (scheduledDate <= new Date()) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Scheduled date must be in the future',
+              details: [{ field: 'scheduledFor', message: 'Cannot schedule posts for past dates' }]
+            }
+          })
+          return
         }
       }
 
+      // Prepare update data
+      const updateData = {
+        content: content.trim(),
+        contentWarning: contentWarning?.trim() || null,
+        isScheduled: Boolean(isScheduled),
+        scheduledFor: isScheduled ? new Date(scheduledFor) : null,
+        updatedAt: new Date()
+      }
+
+      // Update the post
       const updatedPost = await this.postRepository.update(postId, updateData)
 
       res.status(200).json({
         success: true,
-        data: { post: updatedPost }
+        data: {
+          post: updatedPost
+        },
+        message: 'Post updated successfully'
       })
+
     } catch (error) {
+      console.error('Error updating post:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to update post',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to update post',
+          details: []
+        }
       })
     }
   }
 
   /**
-   * Delete a post
+   * Delete a post (only by the author)
    * DELETE /posts/:id
    */
   async deletePost(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // Ensure user is authenticated
-      if (!req.user) {
+      const postId = req.params.id
+      const userId = req.user?.id
+
+      if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'Authentication required'
-        })
-        return
-      }
-
-      const postId = req.params['id']
-      const userId = req.user.id
-
-      // Validate post ID
-      if (!postId) {
-        res.status(400).json({
-          success: false,
-          error: 'Post ID is required'
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required to delete posts',
+            details: []
+          }
         })
         return
       }
 
       // Check if post exists and user owns it
-      const postExists = await this.postRepository.existsByIdAndAuthor(postId, userId)
-      if (!postExists) {
+      const existsAndOwned = await this.postRepository.existsByIdAndAuthor(postId, userId)
+      if (!existsAndOwned) {
         res.status(404).json({
           success: false,
-          error: 'Post not found or access denied'
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Post not found or you do not have permission to delete it',
+            details: []
+          }
         })
         return
       }
 
       // Delete the post
-      const deletedPost = await this.postRepository.delete(postId)
+      await this.postRepository.delete(postId)
 
       res.status(200).json({
         success: true,
-        message: 'Post deleted successfully',
-        data: { 
-          deletedPost: {
-            id: deletedPost.id,
-            content: deletedPost.content
-          }
-        }
+        message: 'Post deleted successfully'
       })
+
     } catch (error) {
+      console.error('Error deleting post:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to delete post',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to delete post',
+          details: []
+        }
       })
     }
   }
@@ -375,74 +631,54 @@ export class PostController {
   async getUserPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const username = req.params['username']
-      const currentUserId = req.user?.id
+      const userId = req.user?.id
 
       // Validate username parameter
-      if (!username) {
+      if (!username || typeof username !== 'string') {
         res.status(400).json({
           success: false,
-          error: 'Username is required'
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Username is required',
+            details: []
+          }
         })
         return
       }
-
-      // Validate query parameters using the schema
-      const queryValidation = postQuerySchema.safeParse(req.query)
-      if (!queryValidation.success) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid query parameters',
-          details: queryValidation.error.issues
-        })
-        return
-      }
-
-      const validatedQuery = queryValidation.data
-      const page = parseInt(validatedQuery.page || '1') || 1
-      const limit = parseInt(validatedQuery.limit || '20') || 20
 
       // Find the user by username
       const user = await this.userRepository.findByUsername(username)
       if (!user) {
         res.status(404).json({
           success: false,
-          error: 'User not found'
+          error: {
+            code: 'NOT_FOUND',
+            message: 'User not found',
+            details: []
+          }
         })
         return
       }
 
-      // Calculate offset for pagination
+      // Parse pagination parameters
+      const page = parseInt(req.query['page'] as string) || 1
+      const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 50)
       const offset = (page - 1) * limit
 
-      // Determine what posts to show based on viewing user
-      const isOwnProfile = currentUserId === user.id
-      const postFilter: any = {
-        offset,
-        limit,
-        orderBy: 'createdAt',
-        orderDirection: 'desc'
-      }
-
-      // If viewing own profile, show all posts including drafts
-      // If viewing others, only show published posts
-      if (!isOwnProfile) {
-        postFilter.isPublished = true
-      }
+      // Determine if user can see unpublished posts (only their own)
+      const includeUnpublished = userId === user.id
 
       // Get user's posts
-      const result = await this.postRepository.findByAuthor(user.id, postFilter)
+      const result = await this.postRepository.findByAuthor(user.id, {
+        offset,
+        limit,
+        includeUnpublished
+      })
 
       res.status(200).json({
         success: true,
         data: {
           posts: result.posts,
-          user: {
-            id: user.id,
-            username: user.username,
-            displayName: user.displayName,
-            avatar: user.avatar,
-            isVerified: user.isVerified
-          },
           pagination: {
             total: result.totalCount,
             page,
@@ -451,11 +687,16 @@ export class PostController {
           }
         }
       })
+
     } catch (error) {
+      console.error('Error getting user posts:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve user posts',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve user posts',
+          details: []
+        }
       })
     }
   }
@@ -470,23 +711,30 @@ export class PostController {
       if (!req.user) {
         res.status(401).json({
           success: false,
-          error: 'Authentication required'
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            details: []
+          }
         })
         return
       }
 
-      // Validate query parameters using the schema (for potential future pagination)
+      // Validate query parameters
       const queryValidation = postQuerySchema.safeParse(req.query)
       if (!queryValidation.success) {
         res.status(400).json({
           success: false,
-          error: 'Invalid query parameters',
-          details: queryValidation.error.issues
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid query parameters',
+            details: queryValidation.error.issues
+          }
         })
         return
       }
 
-      // Get user's scheduled posts - findScheduled only takes authorId string parameter
+      // Get user's scheduled posts
       const result = await this.postRepository.findScheduled(req.user.id)
 
       res.status(200).json({
@@ -495,17 +743,21 @@ export class PostController {
           posts: result.posts,
           pagination: {
             total: result.totalCount,
-            page: 1, // Repository handles pagination internally
-            limit: 20, // Repository uses default limit
+            page: 1,
+            limit: 20,
             hasNext: result.hasMore
           }
         }
       })
     } catch (error) {
+      console.error('Error getting scheduled posts:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve scheduled posts',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve scheduled posts',
+          details: []
+        }
       })
     }
   }
@@ -520,7 +772,11 @@ export class PostController {
       if (!req.user) {
         res.status(401).json({
           success: false,
-          error: 'Authentication required'
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            details: []
+          }
         })
         return
       }
@@ -533,10 +789,14 @@ export class PostController {
         data: { stats }
       })
     } catch (error) {
+      console.error('Error getting post stats:', error)
       res.status(500).json({
         success: false,
-        error: 'Failed to retrieve post statistics',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve post statistics',
+          details: []
+        }
       })
     }
   }

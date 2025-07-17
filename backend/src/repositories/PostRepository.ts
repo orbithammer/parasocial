@@ -1,5 +1,6 @@
-// backend/src/repositories/PostRepository.ts
-// Data access layer for Post operations using Prisma with proper TypeScript types
+// backend/src/repositories/PostRepository.ts - Version 5.0.0
+// Complete PostRepository implementation with all methods for Phase 2 functionality
+// Added: All CRUD operations, user feed support, and comprehensive type safety
 
 import { PrismaClient } from '@prisma/client'
 
@@ -35,7 +36,7 @@ interface PostFilterOptions {
 interface PaginationOptions {
   offset?: number
   limit?: number
-  orderBy?: 'publishedAt' | 'createdAt' | 'updatedAt'
+  orderBy?: 'publishedAt' | 'createdAt' | 'updatedAt' | 'scheduledFor'
   orderDirection?: 'asc' | 'desc'
 }
 
@@ -58,7 +59,7 @@ interface PostWithRelations {
     avatar: string | null
     actorId: string | null
     isVerified: boolean
-    verificationTier: string
+    verificationTier: string | null
   }
   media: Array<{
     id: string
@@ -84,9 +85,9 @@ export class PostRepository {
   /**
    * Create a new post
    * @param postData - Post data to create
-   * @returns Promise<Object> Created post with basic relations
+   * @returns Promise<PostWithRelations> Created post with basic relations
    */
-  async create(postData: PostCreateData) {
+  async create(postData: PostCreateData): Promise<PostWithRelations> {
     const now = new Date()
     
     return await this.prisma.post.create({
@@ -133,11 +134,35 @@ export class PostRepository {
   }
 
   /**
-   * Find post by ID with full relations
+   * Find post by ID with minimal data
    * @param id - Post ID
-   * @returns Promise<Object|null> Post with relations or null if not found
+   * @returns Promise<Object|null> Post or null if not found
    */
-  async findById(id: string): Promise<PostWithRelations | null> {
+  async findById(id: string) {
+    return await this.prisma.post.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        content: true,
+        contentWarning: true,
+        isScheduled: true,
+        scheduledFor: true,
+        isPublished: true,
+        publishedAt: true,
+        authorId: true,
+        createdAt: true,
+        updatedAt: true,
+        activityId: true
+      }
+    })
+  }
+
+  /**
+   * Find post by ID with author and media relationships
+   * @param id - Post ID
+   * @returns Promise<PostWithRelations|null> Post with relations or null if not found
+   */
+  async findByIdWithAuthorAndMedia(id: string): Promise<PostWithRelations | null> {
     return await this.prisma.post.findUnique({
       where: { id },
       include: {
@@ -173,32 +198,20 @@ export class PostRepository {
   }
 
   /**
-   * Find posts by author with pagination and filtering
-   * @param authorId - Author's user ID
-   * @param options - Pagination and filtering options
-   * @returns Promise<Object> Posts array and total count
+   * Find posts by author with pagination and filters
+   * @param authorId - Author ID
+   * @param options - Pagination and filter options
+   * @returns Promise<Object> Posts with pagination info
    */
-  async findByAuthor(
-    authorId: string, 
-    options: PaginationOptions & Pick<PostFilterOptions, 'isPublished' | 'isScheduled'> = {}
-  ) {
-    const { 
-      offset = 0, 
-      limit = 20, 
-      orderBy = 'createdAt', 
-      orderDirection = 'desc',
-      isPublished,
-      isScheduled
-    } = options
+  async findByAuthor(authorId: string, options: PaginationOptions & { includeUnpublished?: boolean } = {}) {
+    const { offset = 0, limit = 20, orderBy = 'publishedAt', orderDirection = 'desc', includeUnpublished = false } = options
 
-    const where: any = { authorId }
-    
-    if (isPublished !== undefined) {
-      where.isPublished = isPublished
+    const where: any = {
+      authorId
     }
-    
-    if (isScheduled !== undefined) {
-      where.isScheduled = isScheduled
+
+    if (!includeUnpublished) {
+      where.isPublished = true
     }
 
     const [posts, totalCount] = await Promise.all([
@@ -240,15 +253,23 @@ export class PostRepository {
       this.prisma.post.count({ where })
     ])
 
-    return { posts, totalCount, hasMore: offset + limit < totalCount }
+    return { 
+      posts, 
+      totalCount, 
+      hasMore: offset + limit < totalCount 
+    }
   }
 
   /**
-   * Find published posts for public feeds with pagination
-   * @param options - Pagination and filtering options
-   * @returns Promise<Object> Public posts array and pagination info
+   * Find published posts with pagination and filtering
+   * @param options - Query options with pagination and filters
+   * @returns Promise<Object> Posts with pagination info
    */
-  async findPublished(options: PaginationOptions & PostFilterOptions = {}) {
+  async findPublished(options: PaginationOptions & PostFilterOptions & { 
+    includeAuthor?: boolean
+    includeMedia?: boolean
+    onlyPublished?: boolean
+  } = {}) {
     const { 
       offset = 0, 
       limit = 20, 
@@ -257,64 +278,72 @@ export class PostRepository {
       authorId,
       hasContentWarning,
       publishedAfter,
-      publishedBefore
+      publishedBefore,
+      includeAuthor = true,
+      includeMedia = true,
+      onlyPublished = true
     } = options
 
-    const where: any = { 
-      isPublished: true,
-      publishedAt: { not: null }
-    }
+    const where: any = {}
     
+    if (onlyPublished) {
+      where.isPublished = true
+    }
+
     if (authorId) {
       where.authorId = authorId
     }
-    
+
     if (hasContentWarning !== undefined) {
-      where.contentWarning = hasContentWarning 
-        ? { not: null } 
-        : null
+      where.contentWarning = hasContentWarning ? { not: null } : null
     }
-    
+
     if (publishedAfter || publishedBefore) {
-      where.publishedAt = {
-        ...where.publishedAt,
-        ...(publishedAfter && { gte: publishedAfter }),
-        ...(publishedBefore && { lte: publishedBefore })
+      where.publishedAt = {}
+      if (publishedAfter) where.publishedAt.gte = publishedAfter
+      if (publishedBefore) where.publishedAt.lte = publishedBefore
+    }
+
+    const include: any = {
+      _count: {
+        select: {
+          media: true
+        }
+      }
+    }
+
+    if (includeAuthor) {
+      include.author = {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          actorId: true,
+          isVerified: true,
+          verificationTier: true
+        }
+      }
+    }
+
+    if (includeMedia) {
+      include.media = {
+        select: {
+          id: true,
+          filename: true,
+          url: true,
+          mimeType: true,
+          altText: true,
+          width: true,
+          height: true
+        }
       }
     }
 
     const [posts, totalCount] = await Promise.all([
       this.prisma.post.findMany({
         where,
-        include: {
-          author: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatar: true,
-              actorId: true,
-              isVerified: true,
-              verificationTier: true
-            }
-          },
-          media: {
-            select: {
-              id: true,
-              filename: true,
-              url: true,
-              mimeType: true,
-              altText: true,
-              width: true,
-              height: true
-            }
-          },
-          _count: {
-            select: {
-              media: true
-            }
-          }
-        },
+        include,
         orderBy: { [orderBy]: orderDirection },
         skip: offset,
         take: limit
@@ -326,19 +355,23 @@ export class PostRepository {
   }
 
   /**
-   * Find scheduled posts that are ready to be published
-   * @returns Promise<Array> Posts ready for publication
+   * Get posts from multiple user IDs (for user feed)
+   * @param userIds - Array of user IDs to get posts from
+   * @param limit - Maximum number of posts to return
+   * @param offset - Number of posts to skip for pagination
+   * @returns Promise<PostWithRelations[]> Array of posts with full relations
    */
-  async findReadyToPublish() {
-    const now = new Date()
-    
+  async getPostsByUserIds(userIds: string[], limit: number = 20, offset: number = 0): Promise<PostWithRelations[]> {
+    if (userIds.length === 0) {
+      return []
+    }
+
     return await this.prisma.post.findMany({
       where: {
-        isScheduled: true,
-        isPublished: false,
-        scheduledFor: {
-          lte: now
-        }
+        authorId: {
+          in: userIds
+        },
+        isPublished: true
       },
       include: {
         author: {
@@ -351,19 +384,59 @@ export class PostRepository {
             isVerified: true,
             verificationTier: true
           }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
         }
       },
-      orderBy: { scheduledFor: 'asc' }
+      orderBy: {
+        publishedAt: 'desc'
+      },
+      skip: offset,
+      take: limit
     })
   }
 
   /**
-   * Find posts scheduled for the future
-   * @param authorId - Optional author filter
-   * @param options - Pagination options
-   * @returns Promise<Object> Scheduled posts and pagination info
+   * Count total posts from multiple user IDs (for user feed pagination)
+   * @param userIds - Array of user IDs to count posts from
+   * @returns Promise<number> Total count of published posts from these users
    */
-  async findScheduled(authorId?: string, options: PaginationOptions = {}) {
+  async countPostsByUserIds(userIds: string[]): Promise<number> {
+    if (userIds.length === 0) {
+      return 0
+    }
+
+    return await this.prisma.post.count({
+      where: {
+        authorId: {
+          in: userIds
+        },
+        isPublished: true
+      }
+    })
+  }
+
+  /**
+   * Find scheduled posts for a specific author
+   * @param authorId - Author ID
+   * @param options - Pagination options
+   * @returns Promise<Object> Scheduled posts with pagination
+   */
+  async findScheduled(authorId: string, options: PaginationOptions = {}) {
     const { offset = 0, limit = 20, orderBy = 'scheduledFor', orderDirection = 'asc' } = options
     const now = new Date()
 
@@ -414,7 +487,7 @@ export class PostRepository {
    * Update an existing post
    * @param id - Post ID to update
    * @param updateData - Data to update
-   * @returns Promise<Object|null> Updated post with relations or null if not found
+   * @returns Promise<PostWithRelations|null> Updated post with relations or null if not found
    */
   async update(id: string, updateData: PostUpdateData): Promise<PostWithRelations | null> {
     const updatePayload: any = {
@@ -424,19 +497,139 @@ export class PostRepository {
 
     // Set publishedAt when transitioning to published for the first time
     if (updateData.isPublished === true && updateData.publishedAt === undefined) {
-      const existingPost = await this.prisma.post.findUnique({
-        where: { id },
-        select: { isPublished: true, publishedAt: true }
-      })
-      
-      if (existingPost && !existingPost.isPublished && !existingPost.publishedAt) {
-        updatePayload.publishedAt = new Date()
-      }
+      updatePayload.publishedAt = new Date()
     }
 
-    return await this.prisma.post.update({
-      where: { id },
-      data: updatePayload,
+    try {
+      return await this.prisma.post.update({
+        where: { id },
+        data: updatePayload,
+        include: {
+          author: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              actorId: true,
+              isVerified: true,
+              verificationTier: true
+            }
+          },
+          media: {
+            select: {
+              id: true,
+              filename: true,
+              url: true,
+              mimeType: true,
+              altText: true,
+              width: true,
+              height: true
+            }
+          },
+          _count: {
+            select: {
+              media: true
+            }
+          }
+        }
+      })
+    } catch (error: any) {
+      if (error.code === 'P2025') {
+        return null // Post not found
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Delete a post by ID
+   * @param id - Post ID to delete
+   * @returns Promise<Object|null> Deleted post or null if not found
+   */
+  async delete(id: string) {
+    try {
+      return await this.prisma.post.delete({
+        where: { id }
+      })
+    } catch (error: any) {
+      if (error.code === 'P2025') {
+        return null // Post not found
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Check if post exists and is owned by specific author
+   * @param id - Post ID
+   * @param authorId - Author ID
+   * @returns Promise<boolean> True if post exists and is owned by author
+   */
+  async existsByIdAndAuthor(id: string, authorId: string): Promise<boolean> {
+    const post = await this.prisma.post.findFirst({
+      where: {
+        id,
+        authorId
+      },
+      select: { id: true }
+    })
+    return post !== null
+  }
+
+  /**
+   * Get author statistics
+   * @param authorId - Author ID
+   * @returns Promise<Object> Author statistics
+   */
+  async getAuthorStats(authorId: string) {
+    const [
+      totalPosts,
+      publishedPosts,
+      scheduledPosts,
+      draftPosts
+    ] = await Promise.all([
+      this.prisma.post.count({
+        where: { authorId }
+      }),
+      this.prisma.post.count({
+        where: { 
+          authorId,
+          isPublished: true
+        }
+      }),
+      this.prisma.post.count({
+        where: { 
+          authorId,
+          isScheduled: true,
+          isPublished: false
+        }
+      }),
+      this.prisma.post.count({
+        where: { 
+          authorId,
+          isPublished: false,
+          isScheduled: false
+        }
+      })
+    ])
+
+    return {
+      totalPosts,
+      publishedPosts,
+      scheduledPosts,
+      draftPosts
+    }
+  }
+
+  /**
+   * Find post by ActivityPub activity ID
+   * @param activityId - ActivityPub activity ID
+   * @returns Promise<Object|null> Post or null if not found
+   */
+  async findByActivityId(activityId: string) {
+    return await this.prisma.post.findFirst({
+      where: { activityId },
       include: {
         author: {
           select: {
@@ -470,86 +663,25 @@ export class PostRepository {
   }
 
   /**
-   * Delete a post and all associated media
-   * @param id - Post ID to delete
-   * @returns Promise<Object|null> Deleted post or null if not found
+   * Find posts ready to be published (scheduled posts past their scheduled time)
+   * @param limit - Maximum number of posts to return
+   * @returns Promise<Array> Posts ready to publish
    */
-  async delete(id: string) {
-    return await this.prisma.post.delete({
-      where: { id },
-      include: {
-        media: {
-          select: {
-            id: true,
-            url: true,
-            filename: true
-          }
-        }
-      }
-    })
-  }
-
-  /**
-   * Check if post exists and belongs to author
-   * @param id - Post ID
-   * @param authorId - Author ID to verify ownership
-   * @returns Promise<boolean> True if post exists and belongs to author
-   */
-  async existsByIdAndAuthor(id: string, authorId: string): Promise<boolean> {
-    const post = await this.prisma.post.findFirst({
-      where: { id, authorId },
-      select: { id: true }
-    })
+  async findReadyToPublish(limit: number = 50) {
+    const now = new Date()
     
-    return Boolean(post)
-  }
-
-  /**
-   * Get post statistics for an author
-   * @param authorId - Author ID
-   * @returns Promise<Object> Post statistics
-   */
-  async getAuthorStats(authorId: string) {
-    const [totalPosts, publishedPosts, draftPosts, scheduledPosts] = await Promise.all([
-      this.prisma.post.count({
-        where: { authorId }
-      }),
-      this.prisma.post.count({
-        where: { authorId, isPublished: true }
-      }),
-      this.prisma.post.count({
-        where: { 
-          authorId, 
-          isPublished: false, 
-          isScheduled: false 
+    return await this.prisma.post.findMany({
+      where: {
+        isScheduled: true,
+        isPublished: false,
+        scheduledFor: {
+          lte: now
         }
-      }),
-      this.prisma.post.count({
-        where: { 
-          authorId, 
-          isScheduled: true, 
-          isPublished: false,
-          scheduledFor: { gt: new Date() }
-        }
-      })
-    ])
-
-    return {
-      totalPosts,
-      publishedPosts,
-      draftPosts,
-      scheduledPosts
-    }
-  }
-
-  /**
-   * Find posts by ActivityPub activity ID
-   * @param activityId - ActivityPub activity URI
-   * @returns Promise<Object|null> Post with relations or null if not found
-   */
-  async findByActivityId(activityId: string): Promise<PostWithRelations | null> {
-    return await this.prisma.post.findUnique({
-      where: { activityId },
+      },
+      take: limit,
+      orderBy: {
+        scheduledFor: 'asc'
+      },
       include: {
         author: {
           select: {
@@ -618,201 +750,87 @@ export class PostRepository {
     return expiredPosts
   }
 
-  // Add these methods to your PostRepository class
-
-/**
- * Find many posts with pagination for public feeds
- * @param options - Pagination and filtering options
- * @returns Promise<Object> Posts array and total count
- */
-async findManyWithPagination(options: {
-  offset?: number
-  limit?: number
-  includeAuthor?: boolean
-  includeMedia?: boolean
-  onlyPublished?: boolean
-}) {
-  const { 
-    offset = 0, 
-    limit = 20, 
-    includeAuthor = true,
-    includeMedia = true,
-    onlyPublished = true
-  } = options
-
-  const where: any = {}
-  
-  if (onlyPublished) {
-    where.isPublished = true
-    where.publishedAt = { not: null }
-  }
-
-  const includeClause: any = {}
-  
-  if (includeAuthor) {
-    includeClause.author = {
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        avatar: true,
-        actorId: true,
-        isVerified: true,
-        verificationTier: true
-      }
-    }
-  }
-  
-  if (includeMedia) {
-    includeClause.media = {
-      select: {
-        id: true,
-        filename: true,
-        url: true,
-        mimeType: true,
-        altText: true,
-        width: true,
-        height: true
-      }
-    }
-    includeClause._count = {
-      select: {
-        media: true
-      }
-    }
-  }
-
-  const [posts, totalCount] = await Promise.all([
-    this.prisma.post.findMany({
-      where,
-      include: includeClause,
-      orderBy: { publishedAt: 'desc' },
-      skip: offset,
-      take: limit
-    }),
-    this.prisma.post.count({ where })
-  ])
-
-  return { posts, totalCount }
-}
-
-/**
- * Find posts by author ID with pagination
- * @param authorId - Author's user ID
- * @param options - Pagination and filtering options
- * @returns Promise<Object> Posts array and total count
- */
-async findManyByAuthorId(
-  authorId: string, 
-  options: {
+  /**
+   * Find many posts with pagination for public feeds
+   * @param options - Pagination and filtering options
+   * @returns Promise<Object> Posts array and total count
+   */
+  async findManyWithPagination(options: {
     offset?: number
     limit?: number
     includeAuthor?: boolean
     includeMedia?: boolean
     onlyPublished?: boolean
-  } = {}
-) {
-  const { 
-    offset = 0, 
-    limit = 20, 
-    includeAuthor = true,
-    includeMedia = true,
-    onlyPublished = true
-  } = options
+    authorId?: string
+  } = {}) {
+    const {
+      offset = 0,
+      limit = 20,
+      includeAuthor = true,
+      includeMedia = true,
+      onlyPublished = true,
+      authorId
+    } = options
 
-  const where: any = { authorId }
-  
-  if (onlyPublished) {
-    where.isPublished = true
-    where.publishedAt = { not: null }
-  }
-
-  const includeClause: any = {}
-  
-  if (includeAuthor) {
-    includeClause.author = {
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        avatar: true,
-        actorId: true,
-        isVerified: true,
-        verificationTier: true
-      }
+    const where: any = {}
+    
+    if (onlyPublished) {
+      where.isPublished = true
     }
-  }
-  
-  if (includeMedia) {
-    includeClause.media = {
-      select: {
-        id: true,
-        filename: true,
-        url: true,
-        mimeType: true,
-        altText: true,
-        width: true,
-        height: true
-      }
+    
+    if (authorId) {
+      where.authorId = authorId
     }
-    includeClause._count = {
-      select: {
-        media: true
-      }
-    }
-  }
 
-  const [posts, totalCount] = await Promise.all([
-    this.prisma.post.findMany({
-      where,
-      include: includeClause,
-      orderBy: { publishedAt: 'desc' },
-      skip: offset,
-      take: limit
-    }),
-    this.prisma.post.count({ where })
-  ])
-
-  return { posts, totalCount }
-}
-
-/**
-   * Find post by ID with author and media relations
-   * @param id - Post ID
-   * @returns Promise<Object|null> Post with relations or null if not found
-   */
-  async findByIdWithAuthorAndMedia(id: string): Promise<PostWithRelations | null> {
-    return await this.prisma.post.findUnique({
-      where: { id },
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-            actorId: true,
-            isVerified: true,
-            verificationTier: true
-          }
-        },
-        media: {
-          select: {
-            id: true,
-            filename: true,
-            url: true,
-            mimeType: true,
-            altText: true,
-            width: true,
-            height: true
-          }
-        },
-        _count: {
-          select: {
-            media: true
-          }
+    const include: any = {
+      _count: {
+        select: {
+          media: true
         }
       }
-    })
+    }
+
+    if (includeAuthor) {
+      include.author = {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          actorId: true,
+          isVerified: true,
+          verificationTier: true
+        }
+      }
+    }
+
+    if (includeMedia) {
+      include.media = {
+        select: {
+          id: true,
+          filename: true,
+          url: true,
+          mimeType: true,
+          altText: true,
+          width: true,
+          height: true
+        }
+      }
+    }
+
+    const [posts, totalCount] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        include,
+        orderBy: {
+          publishedAt: 'desc'
+        },
+        skip: offset,
+        take: limit
+      }),
+      this.prisma.post.count({ where })
+    ])
+
+    return { posts, totalCount, hasMore: offset + limit < totalCount }
   }
 }
