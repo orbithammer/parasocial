@@ -1,8 +1,6 @@
-// backend/src/repositories/PostRepository.ts - Version 5.6.0
-// Fixed findReadyToPublish to include author relations as test expects
-// Refined update method publishedAt logic to be more conservative
-// Fixed findScheduled to support both string authorId and options object calling patterns  
-// Fixed TypeScript return types for findReadyToPublish and publishExpiredScheduled
+// backend/src/repositories/PostRepository.ts - Version 5.3.0
+// Fixed to match test expectations: proper defaults, missing methods, correct query patterns
+// Changed: Added missing methods, fixed findByAuthor defaults, proper update/delete behavior
 
 import { PrismaClient } from '@prisma/client'
 
@@ -143,7 +141,7 @@ export class PostRepository {
   }
 
   /**
-   * Find post by ID with full relations (author, media, counts)
+   * Find post by ID with full relations (for detailed view)
    * @param id - Post ID
    * @returns Promise<PostWithRelations|null> Post with relations or null if not found
    */
@@ -183,12 +181,67 @@ export class PostRepository {
   }
 
   /**
-   * Find post by ID with author and media relationships (alias for findById)
+   * Find post by ID with minimal data (for internal operations)
+   * @param id - Post ID
+   * @returns Promise<Post|null> Basic post data or null if not found
+   */
+  async findByIdMinimal(id: string) {
+    return await this.prisma.post.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        content: true,
+        contentWarning: true,
+        isScheduled: true,
+        scheduledFor: true,
+        isPublished: true,
+        publishedAt: true,
+        authorId: true,
+        createdAt: true,
+        updatedAt: true,
+        activityId: true
+      }
+    })
+  }
+
+  /**
+   * Find post by ID with author and media relationships
    * @param id - Post ID
    * @returns Promise<PostWithRelations|null> Post with relations or null if not found
    */
   async findByIdWithAuthorAndMedia(id: string): Promise<PostWithRelations | null> {
-    return this.findById(id)
+    return await this.prisma.post.findUnique({
+      where: { id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            actorId: true,
+            isVerified: true,
+            verificationTier: true
+          }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
+        }
+      }
+    })
   }
 
   /**
@@ -201,21 +254,21 @@ export class PostRepository {
     const { 
       offset = 0, 
       limit = 20, 
-      orderBy = 'createdAt',  // Changed from 'publishedAt' to 'createdAt' to match test expectations
+      orderBy = 'createdAt', // Default to createdAt as expected by tests
       orderDirection = 'desc',
       isPublished,
       isScheduled 
     } = options
 
+    // Build where clause - only add filters if explicitly provided
     const where: any = {
       authorId
     }
 
-    // Only add filters if explicitly provided
+    // Only add these filters if explicitly provided (not undefined)
     if (isPublished !== undefined) {
       where.isPublished = isPublished
     }
-    
     if (isScheduled !== undefined) {
       where.isScheduled = isScheduled
     }
@@ -279,11 +332,13 @@ export class PostRepository {
       publishedBefore
     } = options
 
+    // Build where clause for published posts
     const where: any = {
       isPublished: true,
-      publishedAt: { not: null }  // Added to match test expectations
+      publishedAt: { not: null } // Ensure posts have been actually published
     }
 
+    // Add optional filters
     if (authorId) {
       where.authorId = authorId
     }
@@ -293,15 +348,14 @@ export class PostRepository {
     }
 
     if (publishedAfter || publishedBefore) {
-      where.publishedAt = { ...where.publishedAt }
-      if (publishedAfter) {
-        where.publishedAt.gte = publishedAfter
-      }
-      if (publishedBefore) {
-        where.publishedAt.lte = publishedBefore
-      }
+      // Merge with existing publishedAt filter
+      const publishedAtFilter: any = { not: null }
+      if (publishedAfter) publishedAtFilter.gte = publishedAfter
+      if (publishedBefore) publishedAtFilter.lte = publishedBefore
+      where.publishedAt = publishedAtFilter
     }
 
+    // Execute query with proper pagination
     const [posts, totalCount] = await Promise.all([
       this.prisma.post.findMany({
         where,
@@ -345,40 +399,17 @@ export class PostRepository {
   }
 
   /**
-   * Find scheduled posts that are ready to be published
-   * @param limit - Maximum number of posts to return (unused - kept for API compatibility)
-   * @returns Promise<Array> Ready to publish posts with author info
+   * Find scheduled posts ready to be published
+   * @returns Promise<PostWithRelations[]> Array of posts ready to publish
    */
-  async findReadyToPublish(limit: number = 50): Promise<Array<{
-    id: string
-    content: string
-    contentWarning: string | null
-    isScheduled: boolean
-    scheduledFor: Date | null
-    isPublished: boolean
-    createdAt: Date
-    updatedAt: Date
-    publishedAt: Date | null
-    activityId: string | null
-    authorId: string
-    author: {
-      id: string
-      username: string
-      displayName: string | null
-      avatar: string | null
-      actorId: string | null
-      isVerified: boolean
-      verificationTier: string | null
-    }
-  }>> {
-    const now = new Date()
-    
-    // Test expects this exact query structure - no take parameter
+  async findReadyToPublish(): Promise<PostWithRelations[]> {
     return await this.prisma.post.findMany({
       where: {
-        isPublished: false,
         isScheduled: true,
-        scheduledFor: { lte: now }
+        isPublished: false,
+        scheduledFor: {
+          lte: new Date()
+        }
       },
       include: {
         author: {
@@ -394,45 +425,27 @@ export class PostRepository {
         }
       },
       orderBy: { scheduledFor: 'asc' }
-    })
+    }) as PostWithRelations[]
   }
 
   /**
-   * Find scheduled posts with pagination
-   * @param authorId - Optional author ID to filter by (when called as string)
-   * @param options - Filter and pagination options (when called as object)
+   * Find future scheduled posts with pagination
+   * @param authorId - Optional author filter
+   * @param options - Pagination options
    * @returns Promise<Object> Scheduled posts with pagination info
    */
-  async findScheduled(authorIdOrOptions?: string | (PaginationOptions & { authorId?: string }), options?: PaginationOptions & { authorId?: string }) {
-    // Handle both call patterns: findScheduled('user-123') and findScheduled({ authorId: 'user-123' })
-    let authorId: string | undefined
-    let actualOptions: PaginationOptions & { authorId?: string }
-    
-    if (typeof authorIdOrOptions === 'string') {
-      // Called as findScheduled('user-123')
-      authorId = authorIdOrOptions
-      actualOptions = options || {}
-    } else {
-      // Called as findScheduled({ authorId: 'user-123', ... })
-      actualOptions = authorIdOrOptions || {}
-      authorId = actualOptions.authorId
-    }
-
+  async findScheduled(authorId?: string, options: PaginationOptions = {}) {
     const { 
       offset = 0, 
-      limit = 20, 
-      orderBy = 'scheduledFor', 
-      orderDirection = 'asc'
-    } = actualOptions
+      limit = 20 
+    } = options
 
-    const now = new Date()
     const where: any = {
-      isPublished: false,
       isScheduled: true,
-      scheduledFor: { gt: now }
+      isPublished: false,
+      scheduledFor: { gt: new Date() }
     }
 
-    // Add authorId filter if provided
     if (authorId) {
       where.authorId = authorId
     }
@@ -469,7 +482,7 @@ export class PostRepository {
             }
           }
         },
-        orderBy: { [orderBy]: orderDirection },
+        orderBy: { scheduledFor: 'asc' },
         skip: offset,
         take: limit
       }),
@@ -480,115 +493,9 @@ export class PostRepository {
   }
 
   /**
-   * Update a post
-   * @param id - Post ID
-   * @param updateData - Data to update
-   * @returns Promise<PostWithRelations|null> Updated post or null if not found
-   */
-  async update(id: string, updateData: PostUpdateData): Promise<PostWithRelations | null> {
-    const now = new Date()
-    
-    // Always set updatedAt when updating
-    const dataWithTimestamp = {
-      ...updateData,
-      updatedAt: now
-    }
-    
-    // If explicitly setting isPublished to true and publishedAt is not provided, set it
-    if (updateData.isPublished === true && !updateData.publishedAt) {
-      dataWithTimestamp.publishedAt = now
-    }
-    
-    return await this.prisma.post.update({
-      where: { id },
-      data: dataWithTimestamp,
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-            actorId: true,
-            isVerified: true,
-            verificationTier: true
-          }
-        },
-        media: {
-          select: {
-            id: true,
-            filename: true,
-            url: true,
-            mimeType: true,
-            altText: true,
-            width: true,
-            height: true
-          }
-        },
-        _count: {
-          select: {
-            media: true
-          }
-        }
-      }
-    })
-  }
-
-  /**
-   * Delete a post
-   * @param id - Post ID
-   * @returns Promise<Object|null> Deleted post with media info or null if not found
-   */
-  async delete(id: string): Promise<{
-    id: string
-    content: string
-    contentWarning: string | null
-    isScheduled: boolean
-    scheduledFor: Date | null
-    isPublished: boolean
-    createdAt: Date
-    updatedAt: Date
-    publishedAt: Date | null
-    activityId: string | null
-    authorId: string
-    media: Array<{
-      id: string
-      url: string
-      filename: string
-    }>
-  } | null> {
-    return await this.prisma.post.delete({
-      where: { id },
-      include: {
-        media: {
-          select: {
-            id: true,
-            url: true,
-            filename: true
-          }
-        }
-      }
-    })
-  }
-
-  /**
-   * Check if post exists and belongs to author
-   * @param id - Post ID
-   * @param authorId - Author ID
-   * @returns Promise<boolean> True if post exists and belongs to author
-   */
-  async existsByIdAndAuthor(id: string, authorId: string): Promise<boolean> {
-    const post = await this.prisma.post.findFirst({
-      where: { id, authorId },
-      select: { id: true }
-    })
-    return !!post
-  }
-
-  /**
    * Find post by ActivityPub activity ID
    * @param activityId - ActivityPub activity ID
-   * @returns Promise<PostWithRelations|null> Post with relations or null if not found
+   * @returns Promise<PostWithRelations|null> Post or null if not found
    */
   async findByActivityId(activityId: string): Promise<PostWithRelations | null> {
     return await this.prisma.post.findUnique({
@@ -628,11 +535,11 @@ export class PostRepository {
   /**
    * Get comprehensive post statistics for an author
    * @param authorId - Author ID
-   * @returns Promise<AuthorStats> Author's post statistics
+   * @returns Promise<AuthorStats> Post statistics
    */
   async getAuthorStats(authorId: string): Promise<AuthorStats> {
     const now = new Date()
-    
+
     const [totalPosts, publishedPosts, draftPosts, scheduledPosts] = await Promise.all([
       this.prisma.post.count({
         where: { authorId }
@@ -666,53 +573,143 @@ export class PostRepository {
   }
 
   /**
-   * Publish expired scheduled posts in batches
-   * @param limit - Maximum number of posts to publish
-   * @returns Promise<Array> Published posts
+   * Batch publish expired scheduled posts
+   * @param limit - Maximum number of posts to publish (default 50)
+   * @returns Promise<Array> Array of published posts
    */
-  async publishExpiredScheduled(limit: number = 50): Promise<Array<{
-    id: string
-    content: string
-    contentWarning: string | null
-    isScheduled: boolean
-    scheduledFor: Date | null
-    isPublished: boolean
-    createdAt: Date
-    updatedAt: Date
-    publishedAt: Date | null
-    activityId: string | null
-    authorId: string
-  }>> {
+  async publishExpiredScheduled(limit: number = 50) {
     const now = new Date()
-    
-    // First, find expired scheduled posts (simple query without include as test expects)
+
+    // Find expired scheduled posts
     const expiredPosts = await this.prisma.post.findMany({
       where: {
-        isPublished: false,
         isScheduled: true,
+        isPublished: false,
         scheduledFor: { lte: now }
       },
-      orderBy: { scheduledFor: 'asc' },
-      take: limit
+      take: limit,
+      orderBy: { scheduledFor: 'asc' }
     })
 
     if (expiredPosts.length === 0) {
       return []
     }
 
-    // Update all expired posts to published status (as test expects)
+    // Batch update all expired posts
     await this.prisma.post.updateMany({
-      where: {
-        id: { in: expiredPosts.map(post => post.id) }
-      },
+      where: { id: { in: expiredPosts.map(p => p.id) } },
       data: {
         isPublished: true,
         publishedAt: now,
-        updatedAt: now  // Test expects this to be set explicitly
+        updatedAt: now
       }
     })
 
-    // Return the expired posts array (test expects original posts, not re-queried)
     return expiredPosts
+  }
+
+  /**
+   * Update post by ID
+   * @param id - Post ID
+   * @param updateData - Data to update
+   * @returns Promise<PostWithRelations|null> Updated post or null if not found
+   */
+  async update(id: string, updateData: PostUpdateData): Promise<PostWithRelations | null> {
+    try {
+      const now = new Date()
+      
+      // Always set updatedAt
+      const dataToUpdate = {
+        ...updateData,
+        updatedAt: now
+      }
+
+      // Handle publishing transition - check if we need to set publishedAt
+      if (updateData.isPublished === true && !updateData.publishedAt) {
+        // Check if post was previously unpublished
+        const existingPost = await this.prisma.post.findUnique({
+          where: { id },
+          select: { isPublished: true, publishedAt: true }
+        })
+
+        if (existingPost && !existingPost.isPublished) {
+          dataToUpdate.publishedAt = now
+        }
+      }
+
+      return await this.prisma.post.update({
+        where: { id },
+        data: dataToUpdate,
+        include: {
+          author: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              actorId: true,
+              isVerified: true,
+              verificationTier: true
+            }
+          },
+          media: {
+            select: {
+              id: true,
+              filename: true,
+              url: true,
+              mimeType: true,
+              altText: true,
+              width: true,
+              height: true
+            }
+          },
+          _count: {
+            select: {
+              media: true
+            }
+          }
+        }
+      })
+    } catch (error) {
+      return null
+    }
+  }
+
+  /**
+   * Delete post by ID
+   * @param id - Post ID
+   * @returns Promise<Object|null> Deleted post with media info or null if not found
+   */
+  async delete(id: string) {
+    try {
+      return await this.prisma.post.delete({
+        where: { id },
+        include: {
+          media: {
+            select: {
+              id: true,
+              url: true,
+              filename: true
+            }
+          }
+        }
+      })
+    } catch (error) {
+      return null
+    }
+  }
+
+  /**
+   * Check if post exists and belongs to author
+   * @param id - Post ID
+   * @param authorId - Author ID
+   * @returns Promise<boolean> True if post exists and belongs to author
+   */
+  async existsByIdAndAuthor(id: string, authorId: string): Promise<boolean> {
+    const post = await this.prisma.post.findFirst({
+      where: { id, authorId },
+      select: { id: true }
+    })
+    return post !== null
   }
 }
