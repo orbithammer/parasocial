@@ -1,6 +1,6 @@
 // backend/src/services/__tests__/PostService.test.ts
-// Version: 1.0.0
-// Initial test suite for PostService with comprehensive CRUD operations testing
+// Version: 1.1.0
+// Fixed test setup - now properly creates mock post in service before testing operations on existing data
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PostService } from '../PostService'
@@ -62,9 +62,21 @@ describe('PostService', () => {
     tags: ['new', 'draft']
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset service instance before each test
     postService = new PostService()
+    
+    // Create a mock post in the service for tests that need existing data
+    const createdPost = await postService.createPost({
+      title: mockPost.title,
+      content: mockPost.content,
+      authorId: mockPost.authorId,
+      published: mockPost.published,
+      tags: mockPost.tags
+    })
+    
+    // Update mockPost.id to use the actual generated ID
+    mockPost.id = createdPost.id
   })
 
   describe('createPost', () => {
@@ -150,12 +162,12 @@ describe('PostService', () => {
 
   describe('getPostById', () => {
     it('should return post when valid ID is provided', async () => {
-      // Act
-      const result = await postService.getPostById('post-123')
+      // Act - use the actual mock post ID
+      const result = await postService.getPostById(mockPost.id)
 
       // Assert
       expect(result).toBeDefined()
-      expect(result?.id).toBe('post-123')
+      expect(result?.id).toBe(mockPost.id)
     })
 
     it('should return null when post does not exist', async () => {
@@ -182,8 +194,8 @@ describe('PostService', () => {
         tags: ['updated', 'modified']
       }
 
-      // Act
-      const result = await postService.updatePost('post-123', updateData)
+      // Act - use the actual mock post ID
+      const result = await postService.updatePost(mockPost.id, updateData)
 
       // Assert
       expect(result).toBeDefined()
@@ -200,12 +212,12 @@ describe('PostService', () => {
         title: 'Only Title Updated'
       }
 
-      // Act
-      const result = await postService.updatePost('post-123', partialUpdate)
+      // Act - use the actual mock post ID
+      const result = await postService.updatePost(mockPost.id, partialUpdate)
 
       // Assert
       expect(result.title).toBe('Only Title Updated')
-      // Other fields should remain unchanged
+      // Other fields should remain unchanged from the original created post
       expect(result.content).toBe(mockPost.content)
       expect(result.published).toBe(mockPost.published)
     })
@@ -220,7 +232,7 @@ describe('PostService', () => {
 
     it('should throw error when update data is empty', async () => {
       // Act & Assert
-      await expect(postService.updatePost('post-123', {})).rejects.toThrow('Update data is required')
+      await expect(postService.updatePost(mockPost.id, {})).rejects.toThrow('Update data is required')
     })
 
     it('should throw error when trying to update with empty title', async () => {
@@ -228,14 +240,14 @@ describe('PostService', () => {
       const invalidUpdate: UpdatePostData = { title: '' }
 
       // Act & Assert
-      await expect(postService.updatePost('post-123', invalidUpdate)).rejects.toThrow('Title cannot be empty')
+      await expect(postService.updatePost(mockPost.id, invalidUpdate)).rejects.toThrow('Title cannot be empty')
     })
   })
 
   describe('deletePost', () => {
     it('should delete existing post', async () => {
-      // Act
-      const result = await postService.deletePost('post-123')
+      // Act - use the actual mock post ID
+      const result = await postService.deletePost(mockPost.id)
 
       // Assert
       expect(result).toBe(true)
@@ -337,8 +349,16 @@ describe('PostService', () => {
 
   describe('publishPost', () => {
     it('should publish an unpublished post', async () => {
+      // Arrange - create an unpublished post first
+      const unpublishedPost = await postService.createPost({
+        title: 'Unpublished Post',
+        content: 'Content',
+        authorId: 'user-123',
+        published: false
+      })
+
       // Act
-      const result = await postService.publishPost('post-123')
+      const result = await postService.publishPost(unpublishedPost.id)
 
       // Assert
       expect(result.published).toBe(true)
@@ -353,8 +373,8 @@ describe('PostService', () => {
 
   describe('unpublishPost', () => {
     it('should unpublish a published post', async () => {
-      // Act
-      const result = await postService.unpublishPost('post-123')
+      // Act - use the mock post which is published by default
+      const result = await postService.unpublishPost(mockPost.id)
 
       // Assert
       expect(result.published).toBe(false)
