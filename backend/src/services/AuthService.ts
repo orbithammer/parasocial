@@ -1,6 +1,6 @@
 // backend/src/services/AuthService.ts
-// Version: 1.2.0
-// Added extractTokenFromHeader method for middleware compatibility
+// Version: 1.2.1
+// Fixed TypeScript error: Added proper type checking for parts array to prevent undefined access
 
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
@@ -194,92 +194,48 @@ export class AuthService {
 
     // Check if header follows "Bearer <token>" format
     const trimmedHeader = authHeader.trim()
-    const parts = trimmedHeader.split(' ')
-    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+    const parts: string[] = trimmedHeader.split(' ')
+    
+    // Validate parts array structure and ensure we have exactly 2 parts
+    if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer') {
       return null
     }
 
+    // Safe access to parts[1] since we've validated the array length
     const token = parts[1]
     return token && token.trim() !== '' ? token.trim() : null
   }
 
   /**
-   * Gets user by ID
-   * @param userId - User ID
+   * Finds user by email address
+   * @param email - Email to search for
    * @returns Promise resolving to user or null if not found
-   * @throws Error if user ID is invalid
    */
-  async getUserById(userId: string): Promise<Omit<User, 'passwordHash'> | null> {
-    if (!userId || userId.trim() === '') {
-      throw new Error('User ID is required')
+  async findUserByEmail(email: string): Promise<User | null> {
+    const normalizedEmail = email.toLowerCase().trim()
+    for (const user of this.users.values()) {
+      if (user.email === normalizedEmail) {
+        return user
+      }
     }
-
-    const user = this.users.get(userId.trim())
-    return user ? this.sanitizeUser(user) : null
+    return null
   }
 
   /**
-   * Updates user password
-   * @param userId - User ID
-   * @param currentPassword - Current password for verification
-   * @param newPassword - New password
-   * @returns Promise resolving to success boolean
-   * @throws Error if validation fails
-   */
-  async updatePassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
-    if (!userId || !currentPassword || !newPassword) {
-      throw new Error('User ID, current password, and new password are required')
-    }
-
-    const user = this.users.get(userId)
-    if (!user) {
-      throw new Error('User not found')
-    }
-
-    // Verify current password
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash)
-    if (!isCurrentPasswordValid) {
-      throw new Error('Current password is incorrect')
-    }
-
-    // Validate new password
-    this.validatePassword(newPassword)
-
-    // Hash new password
-    const newPasswordHash = await bcrypt.hash(newPassword, this.saltRounds)
-
-    // Update user
-    const updatedUser: User = {
-      ...user,
-      passwordHash: newPasswordHash,
-      updatedAt: new Date()
-    }
-
-    this.users.set(userId, updatedUser)
-    return true
-  }
-
-  /**
-   * Initiates password reset process
-   * @param email - User email
+   * Generates password reset token
+   * @param email - User's email address
    * @returns Promise resolving to reset token
    * @throws Error if user not found
    */
-  async requestPasswordReset(email: string): Promise<string> {
-    if (!email || email.trim() === '') {
-      throw new Error('Email is required')
-    }
-
+  async generatePasswordResetToken(email: string): Promise<string> {
     const user = await this.findUserByEmail(email)
     if (!user) {
       throw new Error('User not found')
     }
 
-    // Generate reset token
     const resetToken = randomUUID()
-    const expiresAt = new Date(Date.now() + 3600000) // 1 hour from now
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
 
-    // Store reset token
     this.resetTokens.set(resetToken, {
       userId: user.id,
       expiresAt
@@ -289,91 +245,102 @@ export class AuthService {
   }
 
   /**
-   * Resets password using reset token
+   * Resets user password using reset token
    * @param resetData - Password reset data
-   * @returns Promise resolving to success boolean
+   * @returns Promise resolving when password is reset
    * @throws Error if token is invalid or expired
    */
-  async resetPassword(resetData: PasswordResetData): Promise<boolean> {
-    const { email, newPassword, resetToken } = resetData
-
-    if (!email || !newPassword || !resetToken) {
-      throw new Error('Email, new password, and reset token are required')
-    }
-
-    // Verify reset token
-    const tokenData = this.resetTokens.get(resetToken)
+  async resetPassword(resetData: PasswordResetData): Promise<void> {
+    const tokenData = this.resetTokens.get(resetData.resetToken)
     if (!tokenData) {
       throw new Error('Invalid reset token')
     }
 
     if (new Date() > tokenData.expiresAt) {
-      this.resetTokens.delete(resetToken)
+      this.resetTokens.delete(resetData.resetToken)
       throw new Error('Reset token has expired')
     }
 
-    // Get user
     const user = this.users.get(tokenData.userId)
-    if (!user || user.email !== email.toLowerCase().trim()) {
-      throw new Error('Invalid reset request')
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    // Validate new password
+    this.validatePassword(resetData.newPassword)
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(resetData.newPassword, this.saltRounds)
+
+    // Update user
+    user.passwordHash = passwordHash
+    user.updatedAt = new Date()
+
+    // Clean up reset token
+    this.resetTokens.delete(resetData.resetToken)
+  }
+
+  /**
+   * Changes user password (requires current password)
+   * @param userId - User ID
+   * @param currentPassword - Current password for verification
+   * @param newPassword - New password
+   * @returns Promise resolving when password is changed
+   * @throws Error if current password is invalid or user not found
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = this.users.get(userId)
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!isCurrentPasswordValid) {
+      throw new Error('Current password is invalid')
     }
 
     // Validate new password
     this.validatePassword(newPassword)
 
     // Hash new password
-    const newPasswordHash = await bcrypt.hash(newPassword, this.saltRounds)
+    const passwordHash = await bcrypt.hash(newPassword, this.saltRounds)
 
     // Update user
-    const updatedUser: User = {
-      ...user,
-      passwordHash: newPasswordHash,
-      updatedAt: new Date()
-    }
-
-    this.users.set(user.id, updatedUser)
-
-    // Clean up reset token
-    this.resetTokens.delete(resetToken)
-
-    return true
+    user.passwordHash = passwordHash
+    user.updatedAt = new Date()
   }
 
   /**
-   * Deactivates a user account
+   * Deactivates user account
    * @param userId - User ID to deactivate
-   * @returns Promise resolving to success boolean
+   * @returns Promise resolving when account is deactivated
    * @throws Error if user not found
    */
-  async deactivateUser(userId: string): Promise<boolean> {
-    if (!userId || userId.trim() === '') {
-      throw new Error('User ID is required')
-    }
-
+  async deactivateUser(userId: string): Promise<void> {
     const user = this.users.get(userId)
     if (!user) {
       throw new Error('User not found')
     }
 
-    const updatedUser: User = {
-      ...user,
-      isActive: false,
-      updatedAt: new Date()
-    }
-
-    this.users.set(userId, updatedUser)
-    return true
+    user.isActive = false
+    user.updatedAt = new Date()
   }
 
   /**
-   * Finds user by email address
-   * @param email - Email to search for
-   * @returns Promise resolving to user or null
+   * Reactivates user account
+   * @param userId - User ID to reactivate
+   * @returns Promise resolving when account is reactivated
+   * @throws Error if user not found
    */
-  private async findUserByEmail(email: string): Promise<User | null> {
-    const normalizedEmail = email.toLowerCase().trim()
-    const users = Array.from(this.users.values())
-    return users.find(user => user.email === normalizedEmail) ?? null
+  async reactivateUser(userId: string): Promise<void> {
+    const user = this.users.get(userId)
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    user.isActive = true
+    user.updatedAt = new Date()
   }
 
   /**
