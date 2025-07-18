@@ -1,6 +1,6 @@
 // backend/src/models/User.ts
-// Version: 1.1.0 - Fixed UserData interface to allow null values for fields that constructor handles
-// User model class with validation schemas using proper TypeScript types
+// Version: 1.2.0 - Fixed exactOptionalPropertyTypes compatibility for createdAt/updatedAt
+// Changed: Made createdAt/updatedAt required properties with constructor defaults
 
 import { z } from 'zod'
 
@@ -48,24 +48,24 @@ export const UserSchemas = {
   })
 }
 
-// User data interface - allows null values for fields that constructor handles
+// User data interface - allows null and undefined values for fields that constructor handles
 interface UserData {
   id: string
   email: string
   username: string
-  displayName?: string | null
-  bio?: string | null
-  avatar?: string | null
-  website?: string | null
-  isVerified?: boolean | null
-  verificationTier?: string | null
-  createdAt?: Date
-  updatedAt?: Date
-  passwordHash?: string
-  isActive?: boolean
-  actorId?: string | null
-  publicKey?: string | null
-  privateKey?: string | null
+  displayName?: string | null | undefined
+  bio?: string | null | undefined
+  avatar?: string | null | undefined
+  website?: string | null | undefined
+  isVerified?: boolean | null | undefined
+  verificationTier?: string | null | undefined
+  createdAt?: Date | undefined
+  updatedAt?: Date | undefined
+  passwordHash?: string | undefined
+  isActive?: boolean | undefined
+  actorId?: string | null | undefined
+  publicKey?: string | null | undefined
+  privateKey?: string | null | undefined
 }
 
 // Public profile interface
@@ -100,13 +100,13 @@ export class User {
   public website: string | null
   public isVerified: boolean
   public verificationTier: string
-  public createdAt?: Date
-  public updatedAt?: Date
-  public passwordHash?: string
-  public isActive?: boolean
-  public actorId?: string | null
-  public publicKey?: string | null
-  public privateKey?: string | null
+  public createdAt: Date  // Changed from optional to required
+  public updatedAt: Date  // Changed from optional to required
+  public passwordHash?: string | undefined
+  public isActive?: boolean | undefined
+  public actorId?: string | null | undefined
+  public publicKey?: string | null | undefined
+  public privateKey?: string | null | undefined
 
   constructor(data: UserData) {
     this.id = data.id
@@ -124,8 +124,9 @@ export class User {
     this.isVerified = data.isVerified || false
     // Handle verificationTier: default to 'none' if null/undefined
     this.verificationTier = data.verificationTier || 'none'
-    this.createdAt = data.createdAt
-    this.updatedAt = data.updatedAt
+    // Handle dates: provide current date if undefined to satisfy exactOptionalPropertyTypes
+    this.createdAt = data.createdAt || new Date()
+    this.updatedAt = data.updatedAt || new Date()
     this.passwordHash = data.passwordHash
     this.isActive = data.isActive
     this.actorId = data.actorId
@@ -153,13 +154,14 @@ export class User {
 
   /**
    * Get user's private profile data (includes email, for authenticated user only)
+   * Note: createdAt/updatedAt are now always available due to constructor defaults
    */
   getPrivateProfile(): PrivateProfile {
     return {
       ...this.getPublicProfile(),
       email: this.email,
-      createdAt: this.createdAt || new Date(),
-      updatedAt: this.updatedAt || new Date()
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt
     }
   }
 
