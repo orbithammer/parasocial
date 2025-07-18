@@ -1,15 +1,19 @@
 // backend/src/services/container.ts
 // Dependency injection container that wires up all services and repositories
+// Version: 1.0.1 - Fixed NODE_ENV index signature access
+// Changed: Used bracket notation for process.env['NODE_ENV'] to comply with noPropertyAccessFromIndexSignature
 
 import { PrismaClient } from '@prisma/client'
 import { AuthController } from '../controllers/AuthController'
 import { PostController } from '../controllers/PostController'
 import { UserController } from '../controllers/UserController'
+import { FollowController } from '../controllers/FollowController'
 import { UserRepository } from '../repositories/UserRepository'
 import { PostRepository } from '../repositories/PostRepository'
 import { FollowRepository } from '../repositories/FollowRepository'
 import { BlockRepository } from '../repositories/BlockRepository'
 import { AuthService } from './AuthService'
+import { FollowService } from './FollowService'
 import { createAuthMiddleware, createOptionalAuthMiddleware } from '../middleware/authMiddleware'
 import type { RequestHandler } from 'express'
 
@@ -34,9 +38,11 @@ interface Dependencies {
   authController: AuthController
   postController: PostController
   userController: UserController
+  followController: FollowController
   authMiddleware: RequestHandler
   optionalAuthMiddleware: RequestHandler
   authService: AuthService
+  followService: FollowService
   userRepository: UserRepository
   postRepository: PostRepository
   followRepository: FollowRepository
@@ -57,9 +63,11 @@ class ServiceContainer {
   private followRepository!: FollowRepository
   private blockRepository!: BlockRepository
   private authService!: AuthService
+  private followService!: FollowService
   private authController!: AuthController
   private postController!: PostController
   private userController!: UserController
+  private followController!: FollowController
   private authMiddleware!: RequestHandler
   private optionalAuthMiddleware!: RequestHandler
 
@@ -75,7 +83,7 @@ class ServiceContainer {
       // Initialize Prisma client
       console.log('🔄 Initializing database connection...')
       this.prisma = new PrismaClient({
-        log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error']
+        log: process.env['NODE_ENV'] === 'development' ? ['query', 'info', 'warn', 'error'] : ['error']
       })
 
       // Test database connection
@@ -92,6 +100,7 @@ class ServiceContainer {
       // Initialize services
       console.log('🔄 Initializing services...')
       this.authService = new AuthService()
+      this.followService = new FollowService(this.followRepository, this.userRepository)
 
       // Initialize controllers
       console.log('🔄 Initializing controllers...')
@@ -102,6 +111,7 @@ class ServiceContainer {
         this.followRepository, 
         this.blockRepository
       )
+      this.followController = new FollowController(this.followService, this.userRepository)
 
       // Initialize middleware
       console.log('🔄 Initializing middleware...')
@@ -143,7 +153,8 @@ class ServiceContainer {
   getServices() {
     this.checkInitialized()
     return {
-      authService: this.authService
+      authService: this.authService,
+      followService: this.followService
     }
   }
 
@@ -155,7 +166,8 @@ class ServiceContainer {
     return {
       authController: this.authController,
       postController: this.postController,
-      userController: this.userController
+      userController: this.userController,
+      followController: this.followController
     }
   }
 
@@ -227,12 +239,12 @@ class ServiceContainer {
       checks.database = true
 
       // Test services
-      if (this.authService && this.userRepository) {
+      if (this.authService && this.followService && this.userRepository) {
         checks.services = true
       }
 
       // Test controllers
-      if (this.authController && this.postController && this.userController) {
+      if (this.authController && this.postController && this.userController && this.followController) {
         checks.controllers = true
       }
 
@@ -251,6 +263,35 @@ class ServiceContainer {
         timestamp: new Date().toISOString()
       }
     }
+  }
+
+  /**
+   * Store a service in the container
+   */
+  set(key: string, service: unknown): void {
+    this.services.set(key, service)
+  }
+
+  /**
+   * Get a service from the container
+   */
+  get<T>(key: string): T {
+    return this.services.get(key) as T
+  }
+
+  /**
+   * Check if a service exists in the container
+   */
+  has(key: string): boolean {
+    return this.services.has(key)
+  }
+
+  /**
+   * Clear all services from the container
+   */
+  clear(): void {
+    this.services.clear()
+    this.initialized = false
   }
 }
 

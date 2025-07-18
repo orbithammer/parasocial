@@ -1,142 +1,226 @@
-// backend/src/routes/users.ts
-// Version: 1.2.0 - Fixed TypeScript error on line 124
-// Changed: Corrected blockUser/unblockUser to use UserController instead of FollowController
+// backend/src/controllers/PostController.ts
+// Version: 3.7.0 - Added getUserPosts method and updated constructor
+// Changed: Added UserRepository dependency and getUserPosts method to resolve TypeScript errors
 
-import { Router, Request, Response, NextFunction } from 'express'
-import { UserController } from '../controllers/UserController'
-import { PostController } from '../controllers/PostController'
-import { FollowController } from '../controllers/FollowController'
-
-/**
- * Middleware function type
- */
-type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
+import { Request, Response } from 'express'
+import { z } from 'zod'
+import { PostRepository } from '../repositories/PostRepository'
+import { UserRepository } from '../repositories/UserRepository'
 
 /**
- * Dependencies interface for dependency injection
+ * Interface for authenticated requests
  */
-interface UsersRouterDependencies {
-  userController: UserController
-  postController: PostController
-  followController: FollowController
-  authMiddleware: MiddlewareFunction
-  optionalAuthMiddleware: MiddlewareFunction
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
 }
 
 /**
- * Create users router with dependency injection
- * @param dependencies - Injected dependencies
- * @returns Configured Express router
+ * Validation schema for post queries
  */
-export function createUsersRouter(dependencies: UsersRouterDependencies): Router {
-  const { 
-    userController, 
-    postController, 
-    followController, 
-    authMiddleware, 
-    optionalAuthMiddleware 
-  } = dependencies
-  
-  const router = Router()
+const postQuerySchema = z.object({
+  page: z.string()
+    .optional()
+    .default('1')
+    .refine((val) => {
+      const num = parseInt(val)
+      return !isNaN(num) && num > 0
+    }, { message: 'Page must be a positive number' }),
+  limit: z.string()
+    .optional()
+    .default('20')
+    .refine((val) => {
+      const num = parseInt(val)
+      return !isNaN(num) && num > 0
+    }, { message: 'Limit must be a positive number' }),
+  author: z.string().optional(),
+  includeContentWarning: z.enum(['true', 'false']).optional()
+})
 
-  // ============================================================================
-  // USER PROFILE OPERATIONS - UserController
-  // ============================================================================
+/**
+ * Validation schema for post creation
+ */
+const createPostSchema = z.object({
+  content: z.string().min(1).max(5000),
+  contentWarning: z.string().max(500).optional().nullable(),
+  isScheduled: z.boolean().default(false),
+  scheduledFor: z.string().datetime().optional().nullable()
+})
+
+/**
+ * Controller for handling post-related operations
+ * Includes CRUD operations and post management
+ */
+export class PostController {
+  constructor(
+    private postRepository: PostRepository,
+    private userRepository: UserRepository
+  ) {}
 
   /**
-   * GET /users/:username
-   * Get user profile by username
-   * Optional authentication for additional user data
+   * Get public posts feed with pagination and filtering
+   * GET /posts
    */
-  router.get('/:username', optionalAuthMiddleware, async (req: Request, res: Response) => {
-    await userController.getUserProfile(req, res)
-  })
+  async getPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      // Validate query parameters
+      const queryValidation = postQuerySchema.safeParse(req.query)
+      if (!queryValidation.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid query parameters',
+            details: queryValidation.error.issues
+          }
+        })
+        return
+      }
 
-  // ============================================================================
-  // USER BLOCKING OPERATIONS - UserController
-  // ============================================================================
+      const validatedQuery = queryValidation.data
+      const page = parseInt(validatedQuery.page)
+      const limit = Math.min(parseInt(validatedQuery.limit), 50) // Enforce max limit of 50
 
-  /**
-   * POST /users/:username/block
-   * Block a user
-   * Requires authentication
-   */
-  router.post('/:username/block', authMiddleware, async (req: Request, res: Response) => {
-    // ✅ FIXED: Use userController instead of followController
-    await userController.blockUser(req, res)
-  })
+      // Calculate pagination offset
+      const offset = (page - 1) * limit
 
-  /**
-   * DELETE /users/:username/block
-   * Unblock a user
-   * Requires authentication
-   */
-  router.delete('/:username/block', authMiddleware, async (req: Request, res: Response) => {
-    // ✅ FIXED: Use userController instead of followController
-    await userController.unblockUser(req, res)
-  })
+      // Get published posts
+      const result = await this.postRepository.findPublished({
+        offset,
+        limit,
+        ...(validatedQuery.author && { authorId: validatedQuery.author })
+      })
 
-  // ============================================================================
-  // FOLLOW OPERATIONS - FollowController
-  // ============================================================================
+      // Prepare pagination response
+      const pagination = {
+        page,
+        limit,
+        totalCount: result.totalCount,
+        hasMore: result.totalCount > offset + result.posts.length
+      }
 
-  /**
-   * POST /users/:username/follow
-   * Follow a user
-   * Optional authentication (supports ActivityPub actors)
-   */
-  router.post('/:username/follow', optionalAuthMiddleware, async (req: Request, res: Response) => {
-    await followController.followUser(req, res)
-  })
+      res.status(200).json({
+        success: true,
+        data: {
+          posts: result.posts,
+          pagination
+        }
+      })
 
-  /**
-   * DELETE /users/:username/follow
-   * Unfollow a user
-   * Requires authentication
-   */
-  router.delete('/:username/follow', authMiddleware, async (req: Request, res: Response) => {
-    await followController.unfollowUser(req, res)
-  })
-
-  /**
-   * GET /users/:username/followers
-   * Get user's followers
-   * Optional authentication for privacy settings
-   */
-  router.get('/:username/followers', optionalAuthMiddleware, async (req: Request, res: Response) => {
-    await followController.getUserFollowers(req, res)
-  })
-
-  /**
-   * GET /users/:username/following
-   * Get users that this user is following
-   * Optional authentication for privacy settings
-   */
-  router.get('/:username/following', optionalAuthMiddleware, async (req: Request, res: Response) => {
-    await followController.getUserFollowing(req, res)
-  })
+    } catch (error) {
+      console.error('Error getting posts:', error)
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve posts',
+          details: []
+        }
+      })
+    }
+  }
 
   /**
-   * GET /users/:username/stats
-   * Get user's follow statistics
-   * Public endpoint
-   */
-  router.get('/:username/stats', async (req: Request, res: Response) => {
-    await followController.getUserFollowStats(req, res)
-  })
-
-  // ============================================================================
-  // POST OPERATIONS - PostController
-  // ============================================================================
-
-  /**
-   * GET /users/:username/posts
    * Get posts by a specific user
-   * Optional authentication for draft access
+   * GET /users/:username/posts
    */
-  router.get('/:username/posts', optionalAuthMiddleware, async (req: Request, res: Response) => {
-    await postController.getUserPosts(req, res)
-  })
+  async getUserPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { username } = req.params as { username: string }
 
-  return router
+      // Validate username parameter
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Username is required',
+            details: []
+          }
+        })
+        return
+      }
+
+      // Find the user by username to get their ID
+      const user = await this.userRepository.findByUsername(username)
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'User not found',
+            details: []
+          }
+        })
+        return
+      }
+
+      // Validate query parameters
+      const queryValidation = postQuerySchema.safeParse(req.query)
+      if (!queryValidation.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid query parameters',
+            details: queryValidation.error.issues
+          }
+        })
+        return
+      }
+
+      const validatedQuery = queryValidation.data
+      const page = parseInt(validatedQuery.page)
+      const limit = Math.min(parseInt(validatedQuery.limit), 50) // Enforce max limit
+
+      // Calculate pagination
+      const offset = (page - 1) * limit
+
+      // Get posts by the user's ID
+      const result = await this.postRepository.findPublished({
+        offset,
+        limit,
+        authorId: user.id
+      })
+
+      // Prepare pagination response
+      const pagination = {
+        page,
+        limit,
+        totalCount: result.totalCount,
+        hasMore: result.totalCount > offset + result.posts.length
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          posts: result.posts,
+          pagination,
+          author: {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            avatar: user.avatar,
+            isVerified: user.isVerified
+          }
+        }
+      })
+
+    } catch (error) {
+      console.error('Error getting user posts:', error)
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to retrieve user posts',
+          details: []
+        }
+      })
+    }
+  }
+
+  // ... rest of the existing methods (createPost, getPostById, deletePost, etc.)
 }

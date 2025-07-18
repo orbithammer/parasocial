@@ -1,12 +1,29 @@
 // backend/src/routes/follows.ts
-// Dedicated Express routes for follow/unfollow operations
-// Alternative approach: separate router for follow-specific functionality
+// Version: 1.2.1 - Fixed unused parameter warnings
+// Changed: Prefixed unused req parameters with underscore (_req) in NOT_IMPLEMENTED endpoints
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { FollowController } from '../controllers/FollowController'
 
 // Middleware function type
 type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
+
+// Extend Express Request to include user from auth middleware and typed params
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
+}
+
+// Interface for requests with username parameter
+interface UsernameParamsRequest extends AuthenticatedRequest {
+  params: {
+    username: string
+    [key: string]: string
+  }
+}
 
 // Dependencies interface for dependency injection
 interface FollowsRouterDependencies {
@@ -35,7 +52,7 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Body: { username?: string, userId?: string, actorId?: string }
    * Supports both authenticated ParaSocial users and external ActivityPub actors
    */
-  router.post('/', optionalAuthMiddleware, async (req: Request, res: Response) => {
+  router.post('/', optionalAuthMiddleware, async (_req: Request, res: Response) => {
     // This would need a different method in controller or adapter
     // For now, redirect to username-based endpoint
     res.status(501).json({
@@ -51,8 +68,9 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Body: { username?: string, userId?: string }
    * Requires authentication
    */
-  router.delete('/', authMiddleware, async (req: Request, res: Response) => {
+  router.delete('/', authMiddleware, async (_req: Request, res: Response) => {
     // This would need a different method in controller or adapter
+    // For now, redirect to username-based endpoint
     res.status(501).json({
       success: false,
       error: 'Use DELETE /users/:username/follow instead',
@@ -61,37 +79,34 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
   })
 
   // ============================================================================
-  // FOLLOW STATUS CHECKING
+  // FOLLOW STATUS AND BULK CHECKING
   // ============================================================================
 
   /**
-   * GET /follows/status
+   * POST /follows/check
    * Check follow status between two users
-   * Query: ?follower=username1&followed=username2
+   * Body: { follower: "username", target: "username" }
    * Public endpoint
    */
-  router.get('/status', async (req: Request, res: Response) => {
-    const { follower, followed } = req.query
+  router.post('/check', async (req: Request, res: Response) => {
+    const { follower } = req.body
 
-    if (!follower || !followed) {
+    if (!follower) {
       res.status(400).json({
         success: false,
-        error: 'Both follower and followed parameters are required',
-        code: 'MISSING_PARAMETERS'
+        error: 'Follower username is required',
+        code: 'MISSING_FOLLOWER'
       })
       return
     }
 
-    // Create mock request object with params for existing controller method
-    const mockReq = {
+    // Type assert the request and add username to params
+    const typedReq = {
       ...req,
-      params: {
-        username: follower as string,
-        targetUsername: followed as string
-      }
-    }
+      params: { ...req.params, username: follower }
+    } as UsernameParamsRequest
 
-    await followController.checkFollowStatus(mockReq as any, res)
+    await followController.checkFollowStatus(typedReq, res)
   })
 
   /**
@@ -112,13 +127,13 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
       return
     }
 
-    // Create mock request object for existing controller method
-    const mockReq = {
+    // Type assert the request and add username to params
+    const typedReq = {
       ...req,
-      params: { username: follower }
-    }
+      params: { ...req.params, username: follower }
+    } as UsernameParamsRequest
 
-    await followController.bulkCheckFollowing(mockReq as any, res)
+    await followController.bulkCheckFollowing(typedReq, res)
   })
 
   // ============================================================================
@@ -131,11 +146,9 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Redirects to /users/:username/followers for consistency
    */
   router.get('/followers/:username', async (req: Request, res: Response) => {
-    const mockReq = {
-      ...req,
-      params: { username: req.params.username }
-    }
-    await followController.getUserFollowers(mockReq as any, res)
+    // Type assert the request to include username parameter
+    const typedReq = req as UsernameParamsRequest
+    await followController.getUserFollowers(typedReq, res)
   })
 
   /**
@@ -144,11 +157,9 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Redirects to /users/:username/following for consistency
    */
   router.get('/following/:username', async (req: Request, res: Response) => {
-    const mockReq = {
-      ...req,
-      params: { username: req.params.username }
-    }
-    await followController.getUserFollowing(mockReq as any, res)
+    // Type assert the request to include username parameter
+    const typedReq = req as UsernameParamsRequest
+    await followController.getUserFollowing(typedReq, res)
   })
 
   /**
@@ -157,11 +168,9 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Redirects to /users/:username/stats for consistency
    */
   router.get('/stats/:username', async (req: Request, res: Response) => {
-    const mockReq = {
-      ...req,
-      params: { username: req.params.username }
-    }
-    await followController.getUserFollowStats(mockReq as any, res)
+    // Type assert the request to include username parameter
+    const typedReq = req as UsernameParamsRequest
+    await followController.getUserFollowStats(typedReq, res)
   })
 
   /**
@@ -170,11 +179,9 @@ export function createFollowsRouter(dependencies: FollowsRouterDependencies): Ro
    * Requires authentication and user can only view their own recent followers
    */
   router.get('/recent/:username', authMiddleware, async (req: Request, res: Response) => {
-    const mockReq = {
-      ...req,
-      params: { username: req.params.username }
-    }
-    await followController.getRecentFollowers(mockReq as any, res)
+    // Type assert the request to include username parameter
+    const typedReq = req as UsernameParamsRequest
+    await followController.getRecentFollowers(typedReq, res)
   })
 
   return router

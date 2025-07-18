@@ -1,6 +1,7 @@
 // backend/src/routes/reports.ts
 // Express routes for report/moderation operations using TypeScript
-// Version: 1.0.0 - Initial implementation with validation middleware integration
+// Version: 1.0.2 - Fixed all unused req parameter warnings
+// Changed: Prefixed unused req parameters with underscore in rate limiting and stats endpoint
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { ReportController } from '../controllers/ReportController'
@@ -36,7 +37,7 @@ const reportCreationRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Skip rate limiting for authenticated admin users (TODO: implement admin check)
-  skip: (req) => {
+  skip: (_req) => { // FIXED: prefixed with underscore
     // TODO: Add admin role check here
     return false
   }
@@ -161,7 +162,7 @@ export function createReportsRouter(dependencies: ReportsRouterDependencies): Ro
   router.get('/stats',
     reportManagementRateLimit,
     authMiddleware, // TODO: Replace with admin middleware when implemented
-    async (req: Request, res: Response) => {
+    async (_req: Request, res: Response) => { // ← FIXED: prefixed with underscore
       // TODO: Implement real statistics
       res.json({
         success: true,

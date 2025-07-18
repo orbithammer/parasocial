@@ -1,295 +1,300 @@
-// backend\src\controllers\UserController.ts
-// Version: 1.2
-// Removed unused interface and cleaned up imports
+// backend/src/controllers/UserController.ts
+// Version: 1.0.5 - Removed unused mapErrorCodeToStatus method
+// Changed: Eliminated unused private method that was never called
 
 import { Request, Response } from 'express'
-import { ParsedQs } from 'qs'
+import { UserRepository } from '../repositories/UserRepository'
+import { FollowRepository } from '../repositories/FollowRepository'
+import { BlockRepository } from '../repositories/BlockRepository'
+import { User, PublicProfile } from '../models/User'
 
-// Interface for user creation request
-interface CreateUserRequest {
-  username: string
-  email: string
-  password: string
-  firstName?: string
-  lastName?: string
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    username: string
+  }
 }
 
-// Interface for user update request
-interface UpdateUserRequest {
-  username?: string
-  email?: string
-  firstName?: string
-  lastName?: string
-  isActive?: boolean
+// Define relationship context interface
+interface RelationshipContext {
+  isBlocked: boolean
+  hasBlocked: boolean
+  isOwnProfile: boolean
 }
 
+// Define extended profile response that includes relationship context
+interface UserProfileResponse {
+  user: PublicProfile
+  relationshipContext?: RelationshipContext
+}
+
+/**
+ * UserController handles user profile operations and user management
+ * Includes profile retrieval, blocking/unblocking functionality
+ */
 export class UserController {
+  constructor(
+    private userRepository: UserRepository,
+    private followRepository: FollowRepository,
+    private blockRepository: BlockRepository
+  ) {}
+
   /**
-   * Retrieves paginated list of users with optional filtering
-   * @param req - Express request object with query parameters
-   * @param res - Express response object
+   * Get user profile by username
+   * GET /users/:username
+   * Public endpoint with optional authentication for additional data
    */
-  async getUsers(req: Request, res: Response): Promise<void> {
+  async getUserProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // Access query parameters using bracket notation to satisfy TypeScript
-      const page = req.query['page']
-      const limit = req.query['limit']
-      const search = req.query['search']
-      const sortBy = req.query['sortBy']
-      const sortOrder = req.query['sortOrder']
+      const { username } = req.params as { username: string }
+      const currentUserId = req.user?.id
 
-      // Parse and validate pagination parameters
-      const parsedPage = this.parseIntegerParam(page, 1)
-      const parsedLimit = this.parseIntegerParam(limit, 10)
-      const parsedSearch = this.parseStringParam(search)
-      const parsedSortBy = this.parseStringParam(sortBy, 'createdAt')
-      const parsedSortOrder = this.parseSortOrder(sortOrder, 'desc')
-
-      // Validate page and limit ranges
-      if (parsedPage < 1) {
-        res.status(400).json({ error: 'Page must be greater than 0' })
+      // Validate username parameter
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'Username is required',
+          code: 'VALIDATION_ERROR'
+        })
         return
       }
 
-      if (parsedLimit < 1 || parsedLimit > 100) {
-        res.status(400).json({ error: 'Limit must be between 1 and 100' })
+      // Find the user by username
+      const user: User | null = await this.userRepository.findByUsername(username)
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        })
         return
       }
 
-      // TODO: Replace with actual database query
-      // const users = await UserService.findPaginated({
-      //   page: parsedPage,
-      //   limit: parsedLimit,
-      //   search: parsedSearch,
-      //   sortBy: parsedSortBy,
-      //   sortOrder: parsedSortOrder
-      // })
-      // const totalCount = await UserService.getTotalCount(parsedSearch)
+      // Get user's public profile
+      const profileData = user.getPublicProfile()
 
-      // Calculate pagination metadata
-      const totalPages = Math.ceil(100 / parsedLimit) // Placeholder total count
-      const hasNextPage = parsedPage < totalPages
-      const hasPreviousPage = parsedPage > 1
+      // Prepare the response structure
+      const response: UserProfileResponse = {
+        user: profileData
+      }
+
+      // If requesting user is authenticated, check for additional context
+      if (currentUserId) {
+        try {
+          // Check if current user is blocked by target user
+          const isBlocked = await this.blockRepository.isBlocked(user.id, currentUserId)
+          
+          // Check if current user has blocked target user
+          const hasBlocked = await this.blockRepository.isBlocked(currentUserId, user.id)
+
+          // Add relationship context to response
+          response.relationshipContext = {
+            isBlocked,
+            hasBlocked,
+            isOwnProfile: currentUserId === user.id
+          }
+        } catch (contextError) {
+          // Don't fail the request if relationship context fails
+          console.warn('Failed to get relationship context:', contextError)
+        }
+      }
 
       res.status(200).json({
-        message: 'Users retrieved successfully',
-        data: [], // Placeholder until database integration
-        pagination: {
-          currentPage: parsedPage,
-          totalPages,
-          totalItems: 100, // Placeholder total count
-          itemsPerPage: parsedLimit,
-          hasNextPage,
-          hasPreviousPage
-        },
-        filters: {
-          search: parsedSearch,
-          sortBy: parsedSortBy,
-          sortOrder: parsedSortOrder
-        }
+        success: true,
+        data: response
       })
-    } catch (error) {
-      console.error('Error retrieving users:', error)
-      res.status(500).json({ error: 'Internal server error' })
-    }
-  }
 
-  /**
-   * Retrieves a single user by ID
-   * @param req - Express request object with user ID parameter
-   * @param res - Express response object
-   */
-  async getUserById(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params
-
-      if (!id) {
-        res.status(400).json({ error: 'User ID is required' })
-        return
-      }
-
-      // TODO: Replace with actual database query
-      // const user = await UserService.findById(id)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       
-      // Placeholder response
-      res.status(200).json({
-        message: 'User retrieved successfully',
-        data: {
-          id,
-          username: 'placeholder',
-          email: 'placeholder@example.com'
-        }
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        details: errorMessage
       })
-    } catch (error) {
-      console.error('Error retrieving user:', error)
-      res.status(500).json({ error: 'Internal server error' })
     }
   }
 
   /**
-   * Creates a new user
-   * @param req - Express request object with user data
-   * @param res - Express response object
+   * Block a user
+   * POST /users/:username/block
+   * Requires authentication
    */
-  async createUser(req: Request, res: Response): Promise<void> {
+  async blockUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { username, email, password, firstName, lastName } = req.body as CreateUserRequest
+      const { username } = req.params as { username: string }
+      const currentUserId = req.user?.id
 
-      // Validate required fields
-      if (!username || !email || !password) {
-        res.status(400).json({ error: 'Username, email, and password are required' })
+      // Validate authentication
+      if (!currentUserId) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        })
         return
       }
 
-      // Validate email format
-      if (!this.isValidEmail(email)) {
-        res.status(400).json({ error: 'Invalid email format' })
+      // Validate username parameter
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'Username is required',
+          code: 'VALIDATION_ERROR'
+        })
         return
       }
 
-      // Create user data object
-      const userData: CreateUserRequest = {
-        username: String(username).trim(),
-        email: String(email).trim().toLowerCase(),
-        password: String(password)
+      // Find the user to block
+      const targetUser: User | null = await this.userRepository.findByUsername(username)
+      if (!targetUser) {
+        res.status(404).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        })
+        return
       }
 
-      // Add optional fields if provided
-      if (firstName) {
-        userData.firstName = String(firstName).trim()
+      // Prevent self-blocking
+      if (targetUser.id === currentUserId) {
+        res.status(400).json({
+          success: false,
+          error: 'Cannot block yourself',
+          code: 'SELF_BLOCK_ERROR'
+        })
+        return
       }
 
-      if (lastName) {
-        userData.lastName = String(lastName).trim()
+      // Check if already blocked
+      const isAlreadyBlocked = await this.blockRepository.isBlocked(currentUserId, targetUser.id)
+      if (isAlreadyBlocked) {
+        res.status(409).json({
+          success: false,
+          error: 'User is already blocked',
+          code: 'ALREADY_BLOCKED'
+        })
+        return
       }
 
-      // TODO: Replace with actual database save and password hashing
-      // const hashedPassword = await bcrypt.hash(userData.password, 10)
-      // const newUser = await UserService.create({ ...userData, password: hashedPassword })
-
-      res.status(201).json({
-        message: 'User created successfully',
-        data: {
-          id: 'placeholder-id',
-          username: userData.username,
-          email: userData.email,
-          firstName: userData.firstName,
-          lastName: userData.lastName
-        }
+      // Create the block relationship
+      await this.blockRepository.create({
+        blockerId: currentUserId,
+        blockedId: targetUser.id
       })
-    } catch (error) {
-      console.error('Error creating user:', error)
-      res.status(500).json({ error: 'Internal server error' })
-    }
-  }
 
-  /**
-   * Updates an existing user
-   * @param req - Express request object with user ID and update data
-   * @param res - Express response object
-   */
-  async updateUser(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params
-      const updateData = req.body as UpdateUserRequest
-
-      if (!id) {
-        res.status(400).json({ error: 'User ID is required' })
-        return
+      // Remove any existing follow relationships
+      try {
+        await this.followRepository.deleteByFollowerAndFollowed(currentUserId, targetUser.id)
+        await this.followRepository.deleteByFollowerAndFollowed(targetUser.id, currentUserId)
+      } catch (unfollowError) {
+        // Don't fail the block if unfollow fails
+        console.warn('Failed to remove follow relationships during block:', unfollowError)
       }
-
-      // Validate email format if provided
-      if (updateData.email && !this.isValidEmail(updateData.email)) {
-        res.status(400).json({ error: 'Invalid email format' })
-        return
-      }
-
-      // Build update object with only provided fields
-      const validatedUpdateData: UpdateUserRequest = {}
-
-      if (updateData.username) {
-        validatedUpdateData.username = String(updateData.username).trim()
-      }
-
-      if (updateData.email) {
-        validatedUpdateData.email = String(updateData.email).trim().toLowerCase()
-      }
-
-      if (updateData.firstName) {
-        validatedUpdateData.firstName = String(updateData.firstName).trim()
-      }
-
-      if (updateData.lastName) {
-        validatedUpdateData.lastName = String(updateData.lastName).trim()
-      }
-
-      if (typeof updateData.isActive === 'boolean') {
-        validatedUpdateData.isActive = updateData.isActive
-      }
-
-      // TODO: Replace with actual database update
-      // const updatedUser = await UserService.update(id, validatedUpdateData)
 
       res.status(200).json({
-        message: 'User updated successfully',
+        success: true,
+        message: `Successfully blocked ${targetUser.username}`,
         data: {
-          id,
-          ...validatedUpdateData
+          blockedUser: {
+            id: targetUser.id,
+            username: targetUser.username,
+            displayName: targetUser.displayName
+          }
         }
       })
-    } catch (error) {
-      console.error('Error updating user:', error)
-      res.status(500).json({ error: 'Internal server error' })
+
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        details: errorMessage
+      })
     }
   }
 
   /**
-   * Parses a query parameter as an integer with a default value
-   * @param param - Express query parameter value
-   * @param defaultValue - Default value if parsing fails
-   * @returns Parsed integer or default value
+   * Unblock a user
+   * DELETE /users/:username/block
+   * Requires authentication
    */
-  private parseIntegerParam(param: string | ParsedQs | (string | ParsedQs)[] | undefined, defaultValue: number): number {
-    if (typeof param === 'string') {
-      const parsed = parseInt(param, 10)
-      return isNaN(parsed) ? defaultValue : parsed
-    }
-    return defaultValue
-  }
+  async unblockUser(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { username } = req.params as { username: string }
+      const currentUserId = req.user?.id
 
-  /**
-   * Parses a query parameter as a string with optional default value
-   * @param param - Express query parameter value
-   * @param defaultValue - Default value if parsing fails
-   * @returns Parsed string or default value
-   */
-  private parseStringParam(param: string | ParsedQs | (string | ParsedQs)[] | undefined, defaultValue?: string): string | undefined {
-    if (typeof param === 'string') {
-      return param.trim()
-    }
-    return defaultValue
-  }
+      // Validate authentication
+      if (!currentUserId) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        })
+        return
+      }
 
-  /**
-   * Parses sort order parameter
-   * @param param - Express query parameter value
-   * @param defaultValue - Default sort order
-   * @returns Valid sort order
-   */
-  private parseSortOrder(param: string | ParsedQs | (string | ParsedQs)[] | undefined, defaultValue: 'asc' | 'desc'): 'asc' | 'desc' {
-    if (typeof param === 'string' && (param === 'asc' || param === 'desc')) {
-      return param
-    }
-    return defaultValue
-  }
+      // Validate username parameter
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'Username is required',
+          code: 'VALIDATION_ERROR'
+        })
+        return
+      }
 
-  /**
-   * Validates email format using regex
-   * @param email - Email string to validate
-   * @returns True if email is valid format
-   */
-  private isValidEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(email)
+      // Find the user to unblock
+      const targetUser: User | null = await this.userRepository.findByUsername(username)
+      if (!targetUser) {
+        res.status(404).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        })
+        return
+      }
+
+      // Check if currently blocked
+      const isBlocked = await this.blockRepository.isBlocked(currentUserId, targetUser.id)
+      if (!isBlocked) {
+        res.status(409).json({
+          success: false,
+          error: 'User is not currently blocked',
+          code: 'NOT_BLOCKED'
+        })
+        return
+      }
+
+      // Remove the block relationship
+      await this.blockRepository.deleteByBlockerAndBlocked(currentUserId, targetUser.id)
+
+      res.status(200).json({
+        success: true,
+        message: `Successfully unblocked ${targetUser.username}`,
+        data: {
+          unblockedUser: {
+            id: targetUser.id,
+            username: targetUser.username,
+            displayName: targetUser.displayName
+          }
+        }
+      })
+
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        details: errorMessage
+      })
+    }
   }
 }
