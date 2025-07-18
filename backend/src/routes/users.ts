@@ -1,15 +1,21 @@
-// backend/src/controllers/PostController.ts
-// Version: 3.7.0 - Added getUserPosts method and updated constructor
-// Changed: Added UserRepository dependency and getUserPosts method to resolve TypeScript errors
+// backend/src/routes/users.ts
+// Version: 1.0.1 - Fixed import names for follow validation middleware
+// Changed: Corrected validateFollowRequestEndpoint to validateFollowRequest and validateUnfollowRequestEndpoint to validateUnfollowRequest
 
-import { Request, Response } from 'express'
-import { z } from 'zod'
-import { PostRepository } from '../repositories/PostRepository'
-import { UserRepository } from '../repositories/UserRepository'
+import { Router, Request, Response, NextFunction } from 'express'
+import { UserController } from '../controllers/UserController'
+import { PostController } from '../controllers/PostController'
+import { FollowController } from '../controllers/FollowController'
+import { followOperationsRateLimit } from '../middleware/rateLimitMiddleware'
+import { 
+  validateFollowRequest,
+  validateUnfollowRequest
+} from '../middleware/followValidationMiddleware'
 
-/**
- * Interface for authenticated requests
- */
+// Middleware function type
+type MiddlewareFunction = (req: Request, res: Response, next: NextFunction) => Promise<void>
+
+// Extend Express Request to include user from auth middleware and typed params
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string
@@ -18,209 +24,186 @@ interface AuthenticatedRequest extends Request {
   }
 }
 
-/**
- * Validation schema for post queries
- */
-const postQuerySchema = z.object({
-  page: z.string()
-    .optional()
-    .default('1')
-    .refine((val) => {
-      const num = parseInt(val)
-      return !isNaN(num) && num > 0
-    }, { message: 'Page must be a positive number' }),
-  limit: z.string()
-    .optional()
-    .default('20')
-    .refine((val) => {
-      const num = parseInt(val)
-      return !isNaN(num) && num > 0
-    }, { message: 'Limit must be a positive number' }),
-  author: z.string().optional(),
-  includeContentWarning: z.enum(['true', 'false']).optional()
-})
-
-/**
- * Validation schema for post creation
- */
-const createPostSchema = z.object({
-  content: z.string().min(1).max(5000),
-  contentWarning: z.string().max(500).optional().nullable(),
-  isScheduled: z.boolean().default(false),
-  scheduledFor: z.string().datetime().optional().nullable()
-})
-
-/**
- * Controller for handling post-related operations
- * Includes CRUD operations and post management
- */
-export class PostController {
-  constructor(
-    private postRepository: PostRepository,
-    private userRepository: UserRepository
-  ) {}
-
-  /**
-   * Get public posts feed with pagination and filtering
-   * GET /posts
-   */
-  async getPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      // Validate query parameters
-      const queryValidation = postQuerySchema.safeParse(req.query)
-      if (!queryValidation.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid query parameters',
-            details: queryValidation.error.issues
-          }
-        })
-        return
-      }
-
-      const validatedQuery = queryValidation.data
-      const page = parseInt(validatedQuery.page)
-      const limit = Math.min(parseInt(validatedQuery.limit), 50) // Enforce max limit of 50
-
-      // Calculate pagination offset
-      const offset = (page - 1) * limit
-
-      // Get published posts
-      const result = await this.postRepository.findPublished({
-        offset,
-        limit,
-        ...(validatedQuery.author && { authorId: validatedQuery.author })
-      })
-
-      // Prepare pagination response
-      const pagination = {
-        page,
-        limit,
-        totalCount: result.totalCount,
-        hasMore: result.totalCount > offset + result.posts.length
-      }
-
-      res.status(200).json({
-        success: true,
-        data: {
-          posts: result.posts,
-          pagination
-        }
-      })
-
-    } catch (error) {
-      console.error('Error getting posts:', error)
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to retrieve posts',
-          details: []
-        }
-      })
-    }
+// Interface for requests with username parameter
+interface UsernameParamsRequest extends AuthenticatedRequest {
+  params: {
+    username: string
+    [key: string]: string
   }
-
-  /**
-   * Get posts by a specific user
-   * GET /users/:username/posts
-   */
-  async getUserPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { username } = req.params as { username: string }
-
-      // Validate username parameter
-      if (!username || typeof username !== 'string') {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Username is required',
-            details: []
-          }
-        })
-        return
-      }
-
-      // Find the user by username to get their ID
-      const user = await this.userRepository.findByUsername(username)
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'User not found',
-            details: []
-          }
-        })
-        return
-      }
-
-      // Validate query parameters
-      const queryValidation = postQuerySchema.safeParse(req.query)
-      if (!queryValidation.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid query parameters',
-            details: queryValidation.error.issues
-          }
-        })
-        return
-      }
-
-      const validatedQuery = queryValidation.data
-      const page = parseInt(validatedQuery.page)
-      const limit = Math.min(parseInt(validatedQuery.limit), 50) // Enforce max limit
-
-      // Calculate pagination
-      const offset = (page - 1) * limit
-
-      // Get posts by the user's ID
-      const result = await this.postRepository.findPublished({
-        offset,
-        limit,
-        authorId: user.id
-      })
-
-      // Prepare pagination response
-      const pagination = {
-        page,
-        limit,
-        totalCount: result.totalCount,
-        hasMore: result.totalCount > offset + result.posts.length
-      }
-
-      res.status(200).json({
-        success: true,
-        data: {
-          posts: result.posts,
-          pagination,
-          author: {
-            id: user.id,
-            username: user.username,
-            displayName: user.displayName,
-            avatar: user.avatar,
-            isVerified: user.isVerified
-          }
-        }
-      })
-
-    } catch (error) {
-      console.error('Error getting user posts:', error)
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to retrieve user posts',
-          details: []
-        }
-      })
-    }
-  }
-
-  // ... rest of the existing methods (createPost, getPostById, deletePost, etc.)
 }
+
+// Dependencies interface for dependency injection
+interface UsersRouterDependencies {
+  userController: UserController
+  postController: PostController
+  followController: FollowController
+  authMiddleware: MiddlewareFunction
+  optionalAuthMiddleware: MiddlewareFunction
+}
+
+/**
+ * Create users router with dependency injection
+ * Handles user profile, follow operations, and user posts
+ * @param dependencies - Injected dependencies
+ * @returns Configured Express router
+ */
+export function createUsersRouter(dependencies: UsersRouterDependencies): Router {
+  const { 
+    userController, 
+    postController, 
+    followController, 
+    authMiddleware, 
+    optionalAuthMiddleware 
+  } = dependencies
+  
+  const router = Router()
+
+  // ============================================================================
+  // USER PROFILE OPERATIONS
+  // ============================================================================
+
+  /**
+   * GET /users/:username
+   * Get user profile by username
+   * Optional authentication (to check relationship context)
+   */
+  router.get('/:username', 
+    optionalAuthMiddleware, 
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await userController.getUserProfile(typedReq, res)
+    }
+  )
+
+  /**
+   * GET /users/:username/posts
+   * Get posts by a specific user
+   * Optional authentication (to filter blocked content)
+   */
+  router.get('/:username/posts', 
+    optionalAuthMiddleware, 
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await postController.getUserPosts(typedReq, res)
+    }
+  )
+
+  // ============================================================================
+  // FOLLOW OPERATIONS
+  // ============================================================================
+
+  /**
+   * POST /users/:username/follow
+   * Follow a user
+   * Optional authentication (supports both authenticated users and external ActivityPub actors)
+   * Includes rate limiting and validation
+   */
+  router.post('/:username/follow', 
+    followOperationsRateLimit as any, // Type cast for compatibility
+    optionalAuthMiddleware,
+    validateFollowRequest,
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await followController.followUser(typedReq, res)
+    }
+  )
+
+  /**
+   * DELETE /users/:username/follow
+   * Unfollow a user
+   * Requires authentication
+   * Includes rate limiting and validation
+   */
+  router.delete('/:username/follow', 
+    followOperationsRateLimit as any, // Type cast for compatibility
+    authMiddleware,
+    validateUnfollowRequest,
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await followController.unfollowUser(typedReq, res)
+    }
+  )
+
+  /**
+   * GET /users/:username/followers
+   * Get followers list for a user
+   * Public endpoint with optional pagination
+   */
+  router.get('/:username/followers', 
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await followController.getUserFollowers(typedReq, res)
+    }
+  )
+
+  /**
+   * GET /users/:username/following
+   * Get following list for a user
+   * Public endpoint with optional pagination
+   */
+  router.get('/:username/following', 
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await followController.getUserFollowing(typedReq, res)
+    }
+  )
+
+  /**
+   * GET /users/:username/stats
+   * Get follow statistics for a user
+   * Public endpoint
+   */
+  router.get('/:username/stats', 
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await followController.getUserFollowStats(typedReq, res)
+    }
+  )
+
+  // ============================================================================
+  // BLOCK/UNBLOCK OPERATIONS
+  // ============================================================================
+
+  /**
+   * POST /users/:username/block
+   * Block a user
+   * Requires authentication
+   */
+  router.post('/:username/block', 
+    authMiddleware,
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await userController.blockUser(typedReq, res)
+    }
+  )
+
+  /**
+   * DELETE /users/:username/block
+   * Unblock a user
+   * Requires authentication
+   */
+  router.delete('/:username/block', 
+    authMiddleware,
+    async (req: Request, res: Response) => {
+      // Type assert the request to include username parameter
+      const typedReq = req as UsernameParamsRequest
+      await userController.unblockUser(typedReq, res)
+    }
+  )
+
+  return router
+}
+
+/**
+ * Export default router for backward compatibility
+ * This allows importing as either named export or default
+ */
+export default createUsersRouter

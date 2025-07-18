@@ -1,12 +1,13 @@
 // backend/src/routes/posts.ts
-// Version: 1.3.0 - Fixed TypeScript rate limiting middleware compatibility
-// Changed: Added type cast for postCreationRateLimit to resolve RateLimitRequest vs Express Request type conflict
+// Version: 1.4.0 - Added PUT /posts/:id endpoint for updatePost method
+// Changed: Added updatePost route with validation middleware, removed TODO comment
 
 import { Router, Request, Response, NextFunction } from 'express'
 import { PostController } from '../controllers/PostController'
 import { postCreationRateLimit } from '../middleware/rateLimitMiddleware'
 import { 
   validatePostCreationEndpoint,
+  validatePostUpdateEndpoint,
   validatePostDeletionEndpoint,
   validatePostListQuery,
   validatePostIdParam
@@ -78,8 +79,19 @@ export function createPostsRouter(dependencies: PostsRouterDependencies): Router
     }
   )
 
-  // TODO: PUT /posts/:id - updatePost method needs to be implemented in PostController first
-  // This endpoint will allow users to edit their existing posts
+  /**
+   * PUT /posts/:id
+   * Update existing post
+   * Requires authentication and ownership validation
+   * Includes validation middleware for updates
+   */
+  router.put('/:id',
+    authMiddleware,
+    ...validatePostUpdateEndpoint,
+    async (req: Request, res: Response) => {
+      await postController.updatePost(req, res)
+    }
+  )
 
   /**
    * DELETE /posts/:id
