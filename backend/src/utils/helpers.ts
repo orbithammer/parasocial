@@ -1,499 +1,481 @@
-// backend\src\utils\helpers.ts
-// Version: 1.5.0
-// Version: 1.1.0
-// Utility helper functions for backend operations
-// Version: 1.1.0
-// Fixed TypeScript error with ApiResponse types for exactOptionalPropertyTypes
+// backend/src/utils/__tests__/helpers.test.ts
+// Version: 1.2.0
+// Unit tests for helper utility functions - Fixed to import actual functions
+// Changed: Removed mock implementations, added proper imports from helpers.ts
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  // String utilities
+  truncateText,
+  slugify,
+  capitalizeWords,
+
+  // Validation utilities
+  isValidEmail,
+  isValidUrl,
+  isEmpty,
+
+  // UUID generation
+  generateUUID,
+
+  // Pagination utilities
+  calculatePagination,
+  type PaginationParams,
+  type PaginationResult,
+
+  // API response utilities
+  createApiResponse,
+  createSuccessResponse,
+  createErrorResponse,
+  type ApiResponse,
+
+  // Async utilities
+  delay,
+  withTimeout,
+
+  // Object utilities
+  removeNullish,
+  deepClone,
+  pick,
+  omit,
+
+  // Array utilities
+  unique,
+  chunk,
+
+  // Number utilities
+  roundToDecimals,
+  clamp
+} from '../helpers'
+
+console.log('Test setup initialized')
 
 // =============================================================================
-// TYPE DEFINITIONS
+// TEST CLEANUP
 // =============================================================================
 
-/**
- * Interface for pagination parameters
- */
-export interface PaginationParams {
-  page?: number
-  limit?: number
-  offset?: number
-}
+beforeEach(() => {
+  // Reset any global state before each test
+  vi.clearAllTimers()
+})
 
-/**
- * Interface for pagination result
- */
-export interface PaginationResult {
-  page: number
-  limit: number
-  offset: number
-  totalPages: number
-  hasNextPage: boolean
-  hasPreviousPage: boolean
-}
-
-/**
- * Interface for API response structure
- */
-export interface ApiResponse<T = unknown> {
-  success: boolean
-  data?: T
-  error?: {
-    code: string
-    message: string
-    details?: unknown[]
-  }
-  meta?: {
-    pagination?: PaginationResult
-    timestamp: string
-  }
-}
+afterEach(() => {
+  console.log('Starting test cleanup...')
+  
+  // Clean up any pending timers
+  vi.clearAllTimers()
+  
+  // Reset all mocks
+  vi.clearAllMocks()
+  
+  console.log('Test cleanup completed')
+})
 
 // =============================================================================
-// UUID GENERATION
+// EMAIL VALIDATION TESTS
 // =============================================================================
 
-/**
- * Generates a random UUID v4 string
- * Uses crypto.randomUUID() if available, falls back to Math.random()
- * @returns UUID v4 string in format xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
- */
-export function generateUUID(): string {
-  // Use native crypto.randomUUID if available (Node.js 16.7.0+)
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-
-  // Fallback implementation using Math.random()
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0
-    const v = c === 'x' ? r : (r & 0x3 | 0x8)
-    return v.toString(16)
+describe('isValidEmail', () => {
+  it('should validate correct email formats', () => {
+    const validEmails = [
+      'test@example.com',
+      'user.name@domain.co.uk',
+      'user+tag@example.org',
+      'user123@test-domain.com'
+    ]
+    
+    validEmails.forEach(email => {
+      expect(isValidEmail(email)).toBe(true)
+    })
   })
-}
+
+  it('should reject invalid email formats', () => {
+    const invalidEmails = [
+      'notanemail',
+      '@example.com',
+      'user@',
+      'user..name@example.com',
+      'user@example',
+      'user name@example.com'
+    ]
+    
+    invalidEmails.forEach(email => {
+      expect(isValidEmail(email)).toBe(false)
+    })
+  })
+
+  it('should handle empty string', () => {
+    expect(isValidEmail('')).toBe(false)
+  })
+})
 
 // =============================================================================
-// STRING UTILITIES
+// TEXT TRUNCATION TESTS
 // =============================================================================
 
-/**
- * Converts text to URL-safe slug format
- * Removes special characters, converts to lowercase, replaces spaces with hyphens
- * @param text - Text to convert to slug
- * @returns URL-safe slug string
- */
-export function slugify(text: string): string {
-  if (!text || typeof text !== 'string') {
-    return ''
-  }
+describe('truncateText', () => {
+  it('should not modify text shorter than max length', () => {
+    const text = 'Short text'
+    expect(truncateText(text, 20)).toBe(text)
+  })
 
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters except word chars, spaces, hyphens
-    .replace(/[\s_-]+/g, '-') // Replace spaces, underscores, multiple hyphens with single hyphen
-    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
-}
+  it('should truncate text longer than max length', () => {
+    const text = 'This is a very long text that needs truncation'
+    const result = truncateText(text, 20)
+    
+    expect(result).toHaveLength(20)
+    expect(result.endsWith('...')).toBe(true)
+    expect(result).toBe('This is a very l...')
+  })
 
-/**
- * Truncates text to specified length and adds ellipsis if needed
- * @param text - Text to truncate
- * @param maxLength - Maximum length before truncation (including ellipsis)
- * @returns Truncated text with ellipsis if needed
- */
-export function truncateText(text: string, maxLength: number): string {
-  if (!text || typeof text !== 'string') {
-    return ''
-  }
+  it('should handle exact length text', () => {
+    const text = 'Exactly twenty chars'
+    expect(truncateText(text, 20)).toBe(text)
+  })
 
-  if (text.length <= maxLength) {
-    return text
-  }
+  it('should handle very short max length', () => {
+    const text = 'Hello'
+    const result = truncateText(text, 3)
+    
+    expect(result).toBe('...')
+  })
 
-  if (maxLength <= 3) {
-    return '...'
-  }
-
-  return text.slice(0, maxLength - 3) + '...'
-}
+  it('should handle empty string', () => {
+    expect(truncateText('', 10)).toBe('')
+  })
+})
 
 // =============================================================================
-// PAGINATION UTILITIES
+// UUID GENERATION TESTS
 // =============================================================================
 
-/**
- * Calculates pagination values from parameters and total count
- * Ensures sensible defaults and boundaries for pagination
- * @param params - Pagination parameters (page, limit, offset)
- * @param totalCount - Total number of items
- * @returns Calculated pagination result with metadata
- */
-export function calculatePagination(
-  params: PaginationParams, 
-  totalCount: number
-): PaginationResult {
-  // Ensure totalCount is non-negative
-  const safeTotal = Math.max(0, totalCount)
-  
-  // Apply defaults and bounds
-  const page = Math.max(1, params.page || 1)
-  const limit = Math.min(100, Math.max(1, params.limit || 10))
-  
-  // Calculate offset: use provided offset or calculate from page
-  const offset = params.offset !== undefined 
-    ? Math.max(0, params.offset)
-    : (page - 1) * limit
-  
-  // Calculate total pages
-  const totalPages = Math.ceil(safeTotal / limit)
-  
-  return {
-    page,
-    limit,
-    offset,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1
-  }
-}
+describe('generateUUID', () => {
+  it('should generate a valid UUID v4 format', () => {
+    const uuid = generateUUID()
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    
+    expect(uuid).toMatch(uuidRegex)
+    expect(uuid).toHaveLength(36)
+  })
+
+  it('should generate unique UUIDs', () => {
+    const uuid1 = generateUUID()
+    const uuid2 = generateUUID()
+    
+    expect(uuid1).not.toBe(uuid2)
+  })
+
+  it('should always have version 4 indicator', () => {
+    const uuid = generateUUID()
+    expect(uuid.charAt(14)).toBe('4')
+  })
+})
 
 // =============================================================================
-// API RESPONSE UTILITIES
+// SLUGIFY TESTS
 // =============================================================================
 
-/**
- * Creates standardized API response object with consistent structure
- * @param success - Whether the operation was successful
- * @param data - Response data (for successful operations)
- * @param error - Error information (for failed operations)
- * @param meta - Additional metadata (pagination, etc.)
- * @returns Standardized API response object
- */
-export function createApiResponse<T>(
-  success: boolean,
-  data?: T,
-  error?: { code: string; message: string; details?: unknown[] },
-  meta?: { pagination?: PaginationResult }
-): ApiResponse<T> {
-  const response: ApiResponse<T> = {
-    success,
-    meta: {
-      timestamp: new Date().toISOString(),
-      ...meta
+describe('slugify', () => {
+  it('should convert text to lowercase', () => {
+    expect(slugify('Hello World')).toBe('hello-world')
+  })
+
+  it('should replace spaces with hyphens', () => {
+    expect(slugify('this is a test')).toBe('this-is-a-test')
+  })
+
+  it('should remove special characters', () => {
+    expect(slugify('Hello! @World#')).toBe('hello-world')
+  })
+
+  it('should handle multiple spaces and underscores', () => {
+    expect(slugify('hello    world_test')).toBe('hello-world-test')
+  })
+
+  it('should remove leading/trailing hyphens', () => {
+    expect(slugify('  -hello world-  ')).toBe('hello-world')
+  })
+
+  it('should handle empty string', () => {
+    expect(slugify('')).toBe('')
+  })
+})
+
+// =============================================================================
+// PAGINATION TESTS
+// =============================================================================
+
+describe('calculatePagination', () => {
+  it('should calculate pagination with default values', () => {
+    const result = calculatePagination({}, 100)
+    
+    expect(result).toEqual({
+      page: 1,
+      limit: 10,
+      offset: 0,
+      totalPages: 10,
+      hasNextPage: true,
+      hasPreviousPage: false
+    })
+  })
+
+  it('should calculate pagination with custom values', () => {
+    const result = calculatePagination({ page: 3, limit: 20 }, 150)
+    
+    expect(result).toEqual({
+      page: 3,
+      limit: 20,
+      offset: 40,
+      totalPages: 8,
+      hasNextPage: true,
+      hasPreviousPage: true
+    })
+  })
+
+  it('should handle edge cases', () => {
+    const result = calculatePagination({ page: 0, limit: 0 }, 50)
+    
+    expect(result).toEqual({
+      page: 1,
+      limit: 1,
+      offset: 0,
+      totalPages: 50,
+      hasNextPage: true,
+      hasPreviousPage: false
+    })
+  })
+})
+
+// =============================================================================
+// API RESPONSE TESTS
+// =============================================================================
+
+describe('createApiResponse', () => {
+  it('should create successful response with data', () => {
+    const data = { message: 'Success' }
+    const response = createApiResponse(true, data)
+    
+    expect(response.success).toBe(true)
+    expect(response.data).toEqual(data)
+    expect(response.meta?.timestamp).toBeDefined()
+  })
+
+  it('should create error response', () => {
+    const error = { code: 'TEST_ERROR', message: 'Test error' }
+    const response = createApiResponse(false, undefined, error)
+    
+    expect(response.success).toBe(false)
+    expect(response.error).toEqual(error)
+    expect(response.data).toBeUndefined()
+  })
+})
+
+describe('createSuccessResponse', () => {
+  it('should create success response with data', () => {
+    const testData = { id: 1, name: 'Test' }
+    const response = createSuccessResponse(testData)
+    
+    expect(response.success).toBe(true)
+    expect(response.data).toEqual(testData)
+    expect(response.error).toBeUndefined()
+  })
+})
+
+describe('createErrorResponse', () => {
+  it('should create error response', () => {
+    const response = createErrorResponse('VALIDATION_ERROR', 'Invalid input')
+    
+    expect(response.success).toBe(false)
+    expect(response.error?.code).toBe('VALIDATION_ERROR')
+    expect(response.error?.message).toBe('Invalid input')
+    expect(response.data).toBeUndefined()
+  })
+})
+
+// =============================================================================
+// ASYNC UTILITIES TESTS
+// =============================================================================
+
+describe('delay', () => {
+  it('should delay execution', async () => {
+    const start = Date.now()
+    await delay(50)
+    const end = Date.now()
+    
+    expect(end - start).toBeGreaterThanOrEqual(45) // Allow for some timing variance
+  })
+})
+
+describe('withTimeout', () => {
+  it('should resolve when function completes within timeout', async () => {
+    const asyncFn = async () => {
+      await delay(10)
+      return 'success'
     }
-  }
+    
+    const result = await withTimeout(asyncFn, 100)
+    expect(result).toBe('success')
+  })
 
-  // Add data for successful responses
-  if (success && data !== undefined) {
-    response.data = data
-  }
-
-  // Add error for failed responses
-  if (!success && error) {
-    response.error = error
-  }
-
-  return response
-}
-
-/**
- * Creates a successful API response with data
- * @param data - Response data
- * @param meta - Optional metadata
- * @returns Success API response
- */
-export function createSuccessResponse<T>(
-  data: T, 
-  meta?: { pagination?: PaginationResult }
-): ApiResponse<T> {
-  return createApiResponse(true, data, undefined, meta)
-}
-
-/**
- * Creates an error API response
- * @param code - Error code
- * @param message - Error message
- * @param details - Optional error details
- * @returns Error API response
- */
-export function createErrorResponse(
-  code: string, 
-  message: string, 
-  details?: unknown[]
-): ApiResponse<undefined> {
-  const error: { code: string; message: string; details?: unknown[] } = { code, message }
-  if (details !== undefined) {
-    error.details = details
-  }
-  return createApiResponse(false, undefined, error)
-}
-
-// =============================================================================
-// ASYNC UTILITIES
-// =============================================================================
-
-/**
- * Creates a promise that resolves after specified milliseconds
- * Useful for rate limiting, testing, or adding delays
- * @param ms - Milliseconds to delay
- * @returns Promise that resolves after delay
- */
-export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/**
- * Executes async function with timeout
- * @param asyncFn - Async function to execute
- * @param timeoutMs - Timeout in milliseconds
- * @returns Promise that rejects if timeout exceeded
- */
-export async function withTimeout<T>(
-  asyncFn: () => Promise<T>, 
-  timeoutMs: number
-): Promise<T> {
-  const timeoutPromise = new Promise<never>((_, reject) => 
-    setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
-  )
-
-  return Promise.race([asyncFn(), timeoutPromise])
-}
-
-// =============================================================================
-// OBJECT UTILITIES
-// =============================================================================
-
-/**
- * Removes null and undefined values from an object
- * Creates a new object without modifying the original
- * @param obj - Object to clean
- * @returns New object without null/undefined values
- */
-export function removeNullish<T extends Record<string, unknown>>(obj: T): Partial<T> {
-  if (!obj || typeof obj !== 'object') {
-    return {}
-  }
-
-  const cleaned: Partial<T> = {}
-  
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== null && value !== undefined) {
-      cleaned[key as keyof T] = value as T[keyof T]
+  it('should reject when function exceeds timeout', async () => {
+    const asyncFn = async () => {
+      await delay(100)
+      return 'success'
     }
-  }
-  
-  return cleaned
-}
+    
+    await expect(withTimeout(asyncFn, 10)).rejects.toThrow('Operation timed out')
+  })
+})
 
-/**
- * Deep clones an object using JSON parse/stringify
- * Note: This method has limitations (functions, dates, etc.)
- * @param obj - Object to clone
- * @returns Deep cloned object
- */
-export function deepClone<T>(obj: T): T {
-  if (obj === null || typeof obj !== 'object') {
-    return obj
-  }
-  
-  return JSON.parse(JSON.stringify(obj))
-}
+// =============================================================================
+// OBJECT UTILITIES TESTS
+// =============================================================================
 
-/**
- * Picks specified properties from an object
- * @param obj - Source object
- * @param keys - Keys to pick
- * @returns New object with only specified keys
- */
-export function pick<T extends Record<string, unknown>, K extends keyof T>(
-  obj: T, 
-  keys: K[]
-): Pick<T, K> {
-  const result = {} as Pick<T, K>
-  
-  for (const key of keys) {
-    if (key in obj) {
-      result[key] = obj[key]
+describe('removeNullish', () => {
+  it('should remove null and undefined values', () => {
+    const obj = {
+      a: 'value',
+      b: null,
+      c: undefined,
+      d: 0,
+      e: '',
+      f: false
     }
-  }
-  
-  return result
-}
+    
+    const result = removeNullish(obj)
+    
+    expect(result).toEqual({
+      a: 'value',
+      d: 0,
+      e: '',
+      f: false
+    })
+  })
+})
 
-/**
- * Omits specified properties from an object
- * @param obj - Source object
- * @param keys - Keys to omit
- * @returns New object without specified keys
- */
-export function omit<T extends Record<string, unknown>, K extends keyof T>(
-  obj: T, 
-  keys: K[]
-): Omit<T, K> {
-  const result = { ...obj }
-  
-  for (const key of keys) {
-    delete result[key]
-  }
-  
-  return result
-}
+describe('deepClone', () => {
+  it('should create deep copy of object', () => {
+    const original = { a: 1, b: { c: 2 } }
+    const cloned = deepClone(original)
+    
+    cloned.b.c = 3
+    
+    expect(original.b.c).toBe(2)
+    expect(cloned.b.c).toBe(3)
+  })
+})
 
-// =============================================================================
-// VALIDATION UTILITIES
-// =============================================================================
+describe('pick', () => {
+  it('should pick specified properties', () => {
+    const obj = { a: 1, b: 2, c: 3, d: 4 }
+    const result = pick(obj, ['a', 'c'])
+    
+    expect(result).toEqual({ a: 1, c: 3 })
+  })
+})
 
-/**
- * Validates email format using regex pattern
- * Rejects emails with consecutive dots, leading/trailing dots, spaces, and other invalid patterns
- * @param email - Email string to validate
- * @returns Boolean indicating if email format is valid
- */
-export function isValidEmail(email: string): boolean {
-  if (!email || typeof email !== 'string') {
-    return false
-  }
-
-  const trimmedEmail = email.trim()
-  
-  // Reject emails with spaces
-  if (trimmedEmail.includes(' ')) {
-    return false
-  }
-  
-  // Must contain exactly one @ symbol
-  const atCount = (trimmedEmail.match(/@/g) || []).length
-  if (atCount !== 1) {
-    return false
-  }
-  
-  // Split email into parts
-  const [localPart, domainPart] = trimmedEmail.split('@')
-  
-  // Both parts must exist and not be empty
-  if (!localPart || !domainPart) {
-    return false
-  }
-  
-  // Domain must contain at least one dot
-  if (!domainPart.includes('.')) {
-    return false
-  }
-  
-  // Check for consecutive dots in local part
-  if (localPart.includes('..')) {
-    return false
-  }
-  
-  // Check for leading or trailing dots in local part
-  if (localPart.startsWith('.') || localPart.endsWith('.')) {
-    return false
-  }
-  
-  // Check for consecutive dots in domain part
-  if (domainPart.includes('..')) {
-    return false
-  }
-  
-  // Check for leading or trailing dots in domain part
-  if (domainPart.startsWith('.') || domainPart.endsWith('.')) {
-    return false
-  }
-  
-  // Basic character validation - only allow alphanumeric, dots, hyphens, underscores, plus
-  const validLocalChars = /^[a-zA-Z0-9._+-]+$/
-  const validDomainChars = /^[a-zA-Z0-9.-]+$/
-  
-  if (!validLocalChars.test(localPart) || !validDomainChars.test(domainPart)) {
-    return false
-  }
-
-  return true
-}
-
-/**
- * Validates URL format
- * @param url - URL string to validate
- * @returns Boolean indicating if URL format is valid
- */
-export function isValidUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false
-  }
-
-  try {
-    new URL(url)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Checks if a value is empty (null, undefined, empty string, empty array, empty object)
- * @param value - Value to check
- * @returns Boolean indicating if value is empty
- */
-export function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim().length === 0
-  if (Array.isArray(value)) return value.length === 0
-  if (typeof value === 'object') return Object.keys(value).length === 0
-  return false
-}
+describe('omit', () => {
+  it('should omit specified properties', () => {
+    const obj = { a: 1, b: 2, c: 3, d: 4 }
+    const result = omit(obj, ['b', 'd'])
+    
+    expect(result).toEqual({ a: 1, c: 3 })
+  })
+})
 
 // =============================================================================
-// ARRAY UTILITIES
+// VALIDATION UTILITIES TESTS
 // =============================================================================
 
-/**
- * Removes duplicate values from array while preserving order
- * @param array - Array to deduplicate
- * @returns New array without duplicates
- */
-export function unique<T>(array: T[]): T[] {
-  return [...new Set(array)]
-}
+describe('isValidUrl', () => {
+  it('should validate correct URLs', () => {
+    const validUrls = [
+      'https://example.com',
+      'http://test.org',
+      'https://sub.domain.co.uk/path'
+    ]
+    
+    validUrls.forEach(url => {
+      expect(isValidUrl(url)).toBe(true)
+    })
+  })
 
-/**
- * Chunks array into smaller arrays of specified size
- * @param array - Array to chunk
- * @param size - Size of each chunk
- * @returns Array of chunks
- */
-export function chunk<T>(array: T[], size: number): T[][] {
-  if (size <= 0) return []
-  
-  const chunks: T[][] = []
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size))
-  }
-  
-  return chunks
-}
+  it('should reject invalid URLs', () => {
+    const invalidUrls = [
+      'not-a-url',
+      'ftp://invalid',
+      'javascript:alert(1)'
+    ]
+    
+    invalidUrls.forEach(url => {
+      expect(isValidUrl(url)).toBe(false)
+    })
+  })
+})
+
+describe('isEmpty', () => {
+  it('should detect empty values', () => {
+    expect(isEmpty(null)).toBe(true)
+    expect(isEmpty(undefined)).toBe(true)
+    expect(isEmpty('')).toBe(true)
+    expect(isEmpty('   ')).toBe(true)
+    expect(isEmpty([])).toBe(true)
+    expect(isEmpty({})).toBe(true)
+  })
+
+  it('should detect non-empty values', () => {
+    expect(isEmpty('text')).toBe(false)
+    expect(isEmpty([1])).toBe(false)
+    expect(isEmpty({ a: 1 })).toBe(false)
+    expect(isEmpty(0)).toBe(false)
+    expect(isEmpty(false)).toBe(false)
+  })
+})
 
 // =============================================================================
-// NUMBER UTILITIES
+// ARRAY UTILITIES TESTS
 // =============================================================================
 
-/**
- * Rounds number to specified decimal places
- * @param num - Number to round
- * @param decimals - Number of decimal places
- * @returns Rounded number
- */
-export function roundToDecimals(num: number, decimals: number): number {
-  const factor = Math.pow(10, decimals)
-  return Math.round(num * factor) / factor
-}
+describe('unique', () => {
+  it('should remove duplicates while preserving order', () => {
+    const array = [1, 2, 2, 3, 1, 4]
+    const result = unique(array)
+    
+    expect(result).toEqual([1, 2, 3, 4])
+  })
+})
 
-/**
- * Clamps number between min and max values
- * @param num - Number to clamp
- * @param min - Minimum value
- * @param max - Maximum value
- * @returns Clamped number
- */
-export function clamp(num: number, min: number, max: number): number {
-  return Math.min(Math.max(num, min), max)
-}
+describe('chunk', () => {
+  it('should split array into chunks', () => {
+    const array = [1, 2, 3, 4, 5, 6, 7]
+    const result = chunk(array, 3)
+    
+    expect(result).toEqual([[1, 2, 3], [4, 5, 6], [7]])
+  })
 
-// backend\src\utils\helpers.ts
+  it('should handle edge cases', () => {
+    expect(chunk([1, 2, 3], 0)).toEqual([])
+    expect(chunk([], 2)).toEqual([])
+  })
+})
+
+// =============================================================================
+// NUMBER UTILITIES TESTS
+// =============================================================================
+
+describe('roundToDecimals', () => {
+  it('should round to specified decimal places', () => {
+    expect(roundToDecimals(3.14159, 2)).toBe(3.14)
+    expect(roundToDecimals(2.5, 0)).toBe(3)
+  })
+})
+
+describe('clamp', () => {
+  it('should clamp values between min and max', () => {
+    expect(clamp(5, 1, 10)).toBe(5)
+    expect(clamp(-5, 1, 10)).toBe(1)
+    expect(clamp(15, 1, 10)).toBe(10)
+  })
+})
+
+// backend/src/utils/__tests__/helpers.test.ts
