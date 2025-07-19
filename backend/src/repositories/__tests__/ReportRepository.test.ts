@@ -1,8 +1,9 @@
-// backend/src/repositories/__tests__/reportRepository.test.ts
-// Version: 1.0.0
-// Initial test suite for ReportRepository with comprehensive coverage
+// backend/src/repositories/__tests__/ReportRepository.test.ts
+// Version: 1.1.0
+// Fixed test suite with proper error handling expectations and update validation
+// Changes: Fixed error message expectations, added updatedAt field validation, corrected filename
 
-import { describe, it, expect, beforeEach, vi, type MockedFunction } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { ReportRepository } from '../ReportRepository'
 import { 
@@ -16,35 +17,34 @@ import {
   buildCreateReportData
 } from '../../models/Report'
 
-// Mock Prisma client
+// Mock Prisma client with simplified typing approach
+const mockReportCreate = vi.fn()
+const mockReportFindUnique = vi.fn()
+const mockReportFindMany = vi.fn()
+const mockReportUpdate = vi.fn()
+const mockReportDelete = vi.fn()
+const mockReportCount = vi.fn()
+const mockUserFindUnique = vi.fn()
+const mockPostFindUnique = vi.fn()
+
 const mockPrisma = {
   report: {
-    create: vi.fn(),
-    findUnique: vi.fn(),
-    findMany: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    count: vi.fn(),
+    create: mockReportCreate,
+    findUnique: mockReportFindUnique,
+    findMany: mockReportFindMany,
+    update: mockReportUpdate,
+    delete: mockReportDelete,
+    count: mockReportCount,
     aggregate: vi.fn(),
     groupBy: vi.fn()
   },
   user: {
-    findUnique: vi.fn()
+    findUnique: mockUserFindUnique
   },
   post: {
-    findUnique: vi.fn()
+    findUnique: mockPostFindUnique
   }
 } as unknown as PrismaClient
-
-// Type the mocked functions for better TypeScript support
-const mockReportCreate = mockPrisma.report.create as MockedFunction<typeof mockPrisma.report.create>
-const mockReportFindUnique = mockPrisma.report.findUnique as MockedFunction<typeof mockPrisma.report.findUnique>
-const mockReportFindMany = mockPrisma.report.findMany as MockedFunction<typeof mockPrisma.report.findMany>
-const mockReportUpdate = mockPrisma.report.update as MockedFunction<typeof mockPrisma.report.update>
-const mockReportDelete = mockPrisma.report.delete as MockedFunction<typeof mockPrisma.report.delete>
-const mockReportCount = mockPrisma.report.count as MockedFunction<typeof mockPrisma.report.count>
-const mockUserFindUnique = mockPrisma.user.findUnique as MockedFunction<typeof mockPrisma.user.findUnique>
-const mockPostFindUnique = mockPrisma.post.findUnique as MockedFunction<typeof mockPrisma.post.findUnique>
 
 describe('ReportRepository', () => {
   let reportRepository: ReportRepository
@@ -226,8 +226,9 @@ describe('ReportRepository', () => {
       const dbError = new Error('Database connection failed')
       mockReportFindUnique.mockRejectedValue(dbError)
 
-      // Act & Assert: Expect error to propagate
-      await expect(reportRepository.findById('report-123')).rejects.toThrow('Database connection failed')
+      // Act & Assert: Expect repository's wrapped error message
+      await expect(reportRepository.findById('report-123')).rejects.toThrow('Failed to find report by ID')
+      await expect(reportRepository.findById('report-123')).rejects.toThrow(ReportError)
     })
   })
 
@@ -335,7 +336,12 @@ describe('ReportRepository', () => {
       expect(result).toEqual(updatedReport)
       expect(mockReportUpdate).toHaveBeenCalledWith({
         where: { id: 'report-123' },
-        data: updateData
+        data: expect.objectContaining({
+          status: ReportStatus.RESOLVED,
+          moderatorNotes: 'Report resolved - no violation found',
+          moderatorId: 'moderator-123',
+          updatedAt: expect.any(Date)
+        })
       })
     })
 
@@ -344,12 +350,17 @@ describe('ReportRepository', () => {
       const updateError = new Error('Update failed')
       mockReportUpdate.mockRejectedValue(updateError)
 
-      // Act & Assert: Expect error propagation
+      // Act & Assert: Expect repository's wrapped error message
       await expect(
         reportRepository.updateStatus('report-123', {
           status: ReportStatus.RESOLVED
         })
-      ).rejects.toThrow('Update failed')
+      ).rejects.toThrow('Failed to update report status')
+      await expect(
+        reportRepository.updateStatus('report-123', {
+          status: ReportStatus.RESOLVED
+        })
+      ).rejects.toThrow(ReportError)
     })
   })
 
@@ -373,8 +384,9 @@ describe('ReportRepository', () => {
       const deleteError = new Error('Report not found')
       mockReportDelete.mockRejectedValue(deleteError)
 
-      // Act & Assert: Expect error propagation
-      await expect(reportRepository.delete('non-existent')).rejects.toThrow('Report not found')
+      // Act & Assert: Expect repository's wrapped error message
+      await expect(reportRepository.delete('non-existent')).rejects.toThrow('Failed to delete report')
+      await expect(reportRepository.delete('non-existent')).rejects.toThrow(ReportError)
     })
   })
 
@@ -447,6 +459,6 @@ describe('ReportRepository', () => {
   })
 })
 
-// backend/src/repositories/__tests__/reportRepository.test.ts
-// Version: 1.0.0
-// Initial test suite for ReportRepository with comprehensive coverage
+// backend/src/repositories/__tests__/ReportRepository.test.ts
+// Version: 1.1.0
+// Fixed test suite with proper error handling expectations and update validation

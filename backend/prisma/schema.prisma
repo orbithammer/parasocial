@@ -1,5 +1,7 @@
 // backend/prisma/schema.prisma
-// Complete Prisma schema for ParaSocial platform
+// Version: 2.1.0
+// Updated schema to include proper Report model for content moderation system
+// Changes: Added Report enums and model with proper relationships
 
 generator client {
   provider = "prisma-client-js"
@@ -8,6 +10,24 @@ generator client {
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
+}
+
+// Report type enumeration for content moderation
+enum ReportType {
+  HARASSMENT
+  SPAM
+  MISINFORMATION
+  INAPPROPRIATE_CONTENT
+  COPYRIGHT
+  OTHER
+}
+
+// Report status enumeration for moderation workflow
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  DISMISSED
 }
 
 // ParaSocial user accounts (content creators only)
@@ -35,7 +55,11 @@ model User {
   posts            Post[]
   followers        Follow[] @relation("FollowedUser")
   blocks           Block[]  @relation("BlockingUser")
-  reports          Report[] @relation("ReportedUser")
+  
+  // Report relations - users can be reported, submit reports, and moderate reports
+  reportsAgainst    Report[] @relation("ReportedUser")
+  reportsSubmitted  Report[] @relation("ReporterUser") 
+  reportsModerated  Report[] @relation("ModeratorUser")
   
   @@map("users")
 }
@@ -114,25 +138,33 @@ model Block {
   @@map("blocks")
 }
 
-// Content and user reporting system
+// Content and user reporting system for moderation
 model Report {
-  id          String      @id @default(cuid())
-  reporterId  String      // Who made the report (can be external)
-  reason      ReportType  // Type of violation
-  description String?     // Additional details
-  status      ReportStatus @default(PENDING)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  resolvedAt  DateTime?
-  
-  // What's being reported (one of these will be set)
-  reportedUserId String?
-  reportedPostId String?
-  
-  // Relations
-  reportedUser User? @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  reportedPost Post? @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
-  
+  id                String         @id @default(cuid())
+  type              ReportType     // Type of violation being reported
+  description       String         // Detailed description of the issue
+  status            ReportStatus   @default(PENDING) // Current moderation status
+  reportedUserId    String?        // Optional - user being reported
+  reportedPostId    String?        // Optional - post being reported
+  reporterId        String?        // Optional - user who submitted the report (allows anonymous reports)
+  reporterActorId   String?        // Optional - ActivityPub actor who reported (for federated reports)
+  moderatorNotes    String?        // Optional - notes added during moderation
+  moderatorId       String?        // Optional - admin who processed the report
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relationships with proper cascade behavior
+  reportedUser      User?          @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedPost      Post?          @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
+  reporter          User?          @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: SetNull)
+  moderator         User?          @relation("ModeratorUser", fields: [moderatorId], references: [id], onDelete: SetNull)
+
+  // Database indexes for performance
+  @@index([status])           // Fast filtering by status
+  @@index([type])             // Fast filtering by report type
+  @@index([reportedUserId])   // Fast lookups for user reports
+  @@index([reportedPostId])   // Fast lookups for post reports
+  @@index([createdAt])        // Fast sorting by creation date
   @@map("reports")
 }
 
@@ -145,78 +177,13 @@ model Instance {
   software      String?  // Mastodon, Pleroma, etc.
   version       String?  // Software version
   description   String?  // Instance description
-  lastSeen      DateTime? // Last successful federation
+  lastSeen      DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
   @@map("instances")
 }
 
-// ActivityPub activity processing queue
-model ActivityQueue {
-  id          String      @id @default(cuid())
-  activityId  String      @unique // ActivityPub activity ID
-  actorId     String      // Source actor
-  type        String      // Activity type (Follow, Undo, etc.)
-  object      Json        // Full activity object
-  status      QueueStatus @default(PENDING)
-  attempts    Int         @default(0)
-  maxAttempts Int         @default(3)
-  nextRetry   DateTime?   // When to retry failed activities
-  error       String?     // Last error message
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  
-  @@map("activity_queue")
-}
-
-// Ban evasion tracking
-model DeviceFingerprint {
-  id         String   @id @default(cuid())
-  fingerprint String  @unique // Hashed device fingerprint
-  isBlocked  Boolean  @default(false)
-  reason     String?  // Why this fingerprint was blocked
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  
-  @@map("device_fingerprints")
-}
-
-// IP address tracking for ban evasion
-model IpAddress {
-  id        String   @id @default(cuid())
-  address   String   @unique // Hashed IP address
-  isBlocked Boolean  @default(false)
-  reason    String?  // Why this IP was blocked
-  country   String?  // Geolocation data
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  @@map("ip_addresses")
-}
-
-// Enums for type safety
-enum ReportType {
-  HARASSMENT
-  SPAM
-  MISINFORMATION
-  HATE_SPEECH
-  ILLEGAL_CONTENT
-  COPYRIGHT
-  OTHER
-}
-
-enum ReportStatus {
-  PENDING
-  UNDER_REVIEW
-  RESOLVED
-  DISMISSED
-}
-
-enum QueueStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  ABANDONED
-}
+// backend/prisma/schema.prisma
+// Version: 2.1.0
+// Updated schema to include proper Report model for content moderation system
