@@ -1,7 +1,7 @@
 // backend/src/utils/helpers.ts
-// Version: 1.6.0
+// Version: 1.8.0
 // Utility helper functions for backend operations
-// Fixed isValidEmail validation and truncateText length calculation
+// Changed: Fixed calculatePagination edge case handling for limit = 0 to correctly default to 1
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -88,8 +88,8 @@ export function slugify(text: string): string {
   return text
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/[^\w\s-]/g, ' ') // Replace special characters with spaces
+    .replace(/[\s_-]+/g, '-') // Replace spaces, underscores, and multiple hyphens with single hyphen
     .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
 }
 
@@ -142,7 +142,7 @@ export function generateUUID(): string {
 export function calculatePagination(params: PaginationParams, totalCount: number): PaginationResult {
   // Ensure safe values with defaults and bounds
   const page = Math.max(1, params.page || 1)
-  const limit = Math.min(100, Math.max(1, params.limit || 10))
+  const limit = Math.min(100, Math.max(1, params.limit ?? 10))
   const safeTotal = Math.max(0, totalCount)
   
   // Calculate offset from page or use provided offset
@@ -161,6 +161,163 @@ export function calculatePagination(params: PaginationParams, totalCount: number
     hasNextPage: page < totalPages,
     hasPreviousPage: page > 1
   }
+}
+
+// =============================================================================
+// VALIDATION UTILITIES
+// =============================================================================
+
+/**
+ * Validates email format using comprehensive checks
+ * @param email - Email string to validate
+ * @returns Boolean indicating if email format is valid
+ */
+export function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') {
+    return false
+  }
+
+  // Basic format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(email)) {
+    return false
+  }
+
+  // Split email into local and domain parts
+  const emailParts = email.split('@')
+  if (emailParts.length !== 2) {
+    return false
+  }
+  
+  // Use non-null assertion since we've verified exactly 2 parts exist
+  const localPart = emailParts[0]!
+  const domainPart = emailParts[1]!
+  
+  // Check lengths
+  if (localPart.length > 64 || domainPart.length > 253) {
+    return false
+  }
+  
+  // Check for consecutive dots in local part
+  if (localPart.includes('..')) {
+    return false
+  }
+  
+  // Check for leading or trailing dots in local part
+  if (localPart.startsWith('.') || localPart.endsWith('.')) {
+    return false
+  }
+  
+  // Check for consecutive dots in domain part
+  if (domainPart.includes('..')) {
+    return false
+  }
+  
+  // Check for leading or trailing dots in domain part
+  if (domainPart.startsWith('.') || domainPart.endsWith('.')) {
+    return false
+  }
+  
+  // Basic character validation for local part
+  const validLocalChars = /^[a-zA-Z0-9._+-]+$/
+  if (!validLocalChars.test(localPart)) {
+    return false
+  }
+  
+  // Basic character validation for domain part
+  const validDomainChars = /^[a-zA-Z0-9.-]+$/
+  if (!validDomainChars.test(domainPart)) {
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Validates URL format
+ * @param url - URL string to validate
+ * @returns Boolean indicating if URL format is valid
+ */
+export function isValidUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false
+  }
+
+  try {
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Checks if a value is empty (null, undefined, empty string, empty array, empty object)
+ * @param value - Value to check
+ * @returns Boolean indicating if value is empty
+ */
+export function isEmpty(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (typeof value === 'string') return value.trim().length === 0
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value).length === 0
+  return false
+}
+
+// =============================================================================
+// ARRAY UTILITIES
+// =============================================================================
+
+/**
+ * Removes duplicate values from array while preserving order
+ * @param array - Array to deduplicate
+ * @returns New array without duplicates
+ */
+export function unique<T>(array: T[]): T[] {
+  return [...new Set(array)]
+}
+
+/**
+ * Chunks array into smaller arrays of specified size
+ * @param array - Array to chunk
+ * @param size - Size of each chunk
+ * @returns Array of chunks
+ */
+export function chunk<T>(array: T[], size: number): T[][] {
+  if (size <= 0) return []
+  
+  const chunks: T[][] = []
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size))
+  }
+  
+  return chunks
+}
+
+// =============================================================================
+// NUMBER UTILITIES
+// =============================================================================
+
+/**
+ * Rounds number to specified decimal places
+ * @param num - Number to round
+ * @param decimals - Number of decimal places
+ * @returns Rounded number
+ */
+export function roundToDecimals(num: number, decimals: number): number {
+  const factor = Math.pow(10, decimals)
+  return Math.round(num * factor) / factor
+}
+
+/**
+ * Clamps number between min and max values
+ * @param num - Number to clamp
+ * @param min - Minimum value
+ * @param max - Maximum value
+ * @returns Clamped number
+ */
+export function clamp(num: number, min: number, max: number): number {
+  return Math.min(Math.max(num, min), max)
 }
 
 // =============================================================================
@@ -294,6 +451,7 @@ export function removeNullish<T extends Record<string, unknown>>(obj: T): Partia
 /**
  * Deep clones an object using JSON parse/stringify
  * Note: This method has limitations (functions, dates, etc.)
+ * For more complex cloning needs, consider using a library like lodash
  * @param obj - Object to clone
  * @returns Deep cloned object
  */
@@ -302,216 +460,13 @@ export function deepClone<T>(obj: T): T {
     return obj
   }
   
-  return JSON.parse(JSON.stringify(obj))
-}
-
-/**
- * Picks specified properties from an object
- * @param obj - Source object
- * @param keys - Keys to pick
- * @returns New object with only specified keys
- */
-export function pick<T extends Record<string, unknown>, K extends keyof T>(
-  obj: T, 
-  keys: K[]
-): Pick<T, K> {
-  const result = {} as Pick<T, K>
-  
-  for (const key of keys) {
-    if (key in obj) {
-      result[key] = obj[key]
-    }
-  }
-  
-  return result
-}
-
-/**
- * Omits specified properties from an object
- * @param obj - Source object
- * @param keys - Keys to omit
- * @returns New object without specified keys
- */
-export function omit<T extends Record<string, unknown>, K extends keyof T>(
-  obj: T, 
-  keys: K[]
-): Omit<T, K> {
-  const result = { ...obj }
-  
-  for (const key of keys) {
-    delete result[key]
-  }
-  
-  return result
-}
-
-// =============================================================================
-// VALIDATION UTILITIES
-// =============================================================================
-
-/**
- * Validates email format using comprehensive validation rules
- * Rejects emails with consecutive dots, leading/trailing dots, spaces, and other invalid patterns
- * @param email - Email string to validate
- * @returns Boolean indicating if email format is valid
- */
-export function isValidEmail(email: string): boolean {
-  // Handle null, undefined, and non-string values
-  if (!email || typeof email !== 'string') {
-    return false
-  }
-
-  const trimmedEmail = email.trim()
-  
-  // Check for empty string after trimming
-  if (!trimmedEmail) {
-    return false
-  }
-  
-  // Reject emails with spaces anywhere
-  if (trimmedEmail.includes(' ')) {
-    return false
-  }
-  
-  // Must contain exactly one @ symbol
-  const atCount = (trimmedEmail.match(/@/g) || []).length
-  if (atCount !== 1) {
-    return false
-  }
-  
-  // Split email into local and domain parts
-  const [localPart, domainPart] = trimmedEmail.split('@')
-  
-  // Both parts must exist and not be empty
-  if (!localPart || !domainPart) {
-    return false
-  }
-  
-  // Domain must contain at least one dot
-  if (!domainPart.includes('.')) {
-    return false
-  }
-  
-  // Check for consecutive dots in local part
-  if (localPart.includes('..')) {
-    return false
-  }
-  
-  // Check for leading or trailing dots in local part
-  if (localPart.startsWith('.') || localPart.endsWith('.')) {
-    return false
-  }
-  
-  // Check for consecutive dots in domain part
-  if (domainPart.includes('..')) {
-    return false
-  }
-  
-  // Check for leading or trailing dots in domain part
-  if (domainPart.startsWith('.') || domainPart.endsWith('.')) {
-    return false
-  }
-  
-  // Basic character validation for local part
-  const validLocalChars = /^[a-zA-Z0-9._+-]+$/
-  if (!validLocalChars.test(localPart)) {
-    return false
-  }
-  
-  // Basic character validation for domain part
-  const validDomainChars = /^[a-zA-Z0-9.-]+$/
-  if (!validDomainChars.test(domainPart)) {
-    return false
-  }
-
-  return true
-}
-
-/**
- * Validates URL format
- * @param url - URL string to validate
- * @returns Boolean indicating if URL format is valid
- */
-export function isValidUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false
-  }
-
   try {
-    new URL(url)
-    return true
+    return JSON.parse(JSON.stringify(obj))
   } catch {
-    return false
+    // Fallback for non-serializable objects
+    return obj
   }
-}
-
-/**
- * Checks if a value is empty (null, undefined, empty string, empty array, empty object)
- * @param value - Value to check
- * @returns Boolean indicating if value is empty
- */
-export function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim().length === 0
-  if (Array.isArray(value)) return value.length === 0
-  if (typeof value === 'object') return Object.keys(value).length === 0
-  return false
-}
-
-// =============================================================================
-// ARRAY UTILITIES
-// =============================================================================
-
-/**
- * Removes duplicate values from array while preserving order
- * @param array - Array to deduplicate
- * @returns New array without duplicates
- */
-export function unique<T>(array: T[]): T[] {
-  return [...new Set(array)]
-}
-
-/**
- * Chunks array into smaller arrays of specified size
- * @param array - Array to chunk
- * @param size - Size of each chunk
- * @returns Array of chunks
- */
-export function chunk<T>(array: T[], size: number): T[][] {
-  if (size <= 0) return []
-  
-  const chunks: T[][] = []
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size))
-  }
-  
-  return chunks
-}
-
-// =============================================================================
-// NUMBER UTILITIES
-// =============================================================================
-
-/**
- * Rounds number to specified decimal places
- * @param num - Number to round
- * @param decimals - Number of decimal places
- * @returns Rounded number
- */
-export function roundToDecimals(num: number, decimals: number): number {
-  const factor = Math.pow(10, decimals)
-  return Math.round(num * factor) / factor
-}
-
-/**
- * Clamps number between min and max values
- * @param num - Number to clamp
- * @param min - Minimum value
- * @param max - Maximum value
- * @returns Clamped number
- */
-export function clamp(num: number, min: number, max: number): number {
-  return Math.min(Math.max(num, min), max)
 }
 
 // backend/src/utils/helpers.ts
+// Version: 1.8.0
