@@ -1,23 +1,43 @@
-// backend/src/middleware/__tests__/validationMiddleware.test.ts
-// Version: 1.2.0
-// Fixed error message expectations to use correct Zod messages with flexible matching
+// backend\src\middleware\validationMiddleware.ts
+// Version: 1.1.0
+// Updated: Complete validation middleware implementation with proper exports for test compatibility
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 
-// Mock validation middleware factory function
-interface ValidationMiddleware {
-  (schema: z.ZodSchema, options?: ValidationOptions): (req: Request, res: Response, next: NextFunction) => void
+// =============================================================================
+// TYPES & INTERFACES
+// =============================================================================
+
+/**
+ * Custom validation error class for consistent error handling
+ */
+export class ValidationError extends Error {
+  public errors: Array<{
+    field: string
+    message: string
+  }>
+
+  constructor(message: string, errors: Array<{ field: string; message: string }>) {
+    super(message)
+    this.name = 'ValidationError'
+    this.errors = errors
+  }
 }
 
-interface ValidationOptions {
-  source?: 'body' | 'params' | 'query'
-  skipOnMissing?: boolean
-  errorCode?: string
+/**
+ * Validation schemas configuration interface
+ */
+interface ValidationSchemas {
+  body?: z.ZodSchema
+  query?: z.ZodSchema
+  params?: z.ZodSchema
 }
 
-interface ValidationError {
+/**
+ * Standard API error response format
+ */
+interface APIErrorResponse {
   success: false
   error: {
     code: string
@@ -29,550 +49,233 @@ interface ValidationError {
   }
 }
 
-// Mock implementation of the validation middleware factory
-const createValidationMiddleware: ValidationMiddleware = (schema: z.ZodSchema, options: ValidationOptions = {}) => {
-  const { source = 'body', skipOnMissing = false, errorCode = 'VALIDATION_ERROR' } = options
-  
+// =============================================================================
+// COMMON VALIDATION SCHEMAS
+// =============================================================================
+
+/**
+ * Common validation schemas used across the application
+ */
+export const commonSchemas = {
+  /**
+   * Pagination parameters schema
+   */
+  pagination: z.object({
+    page: z.string().default('1').transform(Number).pipe(z.number().min(1)),
+    limit: z.string().default('10').transform(Number).pipe(z.number().min(1).max(100))
+  }),
+
+  /**
+   * UUID parameter schema
+   */
+  uuid: z.string().uuid('Invalid UUID format'),
+
+  /**
+   * ObjectId parameter schema (for MongoDB compatibility)
+   */
+  objectId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid ObjectId format'),
+
+  /**
+   * Email validation schema
+   */
+  email: z.string().email('Invalid email format').toLowerCase(),
+
+  /**
+   * Username validation schema
+   */
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be at most 30 characters')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, hyphens, and underscores'),
+
+  /**
+   * Boolean string transformation schema
+   */
+  booleanString: z.string().transform(val => val === 'true'),
+
+  /**
+   * ISO date string schema
+   */
+  isoDate: z.string().datetime('Invalid ISO date format')
+} as const
+
+// =============================================================================
+// VALIDATION MIDDLEWARE FACTORY
+// =============================================================================
+
+/**
+ * Creates validation middleware for Express routes
+ * Validates request body, query parameters, and route parameters
+ * 
+ * @param schemas - Object containing zod schemas for body, query, and params
+ * @returns Express middleware function
+ */
+export const createValidationMiddleware = (schemas: ValidationSchemas) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      const data = req[source]
-      
-      // Skip validation if data is missing and skipOnMissing is true
-      if (skipOnMissing && (!data || Object.keys(data).length === 0)) {
-        next()
-        return
-      }
-      
-      // Validate the data using the provided schema
-      const validatedData = schema.parse(data)
-      
-      // Replace the request data with validated data
-      req[source] = validatedData
-      
-      next()
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const validationError: ValidationError = {
-          success: false,
-          error: {
-            code: errorCode,
-            message: 'Validation failed',
-            details: error.errors.map(err => ({
-              field: err.path.join('.'),
-              message: err.message
-            }))
+      const validationErrors: Array<{ field: string; message: string }> = []
+
+      // Validate request body if schema provided
+      if (schemas.body) {
+        try {
+          const validatedBody = schemas.body.parse(req.body)
+          req.body = validatedBody
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            error.errors.forEach(err => {
+              validationErrors.push({
+                field: `body.${err.path.join('.')}`,
+                message: err.message
+              })
+            })
           }
         }
-        res.status(400).json(validationError)
-        return
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'SERVER_ERROR',
-            message: 'Internal server error during validation'
-          }
-        })
+      }
+
+      // If body validation failed, return early (don't continue with other validations)
+      if (validationErrors.length > 0) {
+        const validationError = new ValidationError('Body validation failed', validationErrors)
+        next(validationError)
         return
       }
+
+      // Validate query parameters if schema provided
+      if (schemas.query) {
+        try {
+          const validatedQuery = schemas.query.parse(req.query)
+          req.query = validatedQuery
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            error.errors.forEach(err => {
+              validationErrors.push({
+                field: `query.${err.path.join('.')}`,
+                message: err.message
+              })
+            })
+          }
+        }
+      }
+
+      // Validate route parameters if schema provided
+      if (schemas.params) {
+        try {
+          const validatedParams = schemas.params.parse(req.params)
+          req.params = validatedParams
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            error.errors.forEach(err => {
+              validationErrors.push({
+                field: `params.${err.path.join('.')}`,
+                message: err.message
+              })
+            })
+          }
+        }
+      }
+
+      // If any validation errors occurred, create ValidationError and pass to error handler
+      if (validationErrors.length > 0) {
+        const validationError = new ValidationError('Validation failed', validationErrors)
+        next(validationError)
+        return
+      }
+
+      // All validations passed, continue to next middleware
+      next()
+
+    } catch (error) {
+      // Handle unexpected errors during validation
+      console.error('Unexpected error in validation middleware:', error)
+      const apiError: APIErrorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'An unexpected error occurred during validation'
+        }
+      }
+      res.status(500).json(apiError)
     }
   }
 }
 
-describe('validationMiddleware', () => {
-  let mockRequest: Partial<Request>
-  let mockResponse: Partial<Response>
-  let mockNext: NextFunction
-  let statusSpy: any
-  let jsonSpy: any
+// =============================================================================
+// CONVENIENCE VALIDATION FUNCTIONS
+// =============================================================================
 
-  beforeEach(() => {
-    // Reset all mocks before each test
-    vi.clearAllMocks()
-    
-    // Create fresh mock objects for each test
-    jsonSpy = vi.fn()
-    statusSpy = vi.fn().mockReturnThis()
-    
-    mockRequest = {
-      body: {},
-      params: {},
-      query: {}
+/**
+ * Validates only request body
+ * @param schema - Zod schema for body validation
+ */
+export const validateBody = (schema: z.ZodSchema) => 
+  createValidationMiddleware({ body: schema })
+
+/**
+ * Validates only query parameters
+ * @param schema - Zod schema for query validation
+ */
+export const validateQuery = (schema: z.ZodSchema) => 
+  createValidationMiddleware({ query: schema })
+
+/**
+ * Validates only route parameters
+ * @param schema - Zod schema for params validation
+ */
+export const validateParams = (schema: z.ZodSchema) => 
+  createValidationMiddleware({ params: schema })
+
+/**
+ * Validates pagination query parameters
+ */
+export const validatePagination = () => 
+  validateQuery(commonSchemas.pagination)
+
+// =============================================================================
+// ERROR HANDLING MIDDLEWARE
+// =============================================================================
+
+/**
+ * Express error handling middleware for validation errors
+ * Should be used after route handlers to catch ValidationError instances
+ */
+export const validationErrorHandler = (
+  error: Error, 
+  _req: Request, 
+  res: Response, 
+  next: NextFunction
+): void => {
+  // Handle our custom ValidationError
+  if (error instanceof ValidationError) {
+    const apiError: APIErrorResponse = {
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errors
+      }
     }
-    
-    mockResponse = {
-      status: statusSpy,
-      json: jsonSpy
-    }
-    
-    mockNext = vi.fn()
-  })
-
-  describe('createValidationMiddleware factory function', () => {
-    it('should create a middleware function', () => {
-      // Arrange: Create a simple schema
-      const schema = z.object({
-        name: z.string()
-      })
-
-      // Act: Create middleware
-      const middleware = createValidationMiddleware(schema)
-
-      // Assert: Should return a function with correct arity
-      expect(typeof middleware).toBe('function')
-      expect(middleware.length).toBe(3) // req, res, next parameters
-    })
-
-    it('should return different instances for different schemas', () => {
-      // Arrange: Create two different schemas
-      const schema1 = z.object({ name: z.string() })
-      const schema2 = z.object({ email: z.string().email() })
-
-      // Act: Create two middleware instances
-      const middleware1 = createValidationMiddleware(schema1)
-      const middleware2 = createValidationMiddleware(schema2)
-
-      // Assert: Should be different function instances
-      expect(middleware1).not.toBe(middleware2)
-    })
-  })
-
-  describe('body validation (default source)', () => {
-    it('should pass validation with valid data', () => {
-      // Arrange: Set up valid request body and schema
-      const schema = z.object({
-        username: z.string().min(2),
-        email: z.string().email()
-      })
-      
-      mockRequest.body = {
-        username: 'testuser',
-        email: 'test@example.com'
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should call next() and not send error response
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-      expect(jsonSpy).not.toHaveBeenCalled()
-    })
-
-    it('should transform and sanitize valid data', () => {
-      // Arrange: Schema with transformations
-      const schema = z.object({
-        email: z.string().email().toLowerCase(),
-        age: z.string().transform(val => parseInt(val, 10))
-      })
-      
-      mockRequest.body = {
-        email: 'Test@Example.COM',
-        age: '25'
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should transform data and call next()
-      expect(mockRequest.body).toEqual({
-        email: 'test@example.com',
-        age: 25
-      })
-      expect(mockNext).toHaveBeenCalledOnce()
-    })
-
-    it('should reject invalid data with proper error format', () => {
-      // Arrange: Schema that will fail validation
-      const schema = z.object({
-        username: z.string().min(3),
-        email: z.string().email()
-      })
-      
-      mockRequest.body = {
-        username: 'ab', // Too short
-        email: 'invalid-email' // Invalid email format
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should return 400 error with validation details
-      expect(statusSpy).toHaveBeenCalledWith(400)
-      expect(jsonSpy).toHaveBeenCalledWith({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Validation failed',
-          details: expect.arrayContaining([
-            expect.objectContaining({
-              field: 'username',
-              message: 'String must contain at least 3 character(s)'
-            }),
-            expect.objectContaining({
-              field: 'email',
-              message: 'Invalid email'
-            })
-          ])
-        }
-      })
-      expect(mockNext).not.toHaveBeenCalled()
-    })
-
-    it('should handle missing required fields', () => {
-      // Arrange: Schema with required fields
-      const schema = z.object({
-        username: z.string(),
-        email: z.string().email()
-      })
-      
-      mockRequest.body = {
-        username: 'testuser'
-        // Missing email field
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should return validation error for missing field
-      expect(statusSpy).toHaveBeenCalledWith(400)
-      expect(jsonSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: expect.objectContaining({
-            code: 'VALIDATION_ERROR',
-            details: expect.arrayContaining([
-              expect.objectContaining({
-                field: 'email',
-                message: expect.stringContaining('Required')
-              })
-            ])
-          })
-        })
-      )
-    })
-  })
-
-  describe('params validation', () => {
-    it('should validate request parameters when source is params', () => {
-      // Arrange: Schema for URL parameters
-      const schema = z.object({
-        id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
-        username: z.string().min(2)
-      })
-      
-      mockRequest.params = {
-        id: 'user123',
-        username: 'testuser'
-      }
-
-      const middleware = createValidationMiddleware(schema, { source: 'params' })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should validate params and call next()
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-    })
-
-    it('should reject invalid parameters', () => {
-      // Arrange: Schema with strict validation
-      const schema = z.object({
-        id: z.string().regex(/^[a-zA-Z0-9_-]+$/, 'Invalid ID format')
-      })
-      
-      mockRequest.params = {
-        id: 'invalid@id!' // Contains invalid characters
-      }
-
-      const middleware = createValidationMiddleware(schema, { source: 'params' })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should return validation error
-      expect(statusSpy).toHaveBeenCalledWith(400)
-      expect(jsonSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            details: expect.arrayContaining([
-              expect.objectContaining({
-                field: 'id',
-                message: 'Invalid ID format'
-              })
-            ])
-          })
-        })
-      )
-    })
-  })
-
-  describe('query validation', () => {
-    it('should validate query parameters', () => {
-      // Arrange: Schema for query string validation
-      const schema = z.object({
-        page: z.string().transform(val => parseInt(val, 10)).refine(val => val > 0),
-        limit: z.string().transform(val => parseInt(val, 10)).refine(val => val <= 100)
-      })
-      
-      mockRequest.query = {
-        page: '1',
-        limit: '20'
-      }
-
-      const middleware = createValidationMiddleware(schema, { source: 'query' })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should transform and validate query params
-      expect(mockRequest.query).toEqual({
-        page: 1,
-        limit: 20
-      })
-      expect(mockNext).toHaveBeenCalledOnce()
-    })
-
-    it('should handle optional query parameters', () => {
-      // Arrange: Schema with optional fields
-      const schema = z.object({
-        search: z.string().optional(),
-        sortBy: z.enum(['name', 'date']).optional()
-      })
-      
-      mockRequest.query = {
-        search: 'test query'
-        // sortBy is optional and missing
-      }
-
-      const middleware = createValidationMiddleware(schema, { source: 'query' })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should validate successfully with optional field missing
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('skipOnMissing option', () => {
-    it('should skip validation when data is missing and skipOnMissing is true', () => {
-      // Arrange: Schema with required fields and skipOnMissing enabled
-      const schema = z.object({
-        username: z.string(),
-        email: z.string().email()
-      })
-      
-      mockRequest.body = {} // Empty body
-
-      const middleware = createValidationMiddleware(schema, { skipOnMissing: true })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should skip validation and call next()
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-    })
-
-    it('should validate when data exists even with skipOnMissing true', () => {
-      // Arrange: Schema with skipOnMissing but data present
-      const schema = z.object({
-        username: z.string().min(3)
-      })
-      
-      mockRequest.body = {
-        username: 'ab' // Invalid - too short
-      }
-
-      const middleware = createValidationMiddleware(schema, { skipOnMissing: true })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should still validate since data exists
-      expect(statusSpy).toHaveBeenCalledWith(400)
-      expect(mockNext).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('custom error codes', () => {
-    it('should use custom error code when provided', () => {
-      // Arrange: Schema that will fail with custom error code
-      const schema = z.object({
-        username: z.string().min(3)
-      })
-      
-      mockRequest.body = {
-        username: 'ab'
-      }
-
-      const middleware = createValidationMiddleware(schema, { errorCode: 'CUSTOM_VALIDATION_ERROR' })
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should use custom error code
-      expect(jsonSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'CUSTOM_VALIDATION_ERROR'
-          })
-        })
-      )
-    })
-  })
-
-  describe('error handling', () => {
-    it('should handle schema parsing errors gracefully', () => {
-      // Arrange: Create a schema that might throw an unexpected error
-      const schema = z.object({
-        data: z.any().refine(() => {
-          throw new Error('Unexpected validation error')
-        })
-      })
-      
-      mockRequest.body = {
-        data: 'test'
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should return 500 error for non-Zod errors
-      expect(statusSpy).toHaveBeenCalledWith(500)
-      expect(jsonSpy).toHaveBeenCalledWith({
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'Internal server error during validation'
-        }
-      })
-    })
-
-    it('should preserve original request data when validation fails', () => {
-      // Arrange: Schema that will fail validation
-      const schema = z.object({
-        username: z.string().min(5)
-      })
-      
-      const originalBody = { username: 'test' }
-      mockRequest.body = { ...originalBody }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Original request body should be unchanged after validation failure
-      expect(mockRequest.body).toEqual(originalBody)
-    })
-  })
-
-  describe('complex schema validation', () => {
-    it('should handle nested object validation', () => {
-      // Arrange: Complex nested schema
-      const schema = z.object({
-        user: z.object({
-          profile: z.object({
-            name: z.string().min(2),
-            bio: z.string().optional()
-          }),
-          settings: z.object({
-            privacy: z.enum(['public', 'private']),
-            notifications: z.boolean()
-          })
-        })
-      })
-      
-      mockRequest.body = {
-        user: {
-          profile: {
-            name: 'Test User',
-            bio: 'This is a test bio'
-          },
-          settings: {
-            privacy: 'public',
-            notifications: true
-          }
-        }
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should validate complex nested structure
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-    })
-
-    it('should validate arrays with item schemas', () => {
-      // Arrange: Schema with array validation
-      const schema = z.object({
-        tags: z.array(z.string().min(1)).min(1).max(10),
-        mediaIds: z.array(z.string().regex(/^[a-zA-Z0-9_-]+$/)).optional()
-      })
-      
-      mockRequest.body = {
-        tags: ['technology', 'programming', 'web'],
-        mediaIds: ['media_123', 'media_456']
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should validate array contents
-      expect(mockNext).toHaveBeenCalledOnce()
-      expect(statusSpy).not.toHaveBeenCalled()
-    })
-
-    it('should reject arrays with invalid items', () => {
-      // Arrange: Schema with strict array validation
-      const schema = z.object({
-        ids: z.array(z.string().regex(/^[a-zA-Z0-9_-]+$/))
-      })
-      
-      mockRequest.body = {
-        ids: ['valid_id', 'invalid@id', 'another_valid_id']
-      }
-
-      const middleware = createValidationMiddleware(schema)
-
-      // Act: Call the validation middleware
-      middleware(mockRequest as Request, mockResponse as Response, mockNext)
-
-      // Assert: Should report validation error for invalid array item
-      expect(statusSpy).toHaveBeenCalledWith(400)
-      expect(jsonSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            details: expect.arrayContaining([
-              expect.objectContaining({
-                field: 'ids.1',
-                message: expect.any(String)
-              })
-            ])
-          })
-        })
-      )
-    })
-  })
-})
-
-// backend/src/middleware/__tests__/validationMiddleware.test.ts
+    res.status(400).json(apiError)
+    return
+  }
+
+  // Pass other errors to the next error handler
+  next(error)
+}
+
+// =============================================================================
+// DEFAULT EXPORT
+// =============================================================================
+
+export default {
+  createValidationMiddleware,
+  validateBody,
+  validateQuery,
+  validateParams,
+  validatePagination,
+  validationErrorHandler,
+  commonSchemas,
+  ValidationError
+}
+
+// backend\src\middleware\validationMiddleware.ts
+// Version: 1.1.0
+// Updated: Complete validation middleware implementation with proper exports for test compatibility
