@@ -209,13 +209,9 @@ describe('Database Configuration', () => {
       await connection.disconnect()
     })
 
-    it('should include connection metadata in health check response', async () => {
-      // Arrange: Mock successful health check with metadata
-      mockPrismaClient.$queryRaw.mockResolvedValueOnce([{ 
-        health_check: 1, 
-        version: '14.5',
-        timestamp: new Date().toISOString()
-      }])
+    it('should include connection pool information in health check response', async () => {
+      // Arrange: Mock successful health check
+      mockPrismaClient.$queryRaw.mockResolvedValueOnce([{ health_check: 1 }])
       
       process.env.DATABASE_URL = 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial'
       const connection = new DatabaseConnectionManager()
@@ -224,10 +220,14 @@ describe('Database Configuration', () => {
       // Act: Perform health check
       const result = await connection.healthCheck()
       
-      // Assert: Should include metadata
+      // Assert: Should include connection pool information
       expect(result.healthy).toBe(true)
       expect(result.responseTimeMs).toBeGreaterThanOrEqual(0)
-      expect(result.metadata).toBeDefined()
+      expect(result.connectionPool).toBeDefined()
+      expect(result.connectionPool.active).toBeGreaterThanOrEqual(0)
+      expect(result.connectionPool.idle).toBeGreaterThanOrEqual(0)
+      expect(result.connectionPool.total).toBeGreaterThan(0)
+      expect(result.timestamp).toBeTruthy()
       
       // Cleanup
       await connection.disconnect()
