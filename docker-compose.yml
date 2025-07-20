@@ -1,4 +1,9 @@
-version: '3.8'
+# docker-compose.yml
+# Version: 1.2.0
+# Uses port 5433 to avoid conflicts with local PostgreSQL on 5432
+
+name: parasocial
+
 services:
   postgres:
     image: postgres:15
@@ -8,10 +13,17 @@ services:
       POSTGRES_USER: parasocial_user
       POSTGRES_PASSWORD: parasocial_pass
     ports:
-      - "5432:5432"
+      - "5433:5432"  # External:Internal - avoids conflict with local PostgreSQL
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parasocial_user -d parasocial"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
+
+# docker-compose.yml

@@ -1,6 +1,11 @@
-// backend\src\repositories\__tests__\PostUser.integration.test.ts
-// Version: 1.0.4
-// Fixed author relation - using author.connect to properly associate posts with users
+// backend/src/repositories/__tests__/PostUser.integration.test.ts.fix
+// Version: 1.0.5
+// Fixed environment variable setup - Force DATABASE_URL before importing Prisma
+
+// Force set environment variables BEFORE any imports
+process.env['DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test'
+process.env['TEST_DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test'
+process.env['NODE_ENV'] = 'test'
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
@@ -84,6 +89,10 @@ describe('Post-User Integration Tests', () => {
   let prisma: PrismaClient
 
   beforeEach(async () => {
+    console.log('🔍 Test Environment Check:')
+    console.log(`DATABASE_URL: ${process.env.DATABASE_URL}`)
+    console.log(`TEST_DATABASE_URL: ${process.env.TEST_DATABASE_URL}`)
+    
     prisma = getTestPrismaClient()
     await cleanupTestData(prisma)
   })
@@ -111,147 +120,124 @@ describe('Post-User Integration Tests', () => {
       expect(post.content).toBe('This is a test post content')
 
       // Verify post exists in database
-      const existingPost = await prisma.post.findFirst({
-        where: {
-          id: post.id
-        }
+      const existingPost = await prisma.post.findUnique({
+        where: { id: post.id }
       })
-
+      
       expect(existingPost).toBeDefined()
-      expect(existingPost?.content).toBe('This is a test post content')
+      expect(existingPost?.authorId).toBe(user.id)
     })
 
     it('should enforce foreign key constraint for invalid user', async () => {
-      const nonExistentUserId = 'non-existent-user-id'
-
-      // Attempt to create post with non-existent user should fail
+      // Attempt to create post with non-existent user ID
       await expect(
-        createTestPost(prisma, nonExistentUserId, {
-          content: 'This post should fail to create'
+        createTestPost(prisma, 'non-existent-user-id', {
+          content: 'This should fail'
         })
       ).rejects.toThrow()
     })
 
     it('should cascade delete posts when user is deleted', async () => {
-      // Create test user
+      // Create user and post
       const user = await createTestUser(prisma, {
-        username: 'user_to_delete',
-        email: 'delete.user@test.com'
+        username: 'delete_test_user',
+        email: 'delete@test.com'
       })
 
-      // Create multiple posts for user
-      await createTestPost(prisma, user.id, {
-        content: 'First post'
+      const post = await createTestPost(prisma, user.id, {
+        content: 'Post to be deleted with user'
       })
 
-      await createTestPost(prisma, user.id, {
-        content: 'Second post'
+      // Verify post exists
+      let existingPost = await prisma.post.findUnique({
+        where: { id: post.id }
       })
+      expect(existingPost).toBeDefined()
 
-      // Verify posts exist
-      const postsBefore = await prisma.post.findMany()
-      expect(postsBefore).toHaveLength(2)
-
-      // Delete user
+      // Delete user (should cascade delete posts)
       await prisma.user.delete({
         where: { id: user.id }
       })
 
-      // Verify posts were cascade deleted
-      const postsAfter = await prisma.post.findMany()
-      expect(postsAfter).toHaveLength(0)
+      // Verify post was deleted
+      existingPost = await prisma.post.findUnique({
+        where: { id: post.id }
+      })
+      expect(existingPost).toBeNull()
     })
   })
 
   describe('Post Creation Workflows', () => {
     it('should create post with content', async () => {
-      // Create test user
+      // Create user
       const user = await createTestUser(prisma, {
         username: 'content_creator',
         email: 'creator@test.com'
       })
 
-      // Create post for user
+      // Create post
       const post = await createTestPost(prisma, user.id, {
-        content: 'This is a test post with content'
+        content: 'Amazing content here!'
       })
 
       // Verify post properties
-      expect(post.content).toBe('This is a test post with content')
+      expect(post.content).toBe('Amazing content here!')
+      expect(post.authorId).toBe(user.id)
+      expect(post.isPublished).toBe(true)
       expect(post.createdAt).toBeInstanceOf(Date)
-      expect(post.updatedAt).toBeInstanceOf(Date)
-
-      // Verify we can retrieve posts
-      const posts = await prisma.post.findMany({
-        where: {
-          content: 'This is a test post with content'
-        }
-      })
-
-      expect(posts).toHaveLength(1)
-      expect(posts[0].content).toBe('This is a test post with content')
     })
 
     it('should create multiple posts', async () => {
-      // Create test user
+      // Create user
       const user = await createTestUser(prisma, {
         username: 'multi_poster',
         email: 'multi@test.com'
       })
 
-      // Create multiple posts for user
-      await createTestPost(prisma, user.id, {
-        content: 'First post content'
+      // Create multiple posts
+      const post1 = await createTestPost(prisma, user.id, {
+        content: 'First post'
       })
 
-      await createTestPost(prisma, user.id, {
-        content: 'Second post content'
+      const post2 = await createTestPost(prisma, user.id, {
+        content: 'Second post'
       })
 
-      await createTestPost(prisma, user.id, {
-        content: 'Third post content'
+      // Verify both posts exist
+      const userPosts = await prisma.post.findMany({
+        where: { authorId: user.id },
+        orderBy: { createdAt: 'asc' }
       })
 
-      // Verify all posts were created
-      const allPosts = await prisma.post.findMany()
-      expect(allPosts).toHaveLength(3)
-
-      const postContents = allPosts.map(p => p.content)
-      expect(postContents).toContain('First post content')
-      expect(postContents).toContain('Second post content')
-      expect(postContents).toContain('Third post content')
+      expect(userPosts).toHaveLength(2)
+      expect(userPosts[0].content).toBe('First post')
+      expect(userPosts[1].content).toBe('Second post')
     })
 
     it('should handle posts with different content lengths', async () => {
-      // Create test user
+      // Create user
       const user = await createTestUser(prisma, {
         username: 'length_tester',
         email: 'length@test.com'
       })
 
-      const shortContent = 'Short'
-      const longContent = 'This is a much longer post content that contains more text to test how the database handles various content lengths and ensures that posts can store different amounts of text without issues.'
-
-      // Create posts with different content lengths
+      // Test short content
       const shortPost = await createTestPost(prisma, user.id, {
-        content: shortContent
+        content: 'Hi!'
       })
 
+      // Test long content
+      const longContent = 'A'.repeat(500) // 500 character string
       const longPost = await createTestPost(prisma, user.id, {
         content: longContent
       })
 
       // Verify both posts were created successfully
-      expect(shortPost.content).toBe(shortContent)
+      expect(shortPost.content).toBe('Hi!')
       expect(longPost.content).toBe(longContent)
-
-      // Verify they exist in database
-      const posts = await prisma.post.findMany()
-      expect(posts).toHaveLength(2)
+      expect(longPost.content.length).toBe(500)
     })
   })
 })
 
-// backend\src\repositories\__tests__\PostUser.integration.test.ts
-// Version: 1.0.4
-// Fixed author relation - using author.connect to properly associate posts with users
+// backend/src/repositories/__tests__/PostUser.integration.test.ts.fix
