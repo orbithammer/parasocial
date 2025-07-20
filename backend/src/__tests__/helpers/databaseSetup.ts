@@ -1,12 +1,12 @@
 // backend/src/__tests__/helpers/databaseSetup.ts
-// Version: 1.0.0
-// Initial implementation - Integrates testEnvironment.ts with integration tests to fix authentication failures
+// Version: 2.1.0
+// Fixed Prisma query syntax and restored testEnvironment.ts usage
 
 import { PrismaClient } from '@prisma/client'
 import { 
-  getTestEnvironmentConfig, 
+  getTestEnvironmentConfig,
   validateTestEnvironment, 
-  setupTestEnvironmentVariables 
+  setupTestEnvironmentVariables
 } from '../../config/testEnvironment'
 
 /**
@@ -39,7 +39,7 @@ let globalTestDatabase: TestDatabaseInstance | null = null
 
 /**
  * Creates and configures a PrismaClient for integration tests
- * Uses the testEnvironment configuration to ensure proper credentials
+ * Uses the testDatabase configuration to ensure proper PostgreSQL credentials
  * @param options Configuration options for database setup
  * @returns Configured PrismaClient instance with proper test database URL
  */
@@ -104,18 +104,9 @@ export async function createTestDatabaseClient(
         console.error('')
         console.error('🚨 All connection attempts failed!')
         console.error('🔧 Troubleshooting checklist:')
-        
-        if (config.isDocker) {
-          console.error('   • Run: docker-compose up -d postgres')
-          console.error('   • Check: docker-compose ps')
-          console.error('   • Logs: docker-compose logs postgres')
-        } else {
-          console.error('   • Ensure PostgreSQL is running')
-          console.error('   • Check database exists: SELECT 1 FROM pg_database WHERE datname = \'parasocial_test\'')
-          console.error('   • Check user exists: SELECT 1 FROM pg_user WHERE usename = \'parasocial_user\'')
-          console.error('   • Test connection: psql -h localhost -U parasocial_user -d parasocial_test')
-        }
-        
+        console.error('   • Ensure PostgreSQL is running')
+        console.error('   • Check database exists and user has permissions')
+        console.error('   • Verify connection string format')
         console.error('')
         console.error(`🌐 Configuration being used:`)
         console.error(`   URL: ${config.database.url}`)
@@ -165,11 +156,11 @@ export async function setupTestDatabase(
         console.log('✅ Test database disconnected')
       } catch (error) {
         console.error('⚠️  Error during database cleanup:', error instanceof Error ? error.message : 'Unknown error')
+        // Don't throw - cleanup errors shouldn't fail tests
       }
-      globalTestDatabase = null
     }
     
-    // Create test database instance
+    // Create and cache the test database instance
     globalTestDatabase = {
       prisma,
       isConnected: true,
@@ -181,62 +172,63 @@ export async function setupTestDatabase(
     return globalTestDatabase
     
   } catch (error) {
-    console.error('❌ Test database setup failed:', error instanceof Error ? error.message : 'Unknown error')
+    console.error('❌ Failed to setup test database:', error instanceof Error ? error.message : 'Unknown error')
     throw error
   }
 }
 
 /**
- * Cleans up the test database by removing test data
- * Maintains database structure but removes data created during tests
- * @param prisma PrismaClient instance to use for cleanup
- * @param testIdentifier Optional identifier to filter test data
+ * Cleans up test data from the database
+ * Removes data created during tests to maintain clean state
+ * @param prisma PrismaClient instance
+ * @param testIdentifier Unique identifier for test data cleanup
  */
 export async function cleanupTestData(
-  prisma: PrismaClient, 
-  testIdentifier?: string
+  prisma: PrismaClient,
+  testIdentifier: string
 ): Promise<void> {
-  console.log('🧽 Cleaning up test data...')
+  console.log('🧹 Cleaning up test data...')
   
   try {
-    // Build filter conditions based on test identifier
-    const whereCondition = testIdentifier 
-      ? { 
-          OR: [
-            { email: { contains: testIdentifier } },
-            { username: { contains: testIdentifier } },
-            { content: { contains: testIdentifier } }
-          ]
-        }
-      : {
-          OR: [
-            { email: { contains: 'test' } },
-            { email: { contains: 'integration-test' } },
-            { username: { contains: 'test' } },
-            { content: { contains: 'INTEGRATION_TEST' } },
-            { content: { contains: 'TEST_POST' } }
-          ]
-        }
+    // Clean up test data in reverse dependency order
+    // This prevents foreign key constraint violations
     
-    // Clean up in dependency order (child tables first)
+    // Get test user IDs first
+    const testUsers = await prisma.user.findMany({
+      where: { email: { contains: testIdentifier } },
+      select: { id: true }
+    })
+    const testUserIds = testUsers.map(user => user.id)
+    
+    // Clean up follows first (references users)
+    // Note: Schema uses followerId and followingId
     await prisma.follow.deleteMany({
       where: {
         OR: [
-          { followerId: { contains: 'test' } },
-          { followedId: { contains: 'test' } }
+          { followerId: { in: testUserIds } },
+          { followingId: { in: testUserIds } }
         ]
       }
     })
     
+    // Clean up posts (references users)
     await prisma.post.deleteMany({
-      where: whereCondition
+      where: {
+        OR: [
+          { content: { contains: 'INTEGRATION_TEST' } },
+          { author: { email: { contains: testIdentifier } } }
+        ]
+      }
     })
     
+    // Clean up users last
     await prisma.user.deleteMany({
-      where: whereCondition
+      where: {
+        email: { contains: testIdentifier }
+      }
     })
     
-    console.log('✅ Test data cleanup complete')
+    console.log('✅ Test cleanup completed')
     
   } catch (error) {
     console.error('⚠️  Error during test data cleanup:', error instanceof Error ? error.message : 'Unknown error')
@@ -251,6 +243,7 @@ export async function cleanupTestData(
 export async function teardownTestDatabase(): Promise<void> {
   if (globalTestDatabase) {
     await globalTestDatabase.cleanup()
+    globalTestDatabase = null
   }
 }
 
@@ -327,5 +320,5 @@ export async function createTestPost(
 export type { DatabaseSetupOptions, TestDatabaseInstance }
 
 // backend/src/__tests__/helpers/databaseSetup.ts
-// Version: 1.0.0
-// Initial implementation - Integrates testEnvironment.ts with integration tests to fix authentication failures
+// Version: 2.0.0
+// Fixed to use testDatabase.ts configuration instead of non-existent testEnvironment.ts

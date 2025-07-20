@@ -1,6 +1,5 @@
-// vitest.config.ts - v1.0.0
-// Vitest configuration for backend testing
-// Configures test environment, database setup, and test execution settings
+// vitest.config.ts - v1.1.0
+// Fixed PostgreSQL configuration - removed SQLite fallback that was causing integration test failures
 
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
@@ -106,10 +105,11 @@ export default defineConfig({
     // Bail configuration (stop on first failure in CI)
     bail: process.env.CI ? 1 : 0,
 
-    // Environment variables for tests
+    // Environment variables for tests - FIXED: No SQLite fallback
     env: {
       NODE_ENV: 'test',
-      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'file:./test.db',
+      // Use PostgreSQL URL from environment, no SQLite fallback
+      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test',
       JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret',
       BCRYPT_SALT_ROUNDS: '4',
       LOG_LEVEL: 'error'
@@ -163,9 +163,9 @@ export default defineConfig({
 
 // Test-specific exports for configuration
 export const testConfig = {
-  // Database configuration
+  // Database configuration - FIXED: PostgreSQL only
   database: {
-    url: process.env.TEST_DATABASE_URL || 'file:./test.db',
+    url: process.env.TEST_DATABASE_URL || 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test',
     resetBetweenTests: true,
     seedData: true,
     logQueries: false
@@ -231,5 +231,5 @@ export const isTestEnvironment = (): boolean => {
 // Utility function to get test configuration
 export const getTestConfig = () => testConfig
 
-// vitest.config.ts - v1.0.0
-// Initial version: Comprehensive Vitest configuration with test database integration
+// vitest.config.ts - v1.1.0
+// Fixed PostgreSQL configuration - removed SQLite fallback that was causing integration test failures
