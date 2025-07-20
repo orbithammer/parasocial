@@ -1,14 +1,13 @@
 // backend/prisma/schema.prisma
-// Version: 2.1.0
-// Updated schema to include proper Report model for content moderation system
-// Changes: Added Report enums and model with proper relationships
+// Version: 2.3.0 - Fixed database provider and relation mappings
+// Changed: Updated provider to "postgresql" and fixed Follow/Block relation mappings in User model
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -53,8 +52,14 @@ model User {
   
   // Relations
   posts            Post[]
-  followers        Follow[] @relation("FollowedUser")
-  blocks           Block[]  @relation("BlockingUser")
+  
+  // Follow relations - split into followers and following
+  followers        Follow[] @relation("FollowedUser")  // Users who follow this user
+  following        Follow[] @relation("FollowerUser")  // Users this user follows
+  
+  // Block relations - split into blocking and blocked
+  blocking         Block[]  @relation("BlockingUser") // Users this user blocks
+  blockedBy        Block[]  @relation("BlockedUser")  // Users who block this user
   
   // Report relations - users can be reported, submit reports, and moderate reports
   reportsAgainst    Report[] @relation("ReportedUser")
@@ -78,112 +83,85 @@ model Post {
   
   // ActivityPub fields
   activityId     String?   @unique // ActivityPub activity URI
+  objectId       String?   // ActivityPub object URI
   
   // Relations
   authorId       String
   author         User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  media          Media[]   // Attached images/files
+  
+  // Report relations - posts can be reported
   reports        Report[]  @relation("ReportedPost")
   
   @@map("posts")
 }
 
-// Media attachments for posts
-model Media {
-  id          String   @id @default(cuid())
-  filename    String   // Original filename
-  url         String   // Storage URL
-  mimeType    String   // MIME type (image/jpeg, etc.)
-  size        Int      // File size in bytes
-  altText     String?  // Accessibility description
-  width       Int?     // Image dimensions
-  height      Int?
-  createdAt   DateTime @default(now())
-  
-  // Relations
-  postId      String
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
-  @@map("media")
-}
-
-// Follow relationships (supports both local and federated)
+// Follow relationships between users
 model Follow {
   id          String   @id @default(cuid())
-  followerId  String   // Can be external ActivityPub actor ID
-  followedId  String   // Always a ParaSocial user ID
-  actorId     String?  // Full ActivityPub actor URI for federated follows
-  isAccepted  Boolean  @default(true)  // For future follow request support
+  followerId  String   // User who follows
+  followingId String   // User being followed
   createdAt   DateTime @default(now())
   
-  // Relations
-  followed    User     @relation("FollowedUser", fields: [followedId], references: [id], onDelete: Cascade)
+  // ActivityPub fields
+  activityId  String?  @unique // ActivityPub Follow activity URI
   
-  @@unique([followerId, followedId])
+  // Relations
+  follower    User     @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowedUser", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  // Prevent self-follows and duplicate follows
+  @@unique([followerId, followingId])
   @@map("follows")
 }
 
-// User blocking (ParaSocial users can block followers)
+// Block relationships between users
 model Block {
-  id         String   @id @default(cuid())
-  blockerId  String   // ParaSocial user doing the blocking
-  blockedId  String   // Actor being blocked (can be external)
-  reason     String?  // Optional reason for block
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  blockerId String   // User who blocks
+  blockedId String   // User being blocked
+  reason    String?  // Optional reason for blocking
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   
   // Relations
-  blocker    User     @relation("BlockingUser", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocker   User     @relation("BlockingUser", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlockedUser", fields: [blockedId], references: [id], onDelete: Cascade)
   
+  // Prevent self-blocks and duplicate blocks
   @@unique([blockerId, blockedId])
   @@map("blocks")
 }
 
-// Content and user reporting system for moderation
+// Content moderation reports
 model Report {
-  id                String         @id @default(cuid())
-  type              ReportType     // Type of violation being reported
-  description       String         // Detailed description of the issue
-  status            ReportStatus   @default(PENDING) // Current moderation status
-  reportedUserId    String?        // Optional - user being reported
-  reportedPostId    String?        // Optional - post being reported
-  reporterId        String?        // Optional - user who submitted the report (allows anonymous reports)
-  reporterActorId   String?        // Optional - ActivityPub actor who reported (for federated reports)
-  moderatorNotes    String?        // Optional - notes added during moderation
-  moderatorId       String?        // Optional - admin who processed the report
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  // Relationships with proper cascade behavior
-  reportedUser      User?          @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  reportedPost      Post?          @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
-  reporter          User?          @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: SetNull)
-  moderator         User?          @relation("ModeratorUser", fields: [moderatorId], references: [id], onDelete: SetNull)
-
-  // Database indexes for performance
-  @@index([status])           // Fast filtering by status
-  @@index([type])             // Fast filtering by report type
-  @@index([reportedUserId])   // Fast lookups for user reports
-  @@index([reportedPostId])   // Fast lookups for post reports
-  @@index([createdAt])        // Fast sorting by creation date
+  id           String       @id @default(cuid())
+  type         ReportType
+  reason       String       // Detailed reason for the report
+  description  String?      // Additional context from reporter
+  status       ReportStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  reviewedAt   DateTime?    // When the report was reviewed
+  resolvedAt   DateTime?    // When the report was resolved
+  
+  // Reporter information
+  reporterId   String?      // Anonymous reports allowed
+  reporter     User?        @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: SetNull)
+  
+  // What is being reported (union type - exactly one must be set)
+  reportedUserId String?    // Report against a user
+  reportedUser   User?      @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  
+  reportedPostId String?    // Report against a post
+  reportedPost   Post?      @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
+  
+  // Moderation information
+  moderatorId    String?    // Moderator who handled the report
+  moderator      User?      @relation("ModeratorUser", fields: [moderatorId], references: [id], onDelete: SetNull)
+  moderatorNotes String?    // Internal notes from moderator
+  
   @@map("reports")
 }
 
-// Federated instance management
-model Instance {
-  id            String   @id @default(cuid())
-  domain        String   @unique
-  isBlocked     Boolean  @default(false)
-  isSuspended   Boolean  @default(false)  // Temporary suspension
-  software      String?  // Mastodon, Pleroma, etc.
-  version       String?  // Software version
-  description   String?  // Instance description
-  lastSeen      DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  @@map("instances")
-}
-
 // backend/prisma/schema.prisma
-// Version: 2.1.0
-// Updated schema to include proper Report model for content moderation system
+// Version: 2.3.0

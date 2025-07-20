@@ -1,6 +1,6 @@
 // backend/src/app.ts  
-// Version: 2.11
-// COMPLETE FIX: All TypeScript errors resolved - UserController args + AuthService middleware
+// Version: 2.15.0 - Removed unused imports and variables
+// Changed: Removed unused createGlobalSecurityMiddleware, AuthController, and fixed unused req parameter
 
 import express from 'express'
 import cors from 'cors'
@@ -8,13 +8,12 @@ import path from 'path'
 import { PrismaClient } from '@prisma/client'
 
 // Import route creators
-import { createAuthRouter } from './routes/auth'
+import authRouter from './routes/auth'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
 import mediaRouter from './routes/media'
 
 // Import controllers
-import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
 import { UserController } from './controllers/UserController'
 import { FollowController } from './controllers/FollowController'
@@ -31,7 +30,7 @@ import { BlockRepository } from './repositories/BlockRepository'
 
 // Import middleware
 import { createAuthMiddleware, createOptionalAuthMiddleware } from './middleware/authMiddleware'
-import { createSecureStaticFileHandler, createGlobalSecurityMiddleware } from './middleware/staticFileSecurityMiddleware'
+import { createSecureStaticFileHandler } from './middleware/staticFileSecurityMiddleware'
 import { createExpressAwareSecurityMiddleware } from './middleware/expressAwareSecurityMiddleware'
 
 /**
@@ -57,7 +56,7 @@ export function createApp() {
 
   // Enable CORS for cross-origin requests
   app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env['FRONTEND_URL'] || 'http://localhost:3000',
     credentials: true
   }))
 
@@ -76,11 +75,21 @@ export function createApp() {
    * Files accessible at /uploads/<filename>
    * Includes local security (dotfiles) and static serving
    * Global security (path traversal) is handled above
+   * FIXED: Apply secure static file handlers without spread syntax
    */
   const uploadsPath = path.join(process.cwd(), 'uploads')
   
-  // Apply secure static file handlers (local security + static serving)
-  app.use('/uploads', ...createSecureStaticFileHandler(uploadsPath))
+  // Apply secure static file handlers (without spread syntax to prevent iterator errors)
+  const secureHandler = createSecureStaticFileHandler(uploadsPath)
+  if (Array.isArray(secureHandler)) {
+    // If it returns an array, apply each middleware
+    secureHandler.forEach(middleware => {
+      app.use('/uploads', middleware)
+    })
+  } else {
+    // If it returns a single middleware function
+    app.use('/uploads', secureHandler)
+  }
 
   // ============================================================================
   // DEPENDENCY INJECTION SETUP
@@ -100,7 +109,6 @@ export function createApp() {
   const followService = new FollowService(followRepository, userRepository)
 
   // Initialize controllers with CORRECT ARGUMENTS
-  const authController = new AuthController(authService, userRepository)
   const postController = new PostController(postRepository, userRepository)
   
   // ✅ FIXED: UserController now receives all 3 required arguments
@@ -116,8 +124,8 @@ export function createApp() {
   // API ROUTES
   // ============================================================================
 
-  // Authentication routes - /auth/*
-  app.use('/auth', createAuthRouter({ authController, authMiddleware }))
+  // Authentication routes - /auth/* (uses plain router, no dependency injection)
+  app.use('/auth', authRouter)
 
   // User management routes - /users/*  
   app.use('/users', createUsersRouter({ userController, postController, followController, authMiddleware, optionalAuthMiddleware }))
@@ -136,11 +144,11 @@ export function createApp() {
    * Basic health check endpoint
    * Returns server status and timestamp
    */
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development'
+      version: '1.0.0'
     })
   })
 
@@ -164,3 +172,6 @@ export function createApp() {
 
   return app
 }
+
+// backend/src/app.ts  
+// Version: 2.15.0
