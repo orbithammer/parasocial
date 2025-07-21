@@ -1,6 +1,6 @@
 // backend/prisma/schema.prisma
-// Version: 2.3.0 - Fixed database provider and relation mappings
-// Changed: Updated provider to "postgresql" and fixed Follow/Block relation mappings in User model
+// Version: 2.4.0 - Fixed Follow model field names to match repository code
+// Changed: followingId → followedId to match repository implementation
 
 generator client {
   provider = "prisma-client-js"
@@ -53,7 +53,7 @@ model User {
   // Relations
   posts            Post[]
   
-  // Follow relations - split into followers and following
+  // Follow relations - updated field names to match repository code
   followers        Follow[] @relation("FollowedUser")  // Users who follow this user
   following        Follow[] @relation("FollowerUser")  // Users this user follows
   
@@ -97,20 +97,22 @@ model Post {
 
 // Follow relationships between users
 model Follow {
-  id          String   @id @default(cuid())
-  followerId  String   // User who follows
-  followingId String   // User being followed
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  followerId String   // User who follows
+  followedId String   // User being followed (FIXED: was followingId)
+  createdAt  DateTime @default(now())
   
   // ActivityPub fields
-  activityId  String?  @unique // ActivityPub Follow activity URI
+  activityId String?  @unique // ActivityPub Follow activity URI
+  actorId    String?  // ActivityPub actor URI for federated follows
+  isAccepted Boolean  @default(true) // For follow requests (Phase 2.3)
   
-  // Relations
-  follower    User     @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade)
-  following   User     @relation("FollowedUser", fields: [followingId], references: [id], onDelete: Cascade)
+  // Relations - updated to use followedId
+  follower   User     @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade)
+  followed   User     @relation("FollowedUser", fields: [followedId], references: [id], onDelete: Cascade)
   
   // Prevent self-follows and duplicate follows
-  @@unique([followerId, followingId])
+  @@unique([followerId, followedId])
   @@map("follows")
 }
 
@@ -156,12 +158,13 @@ model Report {
   reportedPost   Post?      @relation("ReportedPost", fields: [reportedPostId], references: [id], onDelete: Cascade)
   
   // Moderation information
-  moderatorId    String?    // Moderator who handled the report
+  moderatorId    String?    // Which moderator handled this report
   moderator      User?      @relation("ModeratorUser", fields: [moderatorId], references: [id], onDelete: SetNull)
+  
   moderatorNotes String?    // Internal notes from moderator
   
   @@map("reports")
 }
 
 // backend/prisma/schema.prisma
-// Version: 2.3.0
+// Version: 2.4.0 - Fixed Follow model field names to match repository code

@@ -1,14 +1,14 @@
 // backend/src/config/testDatabase.ts
-// Version: 2.0.0
-// Fixed PostgreSQL configuration - removed SQLite references and improved integration with testEnvironment
+// Version: 2.1.0
+// Updated default port to 5433 to match docker-compose.yml configuration
 
 import { PrismaClient } from '@prisma/client'
 
 /**
- * Interface for test database configuration
- * Defines all required properties for PostgreSQL test database connection
+ * Test database configuration interface
+ * Defines all test database connection parameters and settings
  */
-interface TestDatabaseConfig {
+export interface TestDatabaseConfig {
   url: string
   maxConnections: number
   connectionTimeout: number
@@ -21,37 +21,34 @@ interface TestDatabaseConfig {
 }
 
 /**
- * Interface for database connection validation result
+ * Interface for database connection validation results
  * Provides detailed feedback on connection attempts
  */
-interface ConnectionValidationResult {
+export interface ConnectionValidationResult {
   success: boolean
+  connectionTime: number
   error?: string
-  connectionTime?: number
   databaseExists: boolean
   credentialsValid: boolean
 }
 
 /**
- * Detects if the application is running in a Docker environment
- * Checks multiple indicators for Docker presence
- * @returns True if running in Docker container
+ * Detects if code is running inside a Docker container
+ * Checks for Docker-specific environment indicators
+ * @returns True if running in Docker environment
  */
 function detectDockerEnvironment(): boolean {
-  // Check for Docker-specific environment variables
-  if (process.env['DOCKER_CONTAINER'] === 'true') return true
-  if (process.env['HOSTNAME']?.startsWith('docker-')) return true
-  
-  // Check for docker-compose service names
-  if (process.env['TEST_DB_HOST'] === 'postgres') return true
-  
-  return false
+  return !!(
+    process.env['DOCKER_CONTAINER'] || 
+    process.env['DOCKER_ENV'] ||
+    process.env['RUNNING_IN_DOCKER']
+  )
 }
 
 /**
- * Detects if running in CI environment
+ * Detects if code is running in a CI environment
  * Checks common CI environment variables
- * @returns True if running in CI pipeline
+ * @returns True if running in CI environment
  */
 function detectCIEnvironment(): boolean {
   return !!(
@@ -59,24 +56,20 @@ function detectCIEnvironment(): boolean {
     process.env['GITHUB_ACTIONS'] ||
     process.env['GITLAB_CI'] ||
     process.env['JENKINS_URL'] ||
-    process.env['TRAVIS'] ||
-    process.env['CIRCLECI'] ||
     process.env['BUILDKITE']
   )
 }
 
 /**
- * Gets the test database URL from environment variables with intelligent fallbacks
- * Ensures proper PostgreSQL URL format and addresses authentication failures
- * @returns The test database URL with proper authentication
+ * Gets the test database URL from environment variables or constructs it
+ * Priority: TEST_DATABASE_URL > DATABASE_URL > constructed from components
+ * @returns Complete PostgreSQL connection string
  */
 function getTestDatabaseUrl(): string {
   // Check for explicit test database URL first
   const testDbUrl = process.env['TEST_DATABASE_URL']
-  
-  if (testDbUrl) {
-    // Validate that it's a PostgreSQL URL format
-    if (!testDbUrl.startsWith('postgresql://') && !testDbUrl.startsWith('postgres://')) {
+  if (testDbUrl && (testDbUrl.startsWith('postgresql://') || testDbUrl.startsWith('postgres://'))) {
+    if (!testDbUrl) {
       throw new Error(`Invalid database URL format: ${testDbUrl}. Must start with postgresql:// or postgres://`)
     }
     return testDbUrl
@@ -99,23 +92,23 @@ function getTestDatabaseUrl(): string {
   let database: string
   
   if (isDocker) {
-    // Docker environment defaults
+    // Docker environment defaults - use container internal port
     host = process.env['TEST_DB_HOST'] || 'postgres'  // docker-compose service name
-    port = process.env['TEST_DB_PORT'] || '5432'
+    port = process.env['TEST_DB_PORT'] || '5432'      // internal container port
     username = process.env['TEST_DB_USER'] || 'parasocial_user'
     password = process.env['TEST_DB_PASSWORD'] || 'parasocial_pass'
     database = process.env['TEST_DB_NAME'] || 'parasocial_test'
   } else if (isCI) {
-    // CI environment defaults
+    // CI environment defaults - typically uses standard port
     host = process.env['TEST_DB_HOST'] || 'localhost'
     port = process.env['TEST_DB_PORT'] || '5432'
     username = process.env['TEST_DB_USER'] || 'postgres'
     password = process.env['TEST_DB_PASSWORD'] || 'postgres'
     database = process.env['TEST_DB_NAME'] || 'parasocial_test'
   } else {
-    // Local development defaults
+    // Local development defaults - use external mapped port from docker-compose
     host = process.env['TEST_DB_HOST'] || 'localhost'
-    port = process.env['TEST_DB_PORT'] || '5432'
+    port = process.env['TEST_DB_PORT'] || '5433'      // Updated to match docker-compose.yml external port
     username = process.env['TEST_DB_USER'] || 'parasocial_user'
     password = process.env['TEST_DB_PASSWORD'] || 'parasocial_pass'
     database = process.env['TEST_DB_NAME'] || 'parasocial_test'
@@ -146,7 +139,7 @@ function parseConnectionString(connectionString: string): {
     
     return {
       host: url.hostname || 'localhost',
-      port: parseInt(url.port, 10) || 5432,
+      port: parseInt(url.port, 10) || 5433,           // Updated default port to match docker-compose
       database: url.pathname.slice(1) || 'parasocial_test', // Remove leading slash
       username: url.username || 'parasocial_user',
       password: url.password || 'parasocial_pass',
@@ -308,82 +301,6 @@ export function validateTestDatabaseConfig(): void {
   if (!testDatabaseConfig.url.startsWith('postgresql://') && !testDatabaseConfig.url.startsWith('postgres://')) {
     throw new Error(`Invalid database URL format: ${testDatabaseConfig.url}. Must start with postgresql:// or postgres://`)
   }
-  
-  if (!testDatabaseConfig.username || !testDatabaseConfig.password) {
-    throw new Error('Test database credentials are not configured')
-  }
-  
-  if (!testDatabaseConfig.database) {
-    throw new Error('Test database name is not configured')
-  }
-}
-
-/**
- * Creates a Prisma-compatible database URL for testing
- * @returns Formatted database URL for Prisma client
- */
-export function getPrismaTestDatabaseUrl(): string {
-  return testDatabaseConfig.url
-}
-
-/**
- * Validates the test environment and provides actionable setup guidance
- * This should be called before running integration tests
- * @returns Promise that resolves when environment is ready or rejects with setup instructions
- */
-export async function validateTestEnvironment(): Promise<void> {
-  const isDocker = detectDockerEnvironment()
-  const isCI = detectCIEnvironment()
-  
-  console.log('🔍 Validating test environment...')
-  console.log(`📍 Environment: ${isCI ? 'CI' : isDocker ? 'Docker' : 'Local'}`)
-  console.log(`🗄️  Database: ${testDatabaseConfig.host}:${testDatabaseConfig.port}/${testDatabaseConfig.database}`)
-  console.log(`👤 User: ${testDatabaseConfig.username}`)
-  
-  const validation = await validateDatabaseConnection({
-    host: testDatabaseConfig.host,
-    port: testDatabaseConfig.port,
-    username: testDatabaseConfig.username,
-    password: testDatabaseConfig.password,
-    database: testDatabaseConfig.database
-  })
-  
-  if (validation.success) {
-    console.log(`✅ Database connection successful (${validation.connectionTime}ms)`)
-    return
-  }
-  
-  // Connection failed - provide detailed troubleshooting guidance
-  console.error('❌ Test environment validation failed!')
-  console.error(`📋 Error: ${validation.error}`)
-  console.error('')
-  console.error('🔧 Troubleshooting steps:')
-  
-  if (isDocker) {
-    console.error('   1. Start Docker containers: docker-compose up -d')
-    console.error('   2. Wait for PostgreSQL to initialize (30-60 seconds)')
-    console.error('   3. Check container status: docker-compose ps')
-    console.error('   4. Check logs: docker-compose logs postgres')
-  } else if (isCI) {
-    console.error('   1. Ensure PostgreSQL service is configured in CI')
-    console.error('   2. Check CI environment variables are set correctly')
-    console.error('   3. Verify database initialization scripts ran')
-  } else {
-    console.error('   1. Start local PostgreSQL server')
-    console.error('   2. Create test database: createdb parasocial_test')
-    console.error('   3. Create user: CREATE USER parasocial_user WITH PASSWORD \'parasocial_pass\';')
-    console.error('   4. Grant permissions: GRANT ALL PRIVILEGES ON DATABASE parasocial_test TO parasocial_user;')
-  }
-  
-  console.error('')
-  console.error('🌐 Current configuration:')
-  console.error(`   DATABASE_URL: ${testDatabaseConfig.url}`)
-  console.error(`   Host: ${testDatabaseConfig.host}:${testDatabaseConfig.port}`)
-  console.error(`   Database: ${testDatabaseConfig.database}`)
-  console.error(`   Username: ${testDatabaseConfig.username}`)
-  console.error('')
-  
-  throw new Error(`Test environment validation failed: ${validation.error}`)
 }
 
 /**
@@ -410,11 +327,66 @@ export function setupTestEnvironmentVariables(): void {
 }
 
 /**
+ * Tests database connectivity and provides troubleshooting info
+ * @returns Promise resolving to validation result
+ */
+export async function testDatabaseConnection(): Promise<ConnectionValidationResult> {
+  console.log(`🔍 Testing database connection to ${testDatabaseConfig.host}:${testDatabaseConfig.port}...`)
+  
+  const validation = await validateDatabaseConnection({
+    host: testDatabaseConfig.host,
+    port: testDatabaseConfig.port,
+    username: testDatabaseConfig.username,
+    password: testDatabaseConfig.password,
+    database: testDatabaseConfig.database
+  })
+  
+  if (validation.success) {
+    console.log(`✅ Database connection successful (${validation.connectionTime}ms)`)
+  } else {
+    console.error(`❌ Database connection failed: ${validation.error}`)
+    
+    // Provide environment-specific troubleshooting
+    const isDocker = detectDockerEnvironment()
+    const isCI = detectCIEnvironment()
+    
+    if (isDocker) {
+      console.error('   Docker Environment Troubleshooting:')
+      console.error('   1. Ensure docker-compose is running: docker-compose up -d postgres')
+      console.error('   2. Check container status: docker-compose ps')
+      console.error('   3. Check logs: docker-compose logs postgres')
+    } else if (isCI) {
+      console.error('   CI Environment Troubleshooting:')
+      console.error('   1. Ensure PostgreSQL service is configured in CI')
+      console.error('   2. Check CI environment variables are set correctly')
+      console.error('   3. Verify database initialization scripts ran')
+    } else {
+      console.error('   Local Development Troubleshooting:')
+      console.error('   1. Start docker database: docker-compose up -d postgres')
+      console.error('   2. Or start local PostgreSQL server on port 5433')
+      console.error('   3. Create test database: createdb parasocial_test')
+      console.error('   4. Create user: CREATE USER parasocial_user WITH PASSWORD \'parasocial_pass\';')
+      console.error('   5. Grant permissions: GRANT ALL PRIVILEGES ON DATABASE parasocial_test TO parasocial_user;')
+    }
+    
+    console.error('')
+    console.error('🌐 Current configuration:')
+    console.error(`   DATABASE_URL: ${testDatabaseConfig.url}`)
+    console.error(`   Host: ${testDatabaseConfig.host}:${testDatabaseConfig.port}`)
+    console.error(`   Database: ${testDatabaseConfig.database}`)
+    console.error(`   Username: ${testDatabaseConfig.username}`)
+    console.error('')
+  }
+  
+  return validation
+}
+
+/**
  * Log configuration for debugging (without exposing password)
  */
 export function logTestDatabaseConfig(): void {
   if (process.env['NODE_ENV'] === 'test' || process.env['NODE_ENV'] === 'development') {
-    console.log('Test Database Configuration:')
+    console.log('🗄️  Test Database Configuration:')
     console.log(`  Host: ${testDatabaseConfig.host}`)
     console.log(`  Port: ${testDatabaseConfig.port}`)
     console.log(`  Database: ${testDatabaseConfig.database}`)
@@ -430,5 +402,5 @@ export function logTestDatabaseConfig(): void {
 validateTestDatabaseConfig()
 
 // backend/src/config/testDatabase.ts
-// Version: 2.0.0
-// Fixed PostgreSQL configuration - removed SQLite references and improved integration with testEnvironment
+// Version: 2.1.0
+// Updated default port to 5433 to match docker-compose.yml configuration

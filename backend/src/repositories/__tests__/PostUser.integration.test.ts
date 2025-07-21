@@ -3,8 +3,8 @@
 // Fixed environment variable setup - Force DATABASE_URL before importing Prisma
 
 // Force set environment variables BEFORE any imports
-process.env['DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test'
-process.env['TEST_DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test'
+process.env['DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5433/parasocial_test'
+process.env['TEST_DATABASE_URL'] = 'postgresql://parasocial_user:parasocial_pass@localhost:5433/parasocial_test'
 process.env['NODE_ENV'] = 'test'
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
