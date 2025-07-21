@@ -308,15 +308,20 @@ describe('RegisterPage', () => {
       const submitButton = screen.getByRole('button', { name: /register/i })
       await user.click(submitButton)
       
-      // Wait for error message to appear first
-      const errorMessage = await screen.findByText(/email is required/i)
+      // Wait for error messages to appear
+      await screen.findByText(/email is required/i)
       
       // Then wait for the input to be updated with error attributes
       await waitFor(() => {
         const emailInput = screen.getByLabelText(/email/i)
-        expect(emailInput).toHaveAttribute('aria-describedby', expect.stringContaining(errorMessage.id))
+        // Check against the expected ID instead of trying to access element.id
+        expect(emailInput).toHaveAttribute('aria-describedby', 'email-error')
         expect(emailInput).toHaveAttribute('aria-invalid', 'true')
       })
+      
+      // Also verify the error message element has the correct ID
+      const errorMessage = screen.getByText(/email is required/i)
+      expect(errorMessage).toHaveAttribute('id', 'email-error')
     })
 
     it('should be keyboard navigable', async () => {
