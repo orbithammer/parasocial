@@ -1,6 +1,6 @@
-// frontend/src/contexts/__tests__/GlobalErrorContext.test.tsx - Version 1.1.0
+// frontend/src/contexts/__tests__/GlobalErrorContext.test.tsx - Version 1.2.0
 // Initial unit tests for GlobalErrorContext with comprehensive coverage
-// Updated: Moved to colocated __tests__ directory with proper capitalization
+// Updated: Fixed test indexing to account for error prepending behavior
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act, renderHook } from '@testing-library/react'
@@ -185,15 +185,21 @@ describe('GlobalErrorContext', () => {
         { type: 'INTERNAL_ERROR', expectedSeverity: 'critical' }
       ]
 
-      testCases.forEach((testCase, index) => {
+      // Add all errors first
+      testCases.forEach((testCase) => {
         act(() => {
           result.current.addError({
             type: testCase.type,
             message: `Test ${testCase.type} error`
           })
         })
+      })
 
-        expect(result.current.errors[index].severity).toBe(testCase.expectedSeverity)
+      // Check each error - since errors are prepended, we need to check in reverse order
+      testCases.forEach((testCase, index) => {
+        const errorIndex = testCases.length - 1 - index // Reverse index since newest errors go to front
+        expect(result.current.errors[errorIndex].severity).toBe(testCase.expectedSeverity)
+        expect(result.current.errors[errorIndex].type).toBe(testCase.type)
       })
     })
 
@@ -214,7 +220,7 @@ describe('GlobalErrorContext', () => {
       })
 
       expect(result.current.errors).toHaveLength(3)
-      // Most recent errors should be kept
+      // Most recent errors should be kept (since they're prepended)
       expect(result.current.errors[0].message).toBe('Error 4')
       expect(result.current.errors[1].message).toBe('Error 3')
       expect(result.current.errors[2].message).toBe('Error 2')
@@ -455,7 +461,7 @@ describe('GlobalErrorContext', () => {
         })
       })
 
-      // Dismiss second error
+      // Dismiss second error (which is at index 0 since it was added last)
       act(() => {
         result.current.dismissError(secondErrorId)
       })
@@ -548,6 +554,6 @@ describe('GlobalErrorContext', () => {
   })
 })
 
-// frontend/src/contexts/__tests__/GlobalErrorContext.test.tsx - Version 1.1.0
+// frontend/src/contexts/__tests__/GlobalErrorContext.test.tsx - Version 1.2.0
 // Initial unit tests for GlobalErrorContext with comprehensive coverage
-// Updated: Moved to colocated __tests__ directory with proper capitalization
+// Updated: Fixed test indexing to account for error prepending behavior
