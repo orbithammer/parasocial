@@ -109,7 +109,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       // Use PostgreSQL URL from environment, no SQLite fallback
-      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://parasocial_user:parasocial_pass@localhost:5432/parasocial_test',
+      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://parasocial_user:parasocial_pass@localhost:5433/parasocial_test',
       JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret',
       BCRYPT_SALT_ROUNDS: '4',
       LOG_LEVEL: 'error'
