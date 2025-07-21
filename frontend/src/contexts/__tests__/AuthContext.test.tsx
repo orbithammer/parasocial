@@ -1,6 +1,6 @@
-// /__tests__/AuthContext.test.ts
-// Version: 1.0.0
-// Initial test suite for AuthContext with comprehensive authentication testing
+// /__tests__/AuthContext.test.tsx
+// Version: 1.1.0
+// Fixed file extension to .tsx for JSX support and corrected import paths
 
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
@@ -336,6 +336,6 @@ describe('AuthContext', () => {
   })
 })
 
-// /__tests__/AuthContext.test.ts
-// Version: 1.0.0
-// Initial test suite for AuthContext with comprehensive authentication testing
+// /__tests__/AuthContext.test.tsx
+// Version: 1.1.0
+// Fixed file extension to .tsx for JSX support and corrected import paths
