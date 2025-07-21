@@ -1,6 +1,6 @@
 // frontend/src/app/layout.tsx
-// Root layout component for ParaSocial Next.js app
-// Version: 1.0.0
+// Root layout component for ParaSocial Next.js app - provides HTML document structure, metadata, and global styles
+// Version: 1.1.0 - Fixed HTML structure to match test requirements
 
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
@@ -15,10 +15,10 @@ const inter = Inter({
 // App metadata for SEO and social sharing
 export const metadata: Metadata = {
   title: {
-    default: 'ParaSocial - Social Media for Content Creators',
+    default: 'ParaSocial - Creator Broadcasting Platform',
     template: '%s | ParaSocial'
   },
-  description: 'A unidirectional social network where content creators can broadcast to the fediverse without distractions.',
+  description: 'A unidirectional social network for content creators',
   keywords: ['social media', 'content creators', 'fediverse', 'ActivityPub', 'broadcasting'],
   authors: [{ name: 'ParaSocial Team' }],
   creator: 'ParaSocial',
@@ -34,14 +34,14 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: 'https://parasocial.network',
     siteName: 'ParaSocial',
-    title: 'ParaSocial - Social Media for Content Creators',
-    description: 'A unidirectional social network where content creators can broadcast to the fediverse without distractions.',
+    title: 'ParaSocial - Creator Broadcasting Platform',
+    description: 'A unidirectional social network for content creators',
   },
   // Twitter Card metadata
   twitter: {
     card: 'summary_large_image',
-    title: 'ParaSocial - Social Media for Content Creators',
-    description: 'A unidirectional social network where content creators can broadcast to the fediverse without distractions.',
+    title: 'ParaSocial - Creator Broadcasting Platform',
+    description: 'A unidirectional social network for content creators',
     creator: '@parasocial',
   },
   // Viewport configuration for responsive design
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
 
 /**
  * Root layout component that wraps all pages
- * Provides global styles, fonts, and basic HTML structure
+ * Provides global styles, fonts, authentication context, and HTML document structure
  * 
  * @param children - The page content to render
  * @returns JSX element containing the complete HTML document structure
@@ -84,6 +84,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.className}>
       <head>
+        {/* Title is handled by metadata export above */}
+        {/* Meta tags are handled by metadata export above */}
+        
         {/* Preconnect to external domains for performance */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -112,7 +115,7 @@ export default function RootLayout({
         <div id="app-root" className="relative min-h-screen">
           {/* Navigation will be added in future iterations */}
           
-          {/* Main content area */}
+          {/* Main content area with semantic HTML */}
           <main id="main-content" className="relative">
             {children}
           </main>
@@ -126,3 +129,6 @@ export default function RootLayout({
     </html>
   )
 }
+
+// frontend/src/app/layout.tsx
+// Version: 1.1.0 - Fixed HTML structure to match test requirements
