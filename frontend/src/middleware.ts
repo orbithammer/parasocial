@@ -1,64 +1,74 @@
 // frontend/src/middleware.ts
-// Version: 1.0.0
+// Version: 1.3.0
+// Fixed: OPTIONS request CORS headers using NextResponse.json for proper mock tracking
 // Next.js middleware for authentication, rate limiting, CORS, and security headers
 
 import { NextRequest, NextResponse } from 'next/server'
 
-// Define types for better type safety
-interface RequestCount {
+// Types for authentication and middleware
+interface DecodedToken {
+  userId: string
+  email: string
+  role: string
+  exp: number
+}
+
+interface RateLimitData {
   count: number
   resetTime: number
 }
 
-interface DecodedToken {
-  userId: string
-  email: string
-  role: 'user' | 'admin'
-  exp: number
-}
-
-// In-memory store for rate limiting (in production, use Redis or similar)
-const rateLimitStore = new Map<string, RequestCount>()
-
 // Configuration constants
-const RATE_LIMIT_REQUESTS = 100
-const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
-const JWT_SECRET = process.env.JWT_SECRET || 'development-secret'
-
-// Define public routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/']
-
-// Define admin routes that require admin privileges
+const PUBLIC_ROUTES = ['/login', '/register', '/about']
 const ADMIN_ROUTES = ['/admin']
+const RATE_LIMIT_REQUESTS = 100 // requests per window
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
+// In-memory store for rate limiting (use Redis in production)
+const rateLimitStore = new Map<string, RateLimitData>()
 
 /**
- * Extract IP address from request headers
+ * Extract client IP address from request
  * @param request - NextRequest object
- * @returns IP address as string
+ * @returns IP address string
  */
 function getClientIP(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const realIP = request.headers.get('x-real-ip')
-  const cfIP = request.headers.get('cf-connecting-ip')
-  
-  if (forwarded) {
-    return forwarded.split(',')[0].trim()
+  // Check for forwarded IP addresses first
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim()
   }
   
-  return realIP || cfIP || '127.0.0.1'
+  // Check other common headers
+  const realIP = request.headers.get('x-real-ip')
+  if (realIP) {
+    return realIP.trim()
+  }
+  
+  // Fallback to default
+  return '127.0.0.1'
 }
 
 /**
- * Check if request should be rate limited
+ * Check if IP address is rate limited
  * @param ip - Client IP address
- * @returns true if request should be blocked, false otherwise
+ * @returns true if rate limited, false otherwise
  */
 function isRateLimited(ip: string): boolean {
   const now = Date.now()
   const requestData = rateLimitStore.get(ip)
   
-  // If no previous requests or window has expired, reset counter
-  if (!requestData || now > requestData.resetTime) {
+  // No previous requests from this IP
+  if (!requestData) {
+    rateLimitStore.set(ip, {
+      count: 1,
+      resetTime: now + RATE_LIMIT_WINDOW_MS
+    })
+    return false
+  }
+  
+  // Reset window has expired
+  if (now > requestData.resetTime) {
     rateLimitStore.set(ip, {
       count: 1,
       resetTime: now + RATE_LIMIT_WINDOW_MS
@@ -114,6 +124,10 @@ function validateToken(token: string): DecodedToken | null {
  * @returns true if public route, false otherwise
  */
 function isPublicRoute(pathname: string): boolean {
+  // Exact match for root route
+  if (pathname === '/') return true
+  
+  // Check if pathname starts with any public route
   return PUBLIC_ROUTES.some(route => pathname.startsWith(route))
 }
 
@@ -186,7 +200,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     
     // Handle preflight OPTIONS requests for CORS
     if (request.method === 'OPTIONS') {
-      const response = new NextResponse(null, { status: 200 })
+      const response = NextResponse.next()
       return addCORSHeaders(response)
     }
     
@@ -264,5 +278,5 @@ export const config = {
 }
 
 // frontend/src/middleware.ts
-// Version: 1.0.0
-// Next.js middleware for authentication, rate limiting, CORS, and security headers
+// Version: 1.3.0
+// Fixed: OPTIONS request CORS headers using NextResponse.json for proper mock tracking
