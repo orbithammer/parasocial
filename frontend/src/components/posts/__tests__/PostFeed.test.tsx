@@ -1,9 +1,9 @@
 // Path: frontend/src/components/posts/__tests__/PostFeed.test.tsx
-// Version: 1.0.0
-// Initial unit test suite for PostFeed component
+// Version: 1.1.0
+// Fixed text matching issues using specific selectors and ARIA labels
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { PostFeed } from '../PostFeed'
 
 // Mock data for testing
@@ -57,20 +57,20 @@ describe('PostFeed Component', () => {
     it('displays post content correctly', () => {
       render(<PostFeed posts={mockPosts} />)
       
-      // Check post details are displayed
+      // Check post details are displayed using regex for flexibility
       expect(screen.getByText('This is the first post content')).toBeInTheDocument()
       expect(screen.getByText(/John Doe/)).toBeInTheDocument()
-      expect(screen.getByText('Jane Smith')).toBeInTheDocument()
+      expect(screen.getByText(/Jane Smith/)).toBeInTheDocument()
     })
 
     it('displays post metadata correctly', () => {
-      render(<PostFeed posts={mockPosts} />)
+      const { container } = render(<PostFeed posts={mockPosts} />)
       
-      // Check likes and comments counts
-      expect(screen.getByText('5')).toBeInTheDocument() // likes count
-      expect(screen.getByText('2')).toBeInTheDocument() // comments count
-      expect(screen.getByText('10')).toBeInTheDocument() // likes count
-      expect(screen.getByText('7')).toBeInTheDocument() // comments count
+      // Use ARIA labels to find likes and comments counts more specifically
+      expect(screen.getByLabelText('5 likes')).toBeInTheDocument()
+      expect(screen.getByLabelText('2 comments')).toBeInTheDocument()
+      expect(screen.getByLabelText('10 likes')).toBeInTheDocument()
+      expect(screen.getByLabelText('7 comments')).toBeInTheDocument()
     })
   })
 
@@ -216,5 +216,5 @@ describe('PostFeed Component', () => {
 })
 
 // Path: frontend/src/components/posts/__tests__/PostFeed.test.tsx
-// Version: 1.0.0
-// Initial unit test suite for PostFeed component
+// Version: 1.1.0
+// Fixed text matching issues using specific selectors and ARIA labels
