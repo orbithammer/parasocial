@@ -1,16 +1,17 @@
 // frontend/src/components/common/ErrorBoundary.tsx
-// Version: 1.1.0
-// Fixed TypeScript error with fallback prop type definition
+// Version: 2.0.0
+// Fixed TypeScript error with fallback prop type - separated function and ReactNode fallbacks
 
 import React, { Component, ReactNode, ErrorInfo } from 'react'
 
-// Type for fallback prop that can be ReactNode or function
-type FallbackType = ReactNode | ((error: Error, errorInfo: ErrorInfo) => ReactNode)
-
-// Props interface for ErrorBoundary component
+// Props interface for ErrorBoundary component with proper type separation
 interface ErrorBoundaryProps {
   children: ReactNode
-  fallback?: FallbackType
+  // Static fallback UI as ReactNode
+  fallback?: ReactNode
+  // Function-based fallback that receives error details
+  fallbackRender?: (error: Error, errorInfo: ErrorInfo) => ReactNode
+  // Error callback for logging/reporting
   onError?: (error: Error, errorInfo: ErrorInfo) => void
 }
 
@@ -59,23 +60,24 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render(): ReactNode {
     // If an error occurred, render fallback UI
     if (this.state.hasError && this.state.error) {
-      const { fallback } = this.props
+      const { fallback, fallbackRender } = this.props
       const { error, errorInfo } = this.state
 
-      // If fallback is a function, call it with error details
-      if (typeof fallback === 'function' && errorInfo) {
-        return fallback(error, errorInfo)
+      // If fallbackRender function is provided, call it with error details
+      if (fallbackRender && errorInfo) {
+        return fallbackRender(error, errorInfo)
       }
 
-      // If fallback is provided as ReactNode, render it
+      // If static fallback ReactNode is provided, render it
       if (fallback) {
         return fallback
       }
 
-      // Default fallback UI
+      // Default fallback UI with semantic HTML
       return (
-        <div role="alert">
+        <div role="alert" aria-live="assertive">
           <h2>Something went wrong</h2>
+          <p>We apologize for the inconvenience. Please try refreshing the page.</p>
         </div>
       )
     }
@@ -85,6 +87,34 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
+// Props interface for ErrorBoundaryWrapper component
+interface ErrorBoundaryWrapperProps {
+  children: ReactNode
+  fallback?: ReactNode
+  fallbackRender?: (error: Error, errorInfo: ErrorInfo) => ReactNode
+  onError?: (error: Error, errorInfo: ErrorInfo) => void
+}
+
+// Wrapper component for ErrorBoundary with convenient defaults
+export function ErrorBoundaryWrapper({ 
+  children, 
+  fallback, 
+  fallbackRender,
+  onError 
+}: ErrorBoundaryWrapperProps): ReactNode {
+  return (
+    <ErrorBoundary
+      fallback={fallback}
+      fallbackRender={fallbackRender}
+      onError={onError}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}
+
+export default ErrorBoundary
+
 // frontend/src/components/common/ErrorBoundary.tsx
-// Version: 1.0.0
-// Initial ErrorBoundary component implementation
+// Version: 2.0.0
+// Fixed TypeScript error with fallback prop type - separated function and ReactNode fallbacks
