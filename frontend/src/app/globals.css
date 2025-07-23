@@ -3,9 +3,7 @@
 /* Version: 1.1.0 - Fixed Tailwind import and added auth form styles */
 
 /* Import Tailwind CSS framework - FIXED: Use proper directives */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* === CUSTOM PROPERTIES === */
 :root {
