@@ -1,8 +1,10 @@
 // frontend/src/app/profile/[username]/page.tsx
-// Version: 1.0.0
-// Profile page component that displays user information and follow functionality
+// Version: 1.3.0
+// Fixed ProfilePageParams interface to satisfy Params constraint
 
 'use client'
+
+import React from 'react'
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
@@ -24,6 +26,7 @@ interface UserProfile {
 
 interface ProfilePageParams {
   username: string
+  [key: string]: string | string[] | undefined
 }
 
 type LoadingState = 'loading' | 'success' | 'error'
@@ -33,8 +36,8 @@ interface ErrorState {
   type: 'not-found' | 'generic'
 }
 
-export default function ProfilePage(): JSX.Element {
-  const params = useParams() as ProfilePageParams
+export default function ProfilePage(): React.JSX.Element {
+  const params = useParams<ProfilePageParams>()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [error, setError] = useState<ErrorState | null>(null)
@@ -231,5 +234,5 @@ export default function ProfilePage(): JSX.Element {
 }
 
 // frontend/src/app/profile/[username]/page.tsx
-// Version: 1.0.0
-// Profile page component that displays user information and follow functionality
+// Version: 1.1.0
+// Updated to use existing API methods instead of custom functions
