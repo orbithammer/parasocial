@@ -296,7 +296,7 @@ export default function HomePage() {
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-16">
         <div className="container-lg py-8">
           <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-            <p>© 2024 ParaSocial. Connecting creators with the fediverse.</p>
+            <p>© 2025 ParaSocial. Connecting creators with the fediverse.</p>
           </div>
         </div>
       </footer>
