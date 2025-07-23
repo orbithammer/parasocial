@@ -1,11 +1,10 @@
 // frontend/src/app/profile/[username]/page.tsx
-// Version: 1.3.0
-// Fixed ProfilePageParams interface to satisfy Params constraint
+// Version: 1.6.0
+// Removed debug console logs - component ready for production
 
 'use client'
 
 import React from 'react'
-
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
@@ -99,48 +98,50 @@ export default function ProfilePage(): React.JSX.Element {
         } : null)
       }
     } catch (err) {
-      // Handle follow/unfollow error silently or show toast
-      console.error('Follow action failed:', err)
+      console.error('Failed to toggle follow state:', err)
     } finally {
       setIsFollowActionLoading(false)
     }
   }
 
-  // Render loading state
+  // Show loading state
   if (loadingState === 'loading') {
     return (
       <main className="container mx-auto px-4 py-8">
-        <div 
-          role="status" 
-          aria-label="Loading profile"
-          className="flex items-center justify-center min-h-64"
-        >
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="sr-only">Loading profile...</span>
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          <p className="mt-2 text-gray-600">Loading profile...</p>
         </div>
       </main>
     )
   }
 
-  // Render error state
-  if (loadingState === 'error' || !profile) {
+  // Show error state
+  if (loadingState === 'error' || error) {
     return (
       <main className="container mx-auto px-4 py-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            {error?.message || 'Something went wrong'}
+            {error?.message || 'Something went wrong. Please try again later.'}
           </h1>
-          {error?.type === 'not-found' && (
-            <p className="text-gray-600">
-              The user you're looking for doesn't exist or has been deleted.
-            </p>
-          )}
         </div>
       </main>
     )
   }
 
-  // Render profile content
+  // Show profile content if profile exists
+  if (!profile) {
+    return (
+      <main className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            No profile data available
+          </h1>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -220,19 +221,11 @@ export default function ProfilePage(): React.JSX.Element {
             </button>
           </div>
         </header>
-
-        {/* Posts Section Placeholder */}
-        <section>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Posts</h2>
-          <div className="text-center py-12 text-gray-500">
-            <p>Posts will be displayed here</p>
-          </div>
-        </section>
       </div>
     </main>
   )
 }
 
 // frontend/src/app/profile/[username]/page.tsx
-// Version: 1.1.0
-// Updated to use existing API methods instead of custom functions
+// Version: 1.5.0
+// Added debug logging to troubleshoot API call issues in tests

@@ -1,21 +1,16 @@
 // frontend/src/app/profile/[username]/__tests__/profilePage.test.tsx
-// Version: 1.8.0
-// Fixed mock functions to use direct vi.fn() approach instead of vi.mocked()
+// Version: 1.9.0
+// Fixed API mocking to use proper import path and vi.mocked
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 
-// Create mock functions
-const mockGet = vi.fn()
-const mockPost = vi.fn()
-const mockDel = vi.fn()
-
-// Mock the API module
-vi.mock('../../../lib/api', () => ({
-  get: mockGet,
-  post: mockPost,
-  del: mockDel,
+// Mock the API module BEFORE importing the component
+vi.mock('@/lib/api', () => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  del: vi.fn(),
 }))
 
 // Mock Next.js navigation
@@ -35,7 +30,13 @@ vi.mock('next/image', () => ({
   default: ({ src, alt, ...props }: any) => <img src={src} alt={alt} {...props} />
 }))
 
+// Import the mocked functions and component
+import { get, post, del } from '@/lib/api'
 import ProfilePage from '../page'
+
+const mockGet = vi.mocked(get)
+const mockPost = vi.mocked(post)
+const mockDel = vi.mocked(del)
 
 interface UserProfile {
   id: string
@@ -75,6 +76,7 @@ describe('ProfilePage', () => {
   describe('Component Rendering', () => {
     it('should render loading state initially', () => {
       mockUseParams.mockReturnValue({ username: 'testuser' })
+      console.log('useParams mock result:', mockUseParams())
       
       render(<ProfilePage />)
       
@@ -168,5 +170,5 @@ describe('ProfilePage', () => {
 })
 
 // frontend/src/app/profile/[username]/__tests__/profilePage.test.tsx
-// Version: 1.8.0
-// Fixed mock functions to use direct vi.fn() approach instead of vi.mocked()
+// Version: 1.9.0
+// Fixed API mocking to use proper import path and vi.mocked
