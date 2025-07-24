@@ -1,10 +1,10 @@
 // frontend/src/app/page.tsx
 // Home page component displaying the public discovery feed
-// Version: 1.2.0 - Fixed text content to match test expectations
+// Version: 1.3.0 - Added placeholder avatar for failed image loads
 
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 
 // Type definitions for the post data structure
 interface Author {
@@ -95,12 +95,51 @@ function formatFollowerCount(count: number): string {
   return count.toString()
 }
 
+// Utility function to generate initials from display name
+function getInitials(displayName: string): string {
+  return displayName
+    .split(' ')
+    .map(name => name.charAt(0))
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+// Utility function to generate a background color from username
+function getAvatarBackgroundColor(username: string): string {
+  const colors = [
+    'bg-blue-500',
+    'bg-purple-500',
+    'bg-pink-500',
+    'bg-red-500',
+    'bg-orange-500',
+    'bg-yellow-500',
+    'bg-green-500',
+    'bg-teal-500',
+    'bg-cyan-500',
+    'bg-indigo-500'
+  ]
+  
+  const hash = username.split('').reduce((acc, char) => {
+    return char.charCodeAt(0) + ((acc << 5) - acc)
+  }, 0)
+  
+  return colors[Math.abs(hash) % colors.length]
+}
+
 /**
  * Individual post card component
  * @param post - Post data to display
  * @returns JSX element for a single post card
  */
 function PostCard({ post }: { post: Post }) {
+  const [avatarLoadError, setAvatarLoadError] = useState<boolean>(false)
+
+  // Handle avatar image load error
+  const handleAvatarError = () => {
+    setAvatarLoadError(true)
+  }
+
   return (
     <article className="group relative bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl hover:shadow-blue-500/10 dark:hover:shadow-blue-400/10 transition-all duration-500 hover:-translate-y-1 hover:border-blue-200/50 dark:hover:border-blue-700/50">
       {/* Hover gradient overlay */}
@@ -111,12 +150,23 @@ function PostCard({ post }: { post: Post }) {
         {/* Avatar with glow effect */}
         <div className="flex-shrink-0 relative">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-purple-600 rounded-full opacity-0 group-hover:opacity-30 blur-md transition-opacity duration-500" />
-          <img
-            src={post.author.avatar}
-            alt={`${post.author.displayName} avatar`}
-            className="relative w-14 h-14 rounded-full bg-gray-200 border-3 border-white dark:border-gray-700 shadow-lg ring-2 ring-gray-100 dark:ring-gray-600 group-hover:ring-blue-200 dark:group-hover:ring-blue-700 transition-all duration-300"
-            loading="lazy"
-          />
+          {!avatarLoadError ? (
+            <img
+              src={post.author.avatar}
+              alt={`${post.author.displayName} avatar`}
+              className="relative w-14 h-14 rounded-full bg-gray-200 border-3 border-white dark:border-gray-700 shadow-lg ring-2 ring-gray-100 dark:ring-gray-600 group-hover:ring-blue-200 dark:group-hover:ring-blue-700 transition-all duration-300"
+              loading="lazy"
+              onError={handleAvatarError}
+            />
+          ) : (
+            <div 
+              className={`relative w-14 h-14 rounded-full ${getAvatarBackgroundColor(post.author.username)} border-3 border-white dark:border-gray-700 shadow-lg ring-2 ring-gray-100 dark:ring-gray-600 group-hover:ring-blue-200 dark:group-hover:ring-blue-700 transition-all duration-300 flex items-center justify-center`}
+            >
+              <span className="text-white font-bold text-lg">
+                {getInitials(post.author.displayName)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Author info */}
@@ -347,4 +397,4 @@ export default function HomePage() {
 }
 
 // frontend/src/app/page.tsx
-// Version: 1.2.0 - Fixed text content to match test expectations
+// Version: 1.3.0 - Added placeholder avatar for failed image loads
