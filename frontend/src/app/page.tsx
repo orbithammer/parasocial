@@ -146,7 +146,7 @@ function PostCard({ post }: { post: Post }) {
       <div className="absolute inset-0 bg-gradient-to-br from-blue-50/0 via-purple-50/0 to-pink-50/0 group-hover:from-blue-50/20 group-hover:via-purple-50/10 group-hover:to-pink-50/20 dark:group-hover:from-blue-900/10 dark:group-hover:via-purple-900/5 dark:group-hover:to-pink-900/10 rounded-2xl transition-all duration-500 pointer-events-none" />
 
       {/* Post header */}
-      <header className="relative flex items-start gap-4 mb-6">
+      <header className="relative flex items-start gap-4">
         {/* Avatar with glow effect */}
         <div className="flex-shrink-0 relative">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-purple-600 rounded-full opacity-0 group-hover:opacity-30 blur-md transition-opacity duration-500" />
@@ -170,8 +170,8 @@ function PostCard({ post }: { post: Post }) {
         </div>
 
         {/* Author info */}
-        <div className="flex-grow min-w-0">
-          <div className="flex items-center gap-3 flex-wrap mb-2">
+        <div className="flex-grow min-w-0 mb-1">
+          <div className="flex items-start gap-3 flex-wrap">
             <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg truncate group-hover:text-blue-900 dark:group-hover:text-blue-100 transition-colors duration-300">
               {post.author.displayName}
             </h3>
@@ -195,7 +195,7 @@ function PostCard({ post }: { post: Post }) {
           </div>
 
           {/* Meta information */}
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 -mt-1">
             <span>@{post.author.username}</span>
             <span>·</span>
             <time 
