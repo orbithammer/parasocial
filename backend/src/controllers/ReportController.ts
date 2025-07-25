@@ -1,4 +1,5 @@
 // backend/src/controllers/ReportController.ts
+/// <reference path="../types/express.d.ts" />
 // Version: 2.3.0 - Fixed final failing test
 // Changed: Corrected error message from "Invalid status value" to "Invalid status" to match test expectations
 

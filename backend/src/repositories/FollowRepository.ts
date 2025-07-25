@@ -6,12 +6,12 @@ import { PrismaClient } from '@prisma/client'
 interface FollowCreateData {
   followerId: string    // Required - either local user ID or external actor ID
   followedId: string    // Required - always a ParaSocial user ID
-  actorId?: string | null // Optional - ActivityPub actor URI for federation
+  actorId?: string | null | undefined // Optional - ActivityPub actor URI for federation
 }
 
 interface PaginationOptions {
-  offset?: number
-  limit?: number
+  offset?: number | undefined
+  limit?: number | undefined
 }
 
 interface FollowStats {
@@ -398,7 +398,7 @@ export class FollowRepository {
    * @param options - Page-based pagination options
    * @returns Promise<Array> Array of follow relationships
    */
-  async getFollowers(userId: string, options: { page?: number; limit?: number } = {}) {
+  async getFollowers(userId: string, options: { page?: number; limit?: number | undefined } = {}) {
     const page = Math.max(1, options.page || 1)
     const limit = Math.max(1, Math.min(100, options.limit || 20))
     const offset = (page - 1) * limit

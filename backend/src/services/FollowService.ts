@@ -11,7 +11,7 @@ import { UserRepository } from '../repositories/UserRepository'
 interface ValidationResult<T> {
   success: boolean
   data?: T
-  error?: z.ZodError
+  error?: z.ZodError | undefined
 }
 
 /**
@@ -20,7 +20,7 @@ interface ValidationResult<T> {
 interface FollowRequestData {
   followerId: string
   followedId: string
-  actorId?: string | null
+  actorId?: string | null | undefined
 }
 
 /**
@@ -35,8 +35,8 @@ interface UnfollowRequestData {
  * Pagination options interface
  */
 interface PaginationOptions {
-  offset?: number
-  limit?: number
+  offset?: number | undefined
+  limit?: number | undefined
 }
 
 /**

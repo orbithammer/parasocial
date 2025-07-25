@@ -1,9 +1,14 @@
 // backend\src\routes\auth.ts
-// Version: 1.4.0
-// Fixed unused parameter warnings by prefixing with underscore
-
+// Version: 1.6.0
+// Updated to accept dependencies via dependency injection pattern
 import { Router, Request, Response, RequestHandler } from 'express'
 import rateLimit from 'express-rate-limit'
+
+// Define the interface for auth router dependencies
+interface AuthRouterDependencies {
+  authController: any
+  authMiddleware: any
+}
 
 // Rate limiter configuration for authentication endpoints
 const authRateLimit = rateLimit({
@@ -27,11 +32,6 @@ const authRateLimit = rateLimit({
   }
 })
 
-const router = Router()
-
-// Apply rate limiting to all auth routes
-router.use(authRateLimit)
-
 // Login endpoint with proper Express RequestHandler typing
 const loginHandler: RequestHandler = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -54,8 +54,23 @@ const registerHandler: RequestHandler = async (_req: Request, res: Response): Pr
   }
 }
 
-// Route definitions with properly typed handlers
-router.post('/login', loginHandler)
-router.post('/register', registerHandler)
+// Export function to create auth router with dependencies
+export const createAuthRouter = (_dependencies: AuthRouterDependencies): Router => {
+  const router = Router()
+  
+  // Apply rate limiting to all auth routes
+  router.use(authRateLimit)
+  
+  // Route definitions with properly typed handlers
+  // Note: Currently using placeholder handlers, but dependencies are available
+  router.post('/login', loginHandler)
+  router.post('/register', registerHandler)
+  
+  return router
+}
 
-export default router
+// Default export for compatibility
+export default createAuthRouter
+// backend\src\routes\auth.ts
+// Version: 1.6.0
+// Updated to accept dependencies via dependency injection pattern

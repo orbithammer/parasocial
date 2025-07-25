@@ -39,7 +39,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/globalError'
 // ============================================================================
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env["PORT"] || 3001
 
 // Basic middleware
 app.use(cors())
@@ -79,7 +79,7 @@ const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 // ============================================================================
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -138,7 +138,7 @@ app.use(globalErrorHandler)
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`)
   console.log(`📚 API Documentation: http://localhost:${PORT}/health`)
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`🔧 Environment: ${process.env["NODE_ENV"] || 'development'}`)
   console.log('✅ Routes mounted:')
   console.log('   - /auth/* (authentication)')
   console.log('   - /users/* (user management)')  

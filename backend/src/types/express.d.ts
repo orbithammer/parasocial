@@ -26,4 +26,4 @@ declare global {
  * Export statement to make this file a module
  * Required for global declaration augmentation to work
  */
-export {}
+export {}export {}

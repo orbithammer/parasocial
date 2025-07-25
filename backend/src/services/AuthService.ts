@@ -11,7 +11,7 @@ export interface User {
   id: string
   email: string
   username: string
-  passwordHash?: string
+  passwordHash?: string | undefined
   displayName?: string
   bio?: string | null
   avatar?: string | null
@@ -21,7 +21,7 @@ export interface User {
   role?: UserRole
   createdAt?: Date
   updatedAt?: Date
-  isActive?: boolean
+  isActive?: boolean | undefined
 }
 
 export interface CreateUserData {

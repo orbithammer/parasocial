@@ -70,7 +70,7 @@ export function createAuthMiddleware(authService: AuthService) {
  * Similar to auth middleware but doesn't fail if no token is provided
  */
 export function createOptionalAuthMiddleware(authService: AuthService) {
-  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> => {
     try {
       const authHeader = req.headers.authorization
       const token = authService.extractTokenFromHeader(authHeader || '')
