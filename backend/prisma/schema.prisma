@@ -1,6 +1,6 @@
 // backend/prisma/schema.prisma
-// Version: 2.4.0 - Fixed Follow model field names to match repository code
-// Changed: followingId → followedId to match repository implementation
+// Version: 2.5.0 - Added Media model and relation to Post
+// Changed: Added Media model, media relation to Post model
 
 generator client {
   provider = "prisma-client-js"
@@ -89,10 +89,33 @@ model Post {
   authorId       String
   author         User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   
+  // Media attachments relation
+  media          Media[]   @relation("PostMedia")
+  
   // Report relations - posts can be reported
   reports        Report[]  @relation("ReportedPost")
   
   @@map("posts")
+}
+
+// Media attachments for posts (images, videos, etc.)
+model Media {
+  id        String   @id @default(cuid())
+  filename  String   // Original filename
+  url       String   // Storage URL (S3, CDN, etc.)
+  mimeType  String   // MIME type (image/jpeg, video/mp4, etc.)
+  altText   String?  // Accessibility alt text
+  width     Int?     // Image/video width in pixels
+  height    Int?     // Image/video height in pixels
+  size      Int?     // File size in bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  postId    String
+  post      Post     @relation("PostMedia", fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@map("media")
 }
 
 // Follow relationships between users
@@ -167,4 +190,4 @@ model Report {
 }
 
 // backend/prisma/schema.prisma
-// Version: 2.4.0 - Fixed Follow model field names to match repository code
+// Version: 2.5.0 - Added Media model and relation to Post

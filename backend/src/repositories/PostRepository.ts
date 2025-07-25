@@ -1,6 +1,6 @@
-// backend/src/repositories/PostRepository.ts - Version 5.3.0
+// backend/src/repositories/PostRepository.ts - Version 5.3.1
 // Fixed to match test expectations: proper defaults, missing methods, correct query patterns
-// Changed: Added missing methods, fixed findByAuthor defaults, proper update/delete behavior
+// Changed: Fixed findReadyToPublish method to include media and _count relations
 
 import { PrismaClient } from '@prisma/client'
 
@@ -422,10 +422,26 @@ export class PostRepository {
             isVerified: true,
             verificationTier: true
           }
+        },
+        media: {
+          select: {
+            id: true,
+            filename: true,
+            url: true,
+            mimeType: true,
+            altText: true,
+            width: true,
+            height: true
+          }
+        },
+        _count: {
+          select: {
+            media: true
+          }
         }
       },
       orderBy: { scheduledFor: 'asc' }
-    }) as PostWithRelations[]
+    })
   }
 
   /**
@@ -713,3 +729,5 @@ export class PostRepository {
     return post !== null
   }
 }
+
+// backend/src/repositories/PostRepository.ts - Version 5.3.1

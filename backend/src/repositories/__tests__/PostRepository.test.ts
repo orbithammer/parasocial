@@ -1,5 +1,6 @@
-// backend/tests/repositories/PostRepository.test.ts
+// backend/tests/repositories/PostRepository.test.ts - Version 1.1.0
 // Unit tests for PostRepository database operations
+// Changed: Updated findReadyToPublish test to expect media and _count relations
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PostRepository } from '../PostRepository'
@@ -450,6 +451,22 @@ describe('PostRepository', () => {
               isVerified: true,
               verificationTier: true
             }
+          },
+          media: {
+            select: {
+              id: true,
+              filename: true,
+              url: true,
+              mimeType: true,
+              altText: true,
+              width: true,
+              height: true
+            }
+          },
+          _count: {
+            select: {
+              media: true
+            }
           }
         },
         orderBy: { scheduledFor: 'asc' }
@@ -759,3 +776,5 @@ describe('PostRepository', () => {
     })
   })
 })
+
+// backend/tests/repositories/PostRepository.test.ts - Version 1.1.0
