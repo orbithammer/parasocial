@@ -1,6 +1,6 @@
 // Path: backend/src/routes/config.ts
-// Version: 1.2.0
-// Updated to match project structure - simple router export
+// Version: 1.1.2
+// Fixed unused parameter warning
 
 import { Request, Response, Router } from 'express'
 
@@ -21,13 +21,13 @@ interface AppConfig {
 }
 
 // Create Express router
-const configRouter = Router()
+const router = Router()
 
 /**
- * GET /config
+ * GET /api/config
  * Returns application configuration data
  */
-configRouter.get('/', async (_req: Request, res: Response): Promise<void> => {
+router.get('/', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Define the application configuration
     const config: AppConfig = {
@@ -62,9 +62,8 @@ configRouter.get('/', async (_req: Request, res: Response): Promise<void> => {
   }
 })
 
-// Export the router as default
-export default configRouter
+export default router
 
 // Path: backend/src/routes/config.ts
-// Version: 1.2.0
-// Updated to match project structure - simple router export
+// Version: 1.1.2
+// Fixed unused parameter warning

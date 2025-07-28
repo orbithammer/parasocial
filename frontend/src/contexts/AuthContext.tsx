@@ -5,7 +5,7 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { useRouter } from 'next/router'
+import { useRouter } from 'next/navigation'
 
 // User type definition
 export interface User {

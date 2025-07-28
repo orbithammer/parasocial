@@ -1,9 +1,10 @@
 // frontend/src/app/layout.tsx
-// Root layout component for ParaSocial Next.js app - provides HTML document structure, metadata, and global styles
-// Version: 1.1.0 - Fixed HTML structure to match test requirements
+// Version: 1.2.0
+// Updated: Added AuthProvider wrapper to fix 500 error and enable authentication context
 
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { AuthProvider } from '@/contexts/AuthContext'
 import './globals.css'
 
 // Load Inter font with Latin subset for optimal performance
@@ -111,17 +112,20 @@ export default function RootLayout({
           Skip to main content
         </a>
         
-        {/* Main application container */}
-        <div id="app-root" className="relative min-h-screen">
-          {/* Navigation will be added in future iterations */}
-          
-          {/* Main content area with semantic HTML */}
-          <main id="main-content" className="relative">
-            {children}
-          </main>
-          
-          {/* Footer will be added in future iterations */}
-        </div>
+        {/* Wrap entire app with AuthProvider for authentication context */}
+        <AuthProvider>
+          {/* Main application container */}
+          <div id="app-root" className="relative min-h-screen">
+            {/* Navigation will be added in future iterations */}
+            
+            {/* Main content area with semantic HTML */}
+            <main id="main-content" className="relative">
+              {children}
+            </main>
+            
+            {/* Footer will be added in future iterations */}
+          </div>
+        </AuthProvider>
         
         {/* Portal root for modals and overlays */}
         <div id="modal-root" />
@@ -131,4 +135,5 @@ export default function RootLayout({
 }
 
 // frontend/src/app/layout.tsx
-// Version: 1.1.0 - Fixed HTML structure to match test requirements
+// Version: 1.2.0
+// Updated: Added AuthProvider wrapper to fix 500 error and enable authentication context
