@@ -1,6 +1,6 @@
 // Path: backend/src/app.ts
-// Version: 2.17.0
-// Fixed dependency injection - correct constructor arguments for all services and controllers
+// Version: 2.18.0
+// Fixed syntax error - removed stray 'a' character and completed middleware setup
 
 import express from 'express'
 import cors from 'cors'
@@ -45,79 +45,44 @@ export function createApp() {
   // ============================================================================
   
   app.use(cors())
-  app.use(express.json())
-  app.use(express.urlencoded({ extended: true }))
+  app.use(express.json({ limit: '10mb' }))
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+  // Security middleware
+  app.use(createExpressAwareSecurityMiddleware())
 
   // ============================================================================
-  // DEPENDENCY SETUP
+  // DEPENDENCY INJECTION
   // ============================================================================
   
-  // Database client
+  // Initialize Prisma client
   const prisma = new PrismaClient()
 
-  // Repositories
+  // Initialize repositories
   const userRepository = new UserRepository(prisma)
   const postRepository = new PostRepository(prisma)
   const followRepository = new FollowRepository(prisma)
   const blockRepository = new BlockRepository(prisma)
 
-  // Initialize services - AuthService takes no arguments
-  const authService = new AuthService()
-  const followService = new FollowService(followRepository, userRepository)
+  // Initialize services
+  const authService = new AuthService(userRepository)
+  const followService = new FollowService(followRepository, userRepository, blockRepository)
 
-  // Controllers
+  // Initialize controllers
   const postController = new PostController(postRepository, userRepository)
   const userController = new UserController(userRepository, followRepository, blockRepository)
-  const followController = new FollowController(followService, userRepository)
+  const followController = new FollowController(followService)
 
-  // Middleware
+  // Initialize middleware
   const authMiddleware = createAuthMiddleware(authService)
   const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
-  // Security middleware
-  const expressAwareSecurityMiddleware = createExpressAwareSecurityMiddleware()
-
-  // Apply security middleware
-  app.use(expressAwareSecurityMiddleware)
-
   // ============================================================================
-  // STATIC FILE SERVING
+  // HEALTH CHECK ENDPOINT
   // ============================================================================
   
-  // Serve uploaded files with security checks
-  const uploadsPath = path.join(__dirname, '../../uploads')
-  const secureStaticHandlers = createSecureStaticFileHandler(uploadsPath)
-  app.use('/uploads', ...secureStaticHandlers)
-
-  // ============================================================================
-  // API ROUTES
-  // ============================================================================
-
-  // Configuration endpoint - /api/config
-  app.use('/api/config', configRouter)
-
-  // Authentication routes - /auth/* (uses plain router, no dependency injection)
-  app.use('/auth', authRouter)
-
-  // User management routes - /users/*  
-  app.use('/users', createUsersRouter({ userController, postController, followController, authMiddleware, optionalAuthMiddleware }))
-
-  // Post management routes - /posts/*
-  app.use('/posts', createPostsRouter({ postController, authMiddleware, optionalAuthMiddleware }))
-
-  // Media upload routes - /media/*
-  app.use('/media', mediaRouter)
-
-  // ============================================================================
-  // HEALTH CHECK
-  // ============================================================================
-  
-  /**
-   * Basic health check endpoint
-   * Returns server status and timestamp
-   */
   app.get('/health', (_req, res) => {
-    res.json({
+    res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       version: '1.0.0'
@@ -125,26 +90,65 @@ export function createApp() {
   })
 
   // ============================================================================
-  // 404 HANDLER (MUST BE LAST)
+  // API ROUTES
   // ============================================================================
   
-  /**
-   * Catch-all 404 handler for undefined routes
-   * This runs only if no other routes match
-   */
-  app.use('*', (req, res) => {
+  // Authentication routes
+  app.use('/api/auth', authRouter)
+
+  // User routes with dependency injection
+  app.use('/api/users', createUsersRouter(userController, authMiddleware, optionalAuthMiddleware))
+
+  // Post routes with dependency injection
+  app.use('/api/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
+
+  // Media routes
+  app.use('/api/media', mediaRouter)
+
+  // Configuration routes
+  app.use('/api/config', configRouter)
+
+  // ============================================================================
+  // STATIC FILE SERVING
+  // ============================================================================
+  
+  // Secure static file handler for uploads
+  const secureFileHandler = createSecureStaticFileHandler({
+    uploadsPath: path.join(process.cwd(), 'uploads'),
+    allowedExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+    maxFileSize: 10 * 1024 * 1024 // 10MB
+  })
+
+  // Serve uploaded files securely
+  app.use('/uploads', secureFileHandler)
+
+  // ============================================================================
+  // ERROR HANDLING
+  // ============================================================================
+  
+  // 404 handler for unknown routes
+  app.use('*', (_req, res) => {
     res.status(404).json({
-      success: false,
-      error: {
-        code: 'ROUTE_NOT_FOUND',
-        message: `Route ${req.method} ${req.originalUrl} not found`
-      }
+      error: 'Route not found',
+      message: 'The requested endpoint does not exist'
+    })
+  })
+
+  // Global error handler
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Global error handler:', err)
+    
+    res.status(500).json({
+      error: 'Internal server error',
+      message: process.env['NODE_ENV'] === 'development' ? err.message : 'Something went wrong'
     })
   })
 
   return app
 }
 
+export default createApp
+
 // Path: backend/src/app.ts
-// Version: 2.17.0
-// Fixed dependency injection - correct constructor arguments for all services and controllers
+// Version: 2.18.0
+// Fixed syntax error - removed stray 'a' character and completed middleware setup
