@@ -1,6 +1,12 @@
-// Path: backend/src/app.ts
-// Version: 2.18.0
-// Fixed syntax error - removed stray 'a' character and completed middleware setup
+// backend/src/app.ts
+// Version: 2.23.0
+// Fixed AuthService constructor call - removed userRepository parameter
+// Fixed FollowService constructor call - removed blockRepository parameter  
+// Fixed FollowController constructor call - added userRepository parameter
+// Fixed auth router import and usage - using createAuthRouter function with dependencies
+// Fixed createUsersRouter and createPostsRouter calls - passing dependency objects
+// Added missing AuthController import and instantiation
+// Fixed createSecureStaticFileHandler call - passing string path instead of object
 
 import express from 'express'
 import cors from 'cors'
@@ -8,13 +14,14 @@ import path from 'path'
 import { PrismaClient } from '@prisma/client'
 
 // Import route creators
-import authRouter from './routes/auth'
+import { createAuthRouter } from './routes/auth'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
 import mediaRouter from './routes/media'
 import configRouter from './routes/config'
 
 // Import controllers
+import { AuthController } from './controllers/AuthController'
 import { PostController } from './controllers/PostController'
 import { UserController } from './controllers/UserController'
 import { FollowController } from './controllers/FollowController'
@@ -65,13 +72,14 @@ export function createApp() {
   const blockRepository = new BlockRepository(prisma)
 
   // Initialize services
-  const authService = new AuthService(userRepository)
-  const followService = new FollowService(followRepository, userRepository, blockRepository)
+  const authService = new AuthService() // Fixed: removed userRepository parameter
+  const followService = new FollowService(followRepository, userRepository) // Fixed: removed blockRepository parameter
 
   // Initialize controllers
+  const authController = new AuthController(authService, userRepository)
   const postController = new PostController(postRepository, userRepository)
   const userController = new UserController(userRepository, followRepository, blockRepository)
-  const followController = new FollowController(followService)
+  const followController = new FollowController(followService, userRepository) // Fixed: added userRepository parameter
 
   // Initialize middleware
   const authMiddleware = createAuthMiddleware(authService)
@@ -94,13 +102,26 @@ export function createApp() {
   // ============================================================================
   
   // Authentication routes
-  app.use('/api/auth', authRouter)
+  app.use('/api/auth', createAuthRouter({
+    authController,
+    authMiddleware
+  }))
 
   // User routes with dependency injection
-  app.use('/api/users', createUsersRouter(userController, authMiddleware, optionalAuthMiddleware))
+  app.use('/api/users', createUsersRouter({
+    userController,
+    postController, 
+    followController,
+    authMiddleware,
+    optionalAuthMiddleware
+  }))
 
   // Post routes with dependency injection
-  app.use('/api/posts', createPostsRouter(postController, authMiddleware, optionalAuthMiddleware))
+  app.use('/api/posts', createPostsRouter({
+    postController,
+    authMiddleware,
+    optionalAuthMiddleware
+  }))
 
   // Media routes
   app.use('/api/media', mediaRouter)
@@ -113,14 +134,11 @@ export function createApp() {
   // ============================================================================
   
   // Secure static file handler for uploads
-  const secureFileHandler = createSecureStaticFileHandler({
-    uploadsPath: path.join(process.cwd(), 'uploads'),
-    allowedExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
-    maxFileSize: 10 * 1024 * 1024 // 10MB
-  })
+  const uploadsPath = path.join(process.cwd(), 'uploads')
+  const secureFileHandler = createSecureStaticFileHandler(uploadsPath)
 
   // Serve uploaded files securely
-  app.use('/uploads', secureFileHandler)
+  app.use('/uploads', ...secureFileHandler)
 
   // ============================================================================
   // ERROR HANDLING
@@ -149,6 +167,12 @@ export function createApp() {
 
 export default createApp
 
-// Path: backend/src/app.ts
-// Version: 2.18.0
-// Fixed syntax error - removed stray 'a' character and completed middleware setup
+// backend/src/app.ts
+// Version: 2.23.0
+// Fixed AuthService constructor call - removed userRepository parameter
+// Fixed FollowService constructor call - removed blockRepository parameter  
+// Fixed FollowController constructor call - added userRepository parameter
+// Fixed auth router import and usage - using createAuthRouter function with dependencies
+// Fixed createUsersRouter and createPostsRouter calls - passing dependency objects
+// Added missing AuthController import and instantiation
+// Fixed createSecureStaticFileHandler call - passing string path instead of object
