@@ -1,6 +1,6 @@
-// backend/src/app.ts  
-// Version: 2.15.0 - Removed unused imports and variables
-// Changed: Removed unused createGlobalSecurityMiddleware, AuthController, and fixed unused req parameter
+// Path: backend/src/app.ts
+// Version: 2.17.0
+// Fixed dependency injection - correct constructor arguments for all services and controllers
 
 import express from 'express'
 import cors from 'cors'
@@ -12,6 +12,7 @@ import authRouter from './routes/auth'
 import { createPostsRouter } from './routes/posts'
 import { createUsersRouter } from './routes/users'
 import mediaRouter from './routes/media'
+import configRouter from './routes/config'
 
 // Import controllers
 import { PostController } from './controllers/PostController'
@@ -40,65 +41,21 @@ export function createApp() {
   const app = express()
 
   // ============================================================================
-  // GLOBAL SECURITY MIDDLEWARE (APPLIED FIRST)
+  // BASIC MIDDLEWARE
   // ============================================================================
   
-  /**
-   * Global security middleware catches path traversal attempts before route matching
-   * This is critical because Express route matching can miss traversal attempts
-   */
-  
-  app.use(createExpressAwareSecurityMiddleware())
-
-  // ============================================================================
-  // MIDDLEWARE SETUP
-  // ============================================================================
-
-  // Enable CORS for cross-origin requests
-  app.use(cors({
-    origin: process.env['FRONTEND_URL'] || 'http://localhost:3000',
-    credentials: true
-  }))
-
-  // Parse JSON bodies with size limit
-  app.use(express.json({ limit: '10mb' }))
-
-  // Parse URL-encoded bodies
+  app.use(cors())
+  app.use(express.json())
   app.use(express.urlencoded({ extended: true }))
 
   // ============================================================================
-  // STATIC FILE SERVING WITH SECURITY
+  // DEPENDENCY SETUP
   // ============================================================================
-
-  /**
-   * Serve uploaded media files from the uploads directory with comprehensive security
-   * Files accessible at /uploads/<filename>
-   * Includes local security (dotfiles) and static serving
-   * Global security (path traversal) is handled above
-   * FIXED: Apply secure static file handlers without spread syntax
-   */
-  const uploadsPath = path.join(process.cwd(), 'uploads')
   
-  // Apply secure static file handlers (without spread syntax to prevent iterator errors)
-  const secureHandler = createSecureStaticFileHandler(uploadsPath)
-  if (Array.isArray(secureHandler)) {
-    // If it returns an array, apply each middleware
-    secureHandler.forEach(middleware => {
-      app.use('/uploads', middleware)
-    })
-  } else {
-    // If it returns a single middleware function
-    app.use('/uploads', secureHandler)
-  }
-
-  // ============================================================================
-  // DEPENDENCY INJECTION SETUP
-  // ============================================================================
-
-  // Initialize Prisma client
+  // Database client
   const prisma = new PrismaClient()
 
-  // Initialize repositories
+  // Repositories
   const userRepository = new UserRepository(prisma)
   const postRepository = new PostRepository(prisma)
   const followRepository = new FollowRepository(prisma)
@@ -108,21 +65,36 @@ export function createApp() {
   const authService = new AuthService()
   const followService = new FollowService(followRepository, userRepository)
 
-  // Initialize controllers with CORRECT ARGUMENTS
+  // Controllers
   const postController = new PostController(postRepository, userRepository)
-  
-  // ✅ FIXED: UserController now receives all 3 required arguments
   const userController = new UserController(userRepository, followRepository, blockRepository)
-  
   const followController = new FollowController(followService, userRepository)
 
-  // ✅ FIXED: Create authentication middleware instances with AuthService (NOT UserRepository)
+  // Middleware
   const authMiddleware = createAuthMiddleware(authService)
   const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
+
+  // Security middleware
+  const expressAwareSecurityMiddleware = createExpressAwareSecurityMiddleware()
+
+  // Apply security middleware
+  app.use(expressAwareSecurityMiddleware)
+
+  // ============================================================================
+  // STATIC FILE SERVING
+  // ============================================================================
+  
+  // Serve uploaded files with security checks
+  const uploadsPath = path.join(__dirname, '../../uploads')
+  const secureStaticHandlers = createSecureStaticFileHandler(uploadsPath)
+  app.use('/uploads', ...secureStaticHandlers)
 
   // ============================================================================
   // API ROUTES
   // ============================================================================
+
+  // Configuration endpoint - /api/config
+  app.use('/api/config', configRouter)
 
   // Authentication routes - /auth/* (uses plain router, no dependency injection)
   app.use('/auth', authRouter)
@@ -173,5 +145,6 @@ export function createApp() {
   return app
 }
 
-// backend/src/app.ts  
-// Version: 2.15.0
+// Path: backend/src/app.ts
+// Version: 2.17.0
+// Fixed dependency injection - correct constructor arguments for all services and controllers

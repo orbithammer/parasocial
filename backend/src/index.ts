@@ -1,6 +1,6 @@
-// backend/src/index.ts
-// Version: 2.1.0 - Updated media router to use dependency injection pattern
-// Changed: Media router now uses dependency injection like other routes
+// Path: backend/src/index.ts
+// Version: 2.2.0
+// Added config router for /api/config endpoint
 
 import express from 'express'
 import cors from 'cors'
@@ -11,7 +11,8 @@ import { createAuthRouter } from './routes/auth'
 import { createUsersRouter } from './routes/users'
 import { createPostsRouter } from './routes/posts'
 import { createReportsRouter } from './routes/reports'
-import { createMediaRouter } from './routes/media' // UPDATED: Import factory function
+import { createMediaRouter } from './routes/media'
+import configRouter from './routes/config'
 
 // Import controllers
 import { AuthController } from './controllers/AuthController'
@@ -39,7 +40,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/globalError'
 // ============================================================================
 
 const app = express()
-const PORT = process.env["PORT"] || 3001
+const PORT = process.env['PORT'] || 3001
 
 // Basic middleware
 app.use(cors())
@@ -80,12 +81,15 @@ const optionalAuthMiddleware = createOptionalAuthMiddleware(authService)
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
-  res.json({ 
+  res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '2.1.0'
+    version: '2.2.0'
   })
 })
+
+// Configuration endpoint
+app.use('/api/config', configRouter)
 
 // Authentication routes
 app.use('/auth', createAuthRouter({
@@ -93,7 +97,7 @@ app.use('/auth', createAuthRouter({
   authMiddleware
 }))
 
-// User routes  
+// User routes
 app.use('/users', createUsersRouter({
   userController,
   postController,
@@ -109,7 +113,7 @@ app.use('/posts', createPostsRouter({
   optionalAuthMiddleware
 }))
 
-// Media upload routes - UPDATED: Now uses dependency injection
+// Media upload routes
 app.use('/media', createMediaRouter({
   authMiddleware
 }))
@@ -138,12 +142,17 @@ app.use(globalErrorHandler)
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`)
   console.log(`📚 API Documentation: http://localhost:${PORT}/health`)
-  console.log(`🔧 Environment: ${process.env["NODE_ENV"] || 'development'}`)
+  console.log(`🔧 Environment: ${process.env['NODE_ENV'] || 'development'}`)
   console.log('✅ Routes mounted:')
+  console.log('   - /api/config (application configuration)')
   console.log('   - /auth/* (authentication)')
-  console.log('   - /users/* (user management)')  
+  console.log('   - /users/* (user management)')
   console.log('   - /posts/* (post operations)')
   console.log('   - /media/* (file uploads)')
   console.log('   - /reports/* (content moderation)')
   console.log('✅ Rate limiting applied to all critical routes')
 })
+
+// Path: backend/src/index.ts
+// Version: 2.2.0
+// Added config router for /api/config endpoint
