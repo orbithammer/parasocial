@@ -1,6 +1,6 @@
 // frontend/src/lib/api.ts
-// Version: 1.0.0
-// API library implementation with type-safe HTTP methods and error handling
+// Version: 1.1.0
+// Updated: Added base URL configuration to connect to backend on port 3001
 
 // Base types for API responses and errors
 export interface ApiResponse<T = unknown> {
@@ -9,7 +9,7 @@ export interface ApiResponse<T = unknown> {
   message?: string
 }
 
-export interface ApiError extends Error {
+interface ApiErrorInterface extends Error {
   status: number
   code?: string
 }
@@ -21,7 +21,7 @@ export interface RequestOptions {
 }
 
 // Custom error class for API errors
-class ApiErrorClass extends Error implements ApiError {
+class ApiErrorClass extends Error implements ApiErrorInterface {
   status: number
   code?: string
 
@@ -32,6 +32,54 @@ class ApiErrorClass extends Error implements ApiError {
     this.code = code
   }
 }
+
+// ============================================================================
+// BASE URL CONFIGURATION
+// ============================================================================
+
+/**
+ * Get the base API URL from environment variables
+ * Falls back to localhost:3001 if not configured
+ */
+function getBaseUrl(): string {
+  // Use environment variable if available
+  if (typeof window !== 'undefined') {
+    // Client-side: use NEXT_PUBLIC_ prefixed variable
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  } else {
+    // Server-side: can use any environment variable
+    return process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  }
+}
+
+/**
+ * Base URL for all API requests
+ * Points to the backend server on port 3001
+ */
+const API_BASE_URL = getBaseUrl()
+
+/**
+ * Resolves a URL against the base API URL
+ * Handles both relative and absolute URLs correctly
+ * @param url - The URL to resolve (relative or absolute)
+ * @returns Complete URL for the API request
+ */
+function resolveUrl(url: string): string {
+  // If URL is already absolute (starts with http:// or https://), return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  
+  // If URL starts with '/', remove it to avoid double slashes
+  const cleanUrl = url.startsWith('/') ? url.slice(1) : url
+  
+  // Combine base URL with relative URL
+  return `${API_BASE_URL}/${cleanUrl}`
+}
+
+// ============================================================================
+// API RESPONSE AND ERROR HANDLING
+// ============================================================================
 
 /**
  * Creates standardized API response object
@@ -101,9 +149,13 @@ function createHeaders(options?: RequestOptions): Record<string, string> {
   return headers
 }
 
+// ============================================================================
+// CORE HTTP REQUEST FUNCTION
+// ============================================================================
+
 /**
- * Generic HTTP request function
- * @param url - Request URL
+ * Generic HTTP request function with base URL resolution
+ * @param url - Request URL (relative or absolute)
  * @param method - HTTP method
  * @param body - Request body (optional)
  * @param options - Request options
@@ -116,6 +168,9 @@ async function request<T>(
   options?: RequestOptions
 ): Promise<ApiResponse<T>> {
   try {
+    // Resolve URL against base API URL
+    const resolvedUrl = resolveUrl(url)
+    
     const config: RequestInit = {
       method,
       headers: createHeaders(options)
@@ -126,7 +181,7 @@ async function request<T>(
       config.body = JSON.stringify(body)
     }
 
-    const response = await fetch(url, config)
+    const response = await fetch(resolvedUrl, config)
 
     // Handle error responses
     if (!response.ok) {
@@ -153,9 +208,13 @@ async function request<T>(
   }
 }
 
+// ============================================================================
+// HTTP METHOD HELPERS
+// ============================================================================
+
 /**
  * Performs GET request
- * @param url - Request URL
+ * @param url - Request URL (relative or absolute)
  * @param options - Request options
  * @returns Promise with API response
  */
@@ -168,7 +227,7 @@ export async function get<T>(
 
 /**
  * Performs POST request
- * @param url - Request URL
+ * @param url - Request URL (relative or absolute)
  * @param data - Request body data
  * @param options - Request options
  * @returns Promise with API response
@@ -183,7 +242,7 @@ export async function post<TResponse, TRequest = unknown>(
 
 /**
  * Performs PUT request
- * @param url - Request URL
+ * @param url - Request URL (relative or absolute)
  * @param data - Request body data
  * @param options - Request options
  * @returns Promise with API response
@@ -198,7 +257,7 @@ export async function put<TResponse, TRequest = unknown>(
 
 /**
  * Performs PATCH request
- * @param url - Request URL
+ * @param url - Request URL (relative or absolute)
  * @param data - Request body data
  * @param options - Request options
  * @returns Promise with API response
@@ -213,7 +272,7 @@ export async function patch<TResponse, TRequest = unknown>(
 
 /**
  * Performs DELETE request
- * @param url - Request URL
+ * @param url - Request URL (relative or absolute)
  * @param options - Request options
  * @returns Promise with API response
  */
@@ -227,6 +286,13 @@ export async function del(
 // Export the delete function with standard name as well
 export { del as delete }
 
+// ============================================================================
+// UTILITY EXPORTS
+// ============================================================================
+
+// Export API error class (serves as both type and constructor)
+export { ApiErrorClass as ApiError }
+
 // frontend/src/lib/api.ts
-// Version: 1.0.0
-// API library implementation with type-safe HTTP methods and error handling
+// Version: 1.1.0
+// Updated: Added base URL configuration to connect to backend on port 3001
