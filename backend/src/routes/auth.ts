@@ -1,12 +1,16 @@
-// backend\src\routes\auth.ts
-// Version: 1.6.0
-// Updated to accept dependencies via dependency injection pattern
-import { Router, Request, Response, RequestHandler } from 'express'
+// backend/src/routes/auth.ts
+// Version: 2.0.0 
+// Fixed: Connected routes to actual AuthController methods instead of placeholder handlers
+// Fixed: Proper dependency injection pattern with AuthController
+// Fixed: Proper Express RequestHandler typing
+
+import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
+import { AuthController } from '../controllers/AuthController'
 
 // Define the interface for auth router dependencies
 interface AuthRouterDependencies {
-  authController: any
+  authController: AuthController
   authMiddleware: any
 }
 
@@ -23,7 +27,7 @@ const authRateLimit = rateLimit({
   // Skip successful requests to avoid penalizing legitimate users
   skipSuccessfulRequests: true,
   // Handle undefined IP by providing a key function
-  keyGenerator: (req: Request): string => {
+  keyGenerator: (req): string => {
     // Use req.ip if available, otherwise fall back to connection info
     return req.ip || 
            req.connection.remoteAddress || 
@@ -32,45 +36,65 @@ const authRateLimit = rateLimit({
   }
 })
 
-// Login endpoint with proper Express RequestHandler typing
-const loginHandler: RequestHandler = async (_req: Request, res: Response): Promise<void> => {
-  try {
-    // Login logic here
-    res.json({ success: true, message: 'Login successful' })
-  } catch (error) {
-    console.error('Login error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-}
-
-// Register endpoint with proper Express RequestHandler typing
-const registerHandler: RequestHandler = async (_req: Request, res: Response): Promise<void> => {
-  try {
-    // Registration logic here
-    res.json({ success: true, message: 'Registration successful' })
-  } catch (error) {
-    console.error('Registration error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-}
-
-// Export function to create auth router with dependencies
-export const createAuthRouter = (_dependencies: AuthRouterDependencies): Router => {
+/**
+ * Create auth router with dependencies injected
+ * Connects routes to actual AuthController methods
+ * @param dependencies - Object containing authController and authMiddleware
+ * @returns Configured Express router
+ */
+export const createAuthRouter = (dependencies: AuthRouterDependencies): Router => {
   const router = Router()
+  const { authController, authMiddleware } = dependencies
   
   // Apply rate limiting to all auth routes
   router.use(authRateLimit)
   
-  // Route definitions with properly typed handlers
-  // Note: Currently using placeholder handlers, but dependencies are available
-  router.post('/login', loginHandler)
-  router.post('/register', registerHandler)
+  /**
+   * POST /register
+   * Register a new user account
+   * Calls AuthController.register method
+   */
+  router.post('/register', (req, res) => {
+    authController.register(req, res)
+  })
+  
+  /**
+   * POST /login  
+   * Authenticate user and return JWT token
+   * Calls AuthController.login method
+   */
+  router.post('/login', (req, res) => {
+    authController.login(req, res)
+  })
+  
+  /**
+   * POST /logout
+   * Logout current user session
+   * Requires authentication
+   * Calls AuthController.logout method
+   */
+  router.post('/logout', authMiddleware, (req, res) => {
+    authController.logout(req, res)
+  })
+  
+  /**
+   * GET /me
+   * Get current authenticated user's profile
+   * Requires authentication
+   * Calls AuthController.getCurrentUser method
+   */
+  router.get('/me', authMiddleware, (req, res) => {
+    authController.getCurrentUser(req, res)
+  })
   
   return router
 }
 
 // Default export for compatibility
 export default createAuthRouter
-// backend\src\routes\auth.ts
-// Version: 1.6.0
-// Updated to accept dependencies via dependency injection pattern
+
+// backend/src/routes/auth.ts
+// Version: 2.0.0 
+// Fixed: Connected routes to actual AuthController methods instead of placeholder handlers
+// Fixed: Proper dependency injection pattern with AuthController
+// Fixed: Proper Express RequestHandler typing

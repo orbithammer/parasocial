@@ -24,7 +24,7 @@ export const UserSchemas = {
 
   // Login validation
   login: z.object({
-    email: z.string().email('Invalid email format'),
+    email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email format'),
     password: z.string().trim().min(1, 'Password is required')
   }),
 

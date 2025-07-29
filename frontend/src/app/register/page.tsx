@@ -1,6 +1,6 @@
 // frontend/src/app/register/page.tsx
 // Registration page using existing RegisterComponent
-// Version: 1.1.0 - Fixed server/client component issue
+// Version: 1.2.0 - Fixed API base URL to match backend routes at /api/auth
 
 'use client'
 
@@ -44,8 +44,12 @@ export default function RegisterPage() {
       <RegisterComponent 
         onRegisterSuccess={handleRegisterSuccess}
         onRegisterError={handleRegisterError}
-        apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api/v1'}
+        apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001'}
       />
     </main>
   )
 }
+
+// frontend/src/app/register/page.tsx
+// Registration page using existing RegisterComponent
+// Version: 1.2.0 - Fixed API base URL to match backend routes at /api/auth

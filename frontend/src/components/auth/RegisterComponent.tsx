@@ -1,3 +1,7 @@
+// frontend/src/components/auth/RegisterComponent.tsx
+// Version: 1.2.0
+// Fixed: Updated API base URL to match backend route mounting at /api/auth
+
 'use client'
 
 import { useState } from 'react'
@@ -63,7 +67,7 @@ interface RegisterComponentProps {
  * 
  * @param onRegisterSuccess - Callback fired when registration succeeds
  * @param onRegisterError - Callback fired when registration fails  
- * @param apiBaseUrl - Base URL for API calls (defaults to /api/v1)
+ * @param apiBaseUrl - Base URL for API calls (defaults to backend with /api prefix)
  */
 export default function RegisterComponent({ 
   onRegisterSuccess, 
@@ -87,7 +91,7 @@ export default function RegisterComponent({
   /**
    * Handle input field changes
    * Updates form state when user types in any field
-   * FIXED: Properly remove field errors instead of setting empty strings
+   * Removes field errors when user starts typing
    */
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
@@ -102,7 +106,7 @@ export default function RegisterComponent({
       setError(null)
     }
     
-    // FIXED: Remove field error entirely instead of setting empty string
+    // Remove field error entirely instead of setting empty string
     if (fieldErrors[name]) {
       setFieldErrors(prev => {
         const newErrors = { ...prev }
@@ -130,46 +134,45 @@ export default function RegisterComponent({
   }
 
   /**
- * Validate form fields client-side
- * Returns true if form is valid, false otherwise
- * FIXED: Complete validation with all required rules
- */
-const validateForm = (): boolean => {
-  const errors: Record<string, string> = {}
+   * Validate form fields client-side
+   * Returns true if form is valid, false otherwise
+   */
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
 
-  // Email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(formData.email)) {
-    errors.email = 'Please enter a valid email address'
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email)) {
+      errors.email = 'Please enter a valid email address'
+    }
+
+    // Username validation - check length first, then format
+    if (formData.username.length < 3) {
+      errors.username = 'Username must be at least 3 characters'
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      errors.username = 'Username can only contain letters, numbers, and underscores'
+    }
+
+    // Password validation - Complete priority-based validation
+    if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters'
+    } else if (!/(?=.*[a-z])/.test(formData.password)) {
+      errors.password = 'Password must contain at least one lowercase letter'
+    } else if (!/(?=.*[A-Z])/.test(formData.password)) {
+      errors.password = 'Password must contain at least one uppercase letter'
+    } else if (!/(?=.*\d)/.test(formData.password)) {
+      errors.password = 'Password must contain at least one number'
+    }
+
+    // Password confirmation validation
+    if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match'
+    }
+
+    // Set the errors object completely (this clears any previous errors)
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
   }
-
-  // Username validation - check length first, then format
-  if (formData.username.length < 3) {
-    errors.username = 'Username must be at least 3 characters'
-  } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-    errors.username = 'Username can only contain letters, numbers, and underscores'
-  }
-
-  // Password validation - FIXED: Complete priority-based validation
-  if (formData.password.length < 8) {
-    errors.password = 'Password must be at least 8 characters'
-  } else if (!/(?=.*[a-z])/.test(formData.password)) {
-    errors.password = 'Password must contain at least one lowercase letter'
-  } else if (!/(?=.*[A-Z])/.test(formData.password)) {
-    errors.password = 'Password must contain at least one uppercase letter'
-  } else if (!/(?=.*\d)/.test(formData.password)) {
-    errors.password = 'Password must contain at least one number'
-  }
-
-  // Password confirmation validation
-  if (formData.password !== formData.confirmPassword) {
-    errors.confirmPassword = 'Passwords do not match'
-  }
-
-  // FIXED: Set the errors object completely (this clears any previous errors)
-  setFieldErrors(errors)
-  return Object.keys(errors).length === 0
-}
 
   /**
    * Submit registration form to backend AuthController
@@ -198,7 +201,7 @@ const validateForm = (): boolean => {
         displayName: formData.displayName.trim() || formData.username
       }
 
-      // Call backend AuthController register endpoint
+      // Call backend AuthController register endpoint at /api/auth/register
       const response = await fetch(`${apiBaseUrl}/auth/register`, {
         method: 'POST',
         headers: {
@@ -232,194 +235,157 @@ const validateForm = (): boolean => {
     }
   }
 
-  /**
-   * Check if form is valid for submission
-   * FIXED: Check for actual error values, not just object keys
-   */
-  const isFormValid = 
-  !isLoading && (
-    formData.email.trim() !== '' &&
-    formData.username.trim() !== '' &&
-    formData.password.trim() !== '' &&
-    formData.confirmPassword.trim() !== '' &&
-    Object.keys(fieldErrors).length === 0
-  )
-
-  /**
-   * Get field error message for display
-   * FIXED: Return error only if it's not empty
-   */
-  const getFieldError = (fieldName: string): string | null => {
-    const error = fieldErrors[fieldName]
-    return error && error.trim() !== '' ? error : null
-  }
-
   return (
-    <section className="register-container">
-      <header className="register-header">
-        <h1>Create Account</h1>
-        <p>Join ParaSocial and start sharing your content</p>
-      </header>
+    <div className="register-container">
+      <div className="register-card">
+        <header className="register-header">
+          <h1>Create Account</h1>
+          <p>Join ParaSocial and start sharing your thoughts with the world</p>
+        </header>
 
-      <form onSubmit={handleSubmit} className="register-form" noValidate>
-        {/* Email input field */}
-        <div className="form-group">
-          <label htmlFor="email" className="form-label">
-            Email Address
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            className={`form-input ${getFieldError('email') ? 'form-input-error' : ''}`}
-            placeholder="Enter your email"
-            required
-            autoComplete="email"
-            disabled={isLoading}
-          />
-          {getFieldError('email') && (
-            <span className="field-error" role="alert">
-              {getFieldError('email')}
-            </span>
-          )}
-        </div>
-
-        {/* Username input field */}
-        <div className="form-group">
-          <label htmlFor="username" className="form-label">
-            Username
-          </label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            value={formData.username}
-            onChange={handleInputChange}
-            className={`form-input ${getFieldError('username') ? 'form-input-error' : ''}`}
-            placeholder="Choose a username"
-            required
-            autoComplete="username"
-            disabled={isLoading}
-          />
-          {getFieldError('username') && (
-            <span className="field-error" role="alert">
-              {getFieldError('username')}
-            </span>
-          )}
-        </div>
-
-        {/* Display name input field */}
-        <div className="form-group">
-          <label htmlFor="displayName" className="form-label">
-            Display Name (Optional)
-          </label>
-          <input
-            id="displayName"
-            name="displayName"
-            type="text"
-            value={formData.displayName}
-            onChange={handleInputChange}
-            className="form-input"
-            placeholder="How should others see your name?"
-            autoComplete="name"
-            disabled={isLoading}
-          />
-        </div>
-
-        {/* Password input field */}
-        <div className="form-group">
-          <label htmlFor="password" className="form-label">
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            value={formData.password}
-            onChange={handleInputChange}
-            className={`form-input ${getFieldError('password') ? 'form-input-error' : ''}`}
-            placeholder="Create a strong password"
-            required
-            autoComplete="new-password"
-            disabled={isLoading}
-          />
-          {getFieldError('password') && (
-            <span className="field-error" role="alert">
-              {getFieldError('password')}
-            </span>
-          )}
-        </div>
-
-        {/* Confirm password input field */}
-        <div className="form-group">
-          <label htmlFor="confirmPassword" className="form-label">
-            Confirm Password
-          </label>
-          <input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            value={formData.confirmPassword}
-            onChange={handleInputChange}
-            className={`form-input ${getFieldError('confirmPassword') ? 'form-input-error' : ''}`}
-            placeholder="Confirm your password"
-            required
-            autoComplete="new-password"
-            disabled={isLoading}
-          />
-          {getFieldError('confirmPassword') && (
-            <span className="field-error" role="alert">
-              {getFieldError('confirmPassword')}
-            </span>
-          )}
-        </div>
-
-        {/* General error message display */}
         {error && (
-          <div className="error-message" role="alert" aria-live="polite">
-            <span className="error-icon">⚠️</span>
-            <span className="error-text">{error}</span>
+          <div className="error-message" role="alert">
+            {error}
           </div>
         )}
 
-        {/* Submit button */}
-        <button
-          type="submit"
-          className="submit-button"
-          disabled={!isFormValid || isLoading}
-          aria-label={isLoading ? 'Creating account...' : 'Create your account'}
-        >
-          {isLoading ? (
-            <>
-              <span className="loading-spinner" aria-hidden="true">⟳</span>
-              <span>Creating Account...</span>
-            </>
-          ) : (
-            'Create Account'
-          )}
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} className="register-form" noValidate>
+          {/* Email Field */}
+          <div className="form-group">
+            <label htmlFor="email" className="form-label">
+              Email Address
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              placeholder="Enter your email"
+              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
+              required
+              autoComplete="email"
+              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+            />
+            {fieldErrors.email && (
+              <div id="email-error" className="field-error" role="alert">
+                {fieldErrors.email}
+              </div>
+            )}
+          </div>
 
-      {/* Additional help links */}
-      <footer className="register-footer">
-        <div className="login-prompt">
-          Already have an account?{' '}
-          <a href="/login" className="login-link">
-            Sign in here
-          </a>
-        </div>
-        
-        <div className="legal-links">
-          <span className="legal-text">
-            By creating an account, you agree to our{' '}
-            <a href="/terms" className="legal-link">Terms of Service</a>
-            {' '}and{' '}
-            <a href="/privacy" className="legal-link">Privacy Policy</a>
-          </span>
-        </div>
-      </footer>
-    </section>
+          {/* Username Field */}
+          <div className="form-group">
+            <label htmlFor="username" className="form-label">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              value={formData.username}
+              onChange={handleInputChange}
+              placeholder="Choose a username"
+              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
+              required
+              autoComplete="username"
+              aria-describedby={fieldErrors.username ? 'username-error' : undefined}
+            />
+            {fieldErrors.username && (
+              <div id="username-error" className="field-error" role="alert">
+                {fieldErrors.username}
+              </div>
+            )}
+          </div>
+
+          {/* Display Name Field */}
+          <div className="form-group">
+            <label htmlFor="displayName" className="form-label">
+              Display Name <span className="optional">(Optional)</span>
+            </label>
+            <input
+              id="displayName"
+              name="displayName"
+              type="text"
+              value={formData.displayName}
+              onChange={handleInputChange}
+              placeholder="How should others see your name?"
+              className="form-input"
+              autoComplete="name"
+            />
+          </div>
+
+          {/* Password Field */}
+          <div className="form-group">
+            <label htmlFor="password" className="form-label">
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={handleInputChange}
+              placeholder="Create a strong password"
+              className={`form-input ${fieldErrors.password ? 'error' : ''}`}
+              required
+              autoComplete="new-password"
+              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+            />
+            {fieldErrors.password && (
+              <div id="password-error" className="field-error" role="alert">
+                {fieldErrors.password}
+              </div>
+            )}
+          </div>
+
+          {/* Confirm Password Field */}
+          <div className="form-group">
+            <label htmlFor="confirmPassword" className="form-label">
+              Confirm Password
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              value={formData.confirmPassword}
+              onChange={handleInputChange}
+              placeholder="Confirm your password"
+              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
+              required
+              autoComplete="new-password"
+              aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
+            />
+            {fieldErrors.confirmPassword && (
+              <div id="confirm-password-error" className="field-error" role="alert">
+                {fieldErrors.confirmPassword}
+              </div>
+            )}
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            className={`submit-button ${isLoading ? 'loading' : ''}`}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creating Your Account...' : 'Create Your Account'}
+          </button>
+        </form>
+
+        <footer className="register-footer">
+          <p>
+            Already have an account?{' '}
+            <a href="/login" className="login-link">
+              Sign in here
+            </a>
+          </p>
+        </footer>
+      </div>
+    </div>
   )
 }
+
+// frontend/src/components/auth/RegisterComponent.tsx
+// Version: 1.2.0
+// Fixed: Updated API base URL to match backend route mounting at /api/auth
