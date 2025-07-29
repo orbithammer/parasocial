@@ -5,6 +5,7 @@
 'use client'
 
 import { Suspense, useState } from 'react'
+import Link from 'next/link'
 
 // Type definitions for the post data structure
 interface Author {
@@ -318,9 +319,13 @@ export default function HomePage() {
               <button className="btn-base text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                 Explore
               </button>
-              <button className="btn-base bg-blue-600 text-white hover:bg-blue-700">
+              {/* Navigation link to registration page */}
+              <Link 
+                href="/register"
+                className="btn-base bg-blue-600 text-white hover:bg-blue-700 !text-white"
+              >
                 Join ParaSocial
-              </button>
+              </Link>
             </nav>
           </div>
         </div>

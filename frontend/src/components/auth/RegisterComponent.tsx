@@ -68,7 +68,7 @@ interface RegisterComponentProps {
 export default function RegisterComponent({ 
   onRegisterSuccess, 
   onRegisterError,
-  apiBaseUrl = '/api/v1'
+  apiBaseUrl = 'http://localhost:3001'
 }: RegisterComponentProps) {
   // Form state management
   const [formData, setFormData] = useState<RegisterFormData>({
@@ -238,10 +238,11 @@ const validateForm = (): boolean => {
    */
   const isFormValid = 
   !isLoading && (
-    formData.email.trim() !== '' ||
-    formData.username.trim() !== '' ||
-    formData.password.trim() !== '' ||
-    formData.confirmPassword.trim() !== ''
+    formData.email.trim() !== '' &&
+    formData.username.trim() !== '' &&
+    formData.password.trim() !== '' &&
+    formData.confirmPassword.trim() !== '' &&
+    Object.keys(fieldErrors).length === 0
   )
 
   /**
