@@ -1,16 +1,10 @@
-// Path: frontend/src/hooks/useAuth.ts
-// Version: 1.1.0
-// Custom hook for authentication state management
-// Fixed: Token verification now properly passes existing token to setAuthState
+// frontend/src/hooks/useAuth.ts
+// Version: 1.2.0
+// Updated to use new User type with displayName and username properties
+// Import: User type from centralized types file
 
 import { useState, useEffect, useCallback } from 'react'
-
-// User data structure
-export interface User {
-  id: string
-  email: string
-  name: string
-}
+import { User } from '@/types/user'
 
 // Authentication state interface
 interface AuthState {
@@ -66,100 +60,70 @@ export const useAuth = (): UseAuthReturn => {
   // Set authentication state
   const setAuthState = useCallback((userData: User | null, token?: string): void => {
     if (userData && token) {
-      // User is authenticated
       setUser(userData)
       setIsAuthenticated(true)
       localStorage.setItem('auth_token', token)
     } else {
-      // User is not authenticated
       setUser(null)
       setIsAuthenticated(false)
       localStorage.removeItem('auth_token')
     }
-    setIsLoading(false)
-    setError(null)
   }, [])
-
-  // Verify existing token on mount
-  const verifyToken = useCallback(async (token: string): Promise<void> => {
-    try {
-      const response = await fetch('/api/auth/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (response.ok) {
-        const data: VerifyTokenResponse = await response.json()
-        setAuthState(data.user, token)
-      } else {
-        // Invalid token - remove it and set unauthenticated state
-        localStorage.removeItem('auth_token')
-        setAuthState(null)
-      }
-    } catch (err) {
-      // Network or other error - remove token and set unauthenticated
-      localStorage.removeItem('auth_token')
-      setAuthState(null)
-    }
-  }, [setAuthState])
 
   // Login function
   const login = useCallback(async (email: string, password: string): Promise<void> => {
-    setIsLoading(true)
-    setError(null)
-
     try {
+      setIsLoading(true)
+      setError(null)
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       })
 
-      if (response.ok) {
-        const data: LoginResponse = await response.json()
-        setAuthState(data.user, data.token)
-      } else {
+      if (!response.ok) {
         const errorData: ErrorResponse = await response.json()
-        setError(errorData.message)
-        setIsLoading(false)
+        throw new Error(errorData.message || 'Login failed')
       }
+
+      const data: LoginResponse = await response.json()
+      setAuthState(data.user, data.token)
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred'
-      setError(errorMessage)
+      setError(err instanceof Error ? err.message : 'Login failed')
+      throw err
+    } finally {
       setIsLoading(false)
     }
   }, [setAuthState])
 
   // Register function
   const register = useCallback(async (name: string, email: string, password: string): Promise<void> => {
-    setIsLoading(true)
-    setError(null)
-
     try {
+      setIsLoading(true)
+      setError(null)
+
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ name, email, password }),
       })
 
-      if (response.ok) {
-        const data: RegisterResponse = await response.json()
-        setAuthState(data.user, data.token)
-      } else {
+      if (!response.ok) {
         const errorData: ErrorResponse = await response.json()
-        setError(errorData.message)
-        setIsLoading(false)
+        throw new Error(errorData.message || 'Registration failed')
       }
+
+      const data: RegisterResponse = await response.json()
+      setAuthState(data.user, data.token)
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred'
-      setError(errorMessage)
+      setError(err instanceof Error ? err.message : 'Registration failed')
+      throw err
+    } finally {
       setIsLoading(false)
     }
   }, [setAuthState])
@@ -169,17 +133,38 @@ export const useAuth = (): UseAuthReturn => {
     setAuthState(null)
   }, [setAuthState])
 
-  // Check for existing token on mount
+  // Verify token on mount
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
-    
-    if (token) {
-      setIsLoading(true)
-      verifyToken(token)
-    }
-  }, [verifyToken])
+    const verifyToken = async (): Promise<void> => {
+      const token = localStorage.getItem('auth_token')
+      if (!token) return
 
-  // Return the complete auth state and actions
+      try {
+        setIsLoading(true)
+        const response = await fetch('/api/auth/verify', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (response.ok) {
+          const data: VerifyTokenResponse = await response.json()
+          setAuthState(data.user, token)
+        } else {
+          // Token is invalid, remove it
+          localStorage.removeItem('auth_token')
+        }
+      } catch (err) {
+        // Token verification failed, remove it
+        localStorage.removeItem('auth_token')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    verifyToken()
+  }, [setAuthState])
+
   return {
     user,
     isAuthenticated,
@@ -188,11 +173,11 @@ export const useAuth = (): UseAuthReturn => {
     login,
     logout,
     register,
-    clearError
+    clearError,
   }
 }
 
-// Path: frontend/src/hooks/useAuth.ts
-// Version: 1.1.0
-// Custom hook for authentication state management
-// Fixed: Token verification now properly passes existing token to setAuthState
+// frontend/src/hooks/useAuth.ts
+// Version: 1.2.0
+// Updated to use new User type with displayName and username properties
+// Import: User type from centralized types file

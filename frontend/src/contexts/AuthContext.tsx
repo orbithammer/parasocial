@@ -1,18 +1,13 @@
-// /contexts/AuthContext.tsx
-// Version: 1.1.0
-// Fixed file extension and export structure for proper TypeScript recognition
+// frontend/src/contexts/AuthContext.tsx
+// Version: 1.2.0
+// Updated to use new User type with displayName and username properties
+// Changed: Import User from centralized types, updated interface
 
 'use client'
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-
-// User type definition
-export interface User {
-  id: string
-  email: string
-  name: string
-}
+import { User } from '@/types/user'
 
 // Authentication context interface
 export interface AuthContextType {
@@ -52,38 +47,41 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Check for existing token on mount
   useEffect(() => {
-    const checkExistingToken = async (): Promise<void> => {
-      const token = localStorage.getItem('auth-token')
-      if (token) {
-        try {
-          setIsLoading(true)
-          const response = await fetch('/api/auth/verify', {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            setUser(data.user)
-          } else {
-            // Token is invalid, remove it
-            localStorage.removeItem('auth-token')
-          }
-        } catch (err) {
-          // Network error or other issues
-          localStorage.removeItem('auth-token')
-        } finally {
-          setIsLoading(false)
-        }
-      }
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      // Verify token with backend
+      verifyToken(token)
     }
-
-    checkExistingToken()
   }, [])
 
+  // Verify authentication token
+  const verifyToken = async (token: string) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/auth/verify', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const userData = await response.json()
+        setUser(userData.user)
+      } else {
+        localStorage.removeItem('auth_token')
+        setUser(null)
+      }
+    } catch (error) {
+      console.error('Token verification failed:', error)
+      localStorage.removeItem('auth_token')
+      setUser(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // Login function
-  const login = async (email: string, password: string): Promise<void> => {
+  const login = async (email: string, password: string) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -99,24 +97,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const data = await response.json()
 
       if (response.ok) {
-        // Successful login
         setUser(data.user)
-        localStorage.setItem('auth-token', data.token)
+        localStorage.setItem('auth_token', data.token)
         router.push('/dashboard')
       } else {
-        // Login failed
         setError(data.message || 'Login failed')
       }
-    } catch (err) {
-      // Network error
+    } catch (error) {
       setError('Network error occurred')
+      console.error('Login error:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
   // Register function
-  const register = async (email: string, password: string, name: string): Promise<void> => {
+  const register = async (email: string, password: string, name: string) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -132,31 +128,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const data = await response.json()
 
       if (response.ok) {
-        // Successful registration
         setUser(data.user)
-        localStorage.setItem('auth-token', data.token)
+        localStorage.setItem('auth_token', data.token)
         router.push('/dashboard')
       } else {
-        // Registration failed
         setError(data.message || 'Registration failed')
       }
-    } catch (err) {
-      // Network error
+    } catch (error) {
       setError('Network error occurred')
+      console.error('Registration error:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
   // Logout function
-  const logout = (): void => {
+  const logout = () => {
     setUser(null)
-    setError(null)
-    localStorage.removeItem('auth-token')
+    localStorage.removeItem('auth_token')
     router.push('/login')
   }
 
-  // Context value
   const value: AuthContextType = {
     user,
     isLoading,
@@ -175,9 +167,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   )
 }
 
-// Export the context itself for advanced usage if needed
-export { AuthContext }
-
-// /contexts/AuthContext.tsx
-// Version: 1.1.0
-// Fixed file extension and export structure for proper TypeScript recognition
+// frontend/src/contexts/AuthContext.tsx
+// Version: 1.2.0
+// Updated to use new User type with displayName and username properties
+// Changed: Import User from centralized types, updated interface
