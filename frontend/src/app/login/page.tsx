@@ -1,248 +1,93 @@
-// frontend/src/components/auth/LoginComponent.tsx
-// Fixed login component with proper success handling for localStorage and callbacks
-// Version: 1.4.0 - Fixed response destructuring to match test expectations
+// frontend/src/app/login/page.tsx
+// Version: 1.1.0
+// Simple login page without external dependencies to fix 500 error
 
 'use client'
 
-import { useState, FormEvent } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
-import { validateLoginForm, type LoginFormData, type LoginFormErrors } from '../../lib/auth-validation'
+import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
-// Props interface for the LoginComponent
-interface LoginComponentProps {
-  onLoginSuccess?: (userData: any) => void
-  onLoginError?: (errorMessage: string) => void
-  apiBaseUrl?: string
-}
+export default function LoginPage(): React.JSX.Element {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const { login, isLoading, error } = useAuth()
 
-/**
- * Fixed LoginComponent with complete success handling logic
- * Includes error display, password toggle, loading states, and proper success handling
- */
-export default function LoginComponent({ 
-  onLoginSuccess, 
-  onLoginError, 
-  apiBaseUrl = '' 
-}: LoginComponentProps = {}) {
-  // Form state management
-  const [formData, setFormData] = useState<LoginFormData>({
-    email: '',
-    password: ''
-  })
-  
-  // Error state management
-  const [errors, setErrors] = useState<LoginFormErrors>({})
-  const [generalError, setGeneralError] = useState<string>('')
-  
-  // UI state management
-  const [isLoading, setIsLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-
-  /**
-   * Handle input field changes and clear field-specific errors
-   */
-  const handleInputChange = (field: keyof LoginFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Clear field error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[field]
-        return newErrors
-      })
-    }
-    
-    // Clear general error when user starts typing
-    if (generalError) {
-      setGeneralError('')
-    }
-  }
-
-  /**
-   * Toggle password visibility
-   */
-  const togglePasswordVisibility = () => {
-    setShowPassword(prev => !prev)
-  }
-
-  /**
-   * Handle form submission with validation and API call
-   */
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Prevent multiple submissions
-    if (isLoading) return
-    
-    // Client-side validation
-    const validationErrors = validateLoginForm(formData)
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors)
-      return
-    }
-    
-    setIsLoading(true)
-    setErrors({})
-    setGeneralError('')
-    
-    try {
-      // Properly construct API URL to always include /api/auth/login
-      const apiUrl = apiBaseUrl ? 
-        `${apiBaseUrl}/api/auth/login` : 
-        '/api/auth/login'
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // FIXED: Handle successful login response with correct destructuring
-        // Extract token and user from the response data directly (not from data.data)
-        const { token, user } = data
-        
-        // Store token in localStorage with correct key name
-        if (token) {
-          localStorage.setItem('authToken', token)
-        }
-        
-        // Call success callback with user data
-        if (onLoginSuccess && user) {
-          onLoginSuccess(user)
-        }
-      } else {
-        // Handle API error response
-        const errorMessage = data.error || 'Login failed'
-        setGeneralError(errorMessage)
-        
-        if (onLoginError) {
-          onLoginError(errorMessage)
-        }
-      }
-    } catch (error) {
-      // Handle network errors
-      const errorMessage = 'Something went wrong. Please try again.'
-      setGeneralError(errorMessage)
-      
-      if (onLoginError) {
-        onLoginError(errorMessage)
-      }
-    } finally {
-      setIsLoading(false)
-    }
+    await login(email, password)
   }
-
-  // Check if form is valid
-  const isFormValid = formData.email.trim() !== '' && formData.password.trim() !== ''
 
   return (
-    <section className="login-container">
-      <header className="login-header">
-        <h1>Sign In</h1>
-        <p>Welcome back to ParaSocial</p>
-      </header>
-
-      <form className="login-form" onSubmit={handleSubmit} noValidate>
-        {/* General error message */}
-        {generalError && (
-          <div className="error-message" role="alert">
-            ⚠️ {generalError}
-          </div>
-        )}
-
-        {/* Email field */}
-        <div className="form-group">
-          <label htmlFor="email" className="form-label">
-            Email Address
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            className={`form-input ${errors.email ? 'form-input-error' : ''}`}
-            placeholder="Enter your email address"
-            value={formData.email}
-            onChange={(e) => handleInputChange('email', e.target.value)}
-            disabled={isLoading}
-            aria-describedby={errors.email ? 'email-error' : undefined}
-          />
-          {errors.email && (
-            <div id="email-error" className="field-error" role="alert">
-              {errors.email}
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          <div className="space-y-6">
+            <div>
+              <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                Sign in to your account
+              </h2>
             </div>
-          )}
-        </div>
 
-        {/* Password field */}
-        <div className="form-group">
-          <label htmlFor="password" className="form-label">
-            Password
-          </label>
-          <div className="password-input-container">
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              className={`form-input password-input ${errors.password ? 'form-input-error' : ''}`}
-              placeholder="Enter your password"
-              value={formData.password}
-              onChange={(e) => handleInputChange('password', e.target.value)}
-              disabled={isLoading}
-              aria-describedby={errors.password ? 'password-error' : undefined}
-            />
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={togglePasswordVisibility}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-              disabled={isLoading}
-            >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                {error}
+              </div>
+            )}
+
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                  Email address
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  {isLoading ? 'Signing in...' : 'Sign in'}
+                </button>
+              </div>
+            </form>
           </div>
-          {errors.password && (
-            <div id="password-error" className="field-error" role="alert">
-              {errors.password}
-            </div>
-          )}
         </div>
-
-        {/* Submit button */}
-        <button
-          type="submit"
-          className={`form-submit ${isFormValid && !isLoading ? 'form-submit-enabled' : 'form-submit-disabled'}`}
-          disabled={!isFormValid || isLoading}
-        >
-          {isLoading ? (
-            <>
-              <span className="loading-spinner">⟳</span>
-              Signing in...
-            </>
-          ) : (
-            'Sign in to your account'
-          )}
-        </button>
-      </form>
-
-      {/* Footer */}
-      <footer className="login-footer">
-        <p>
-          Don't have an account?{' '}
-          <a href="/register" className="auth-link">
-            Create one here
-          </a>
-        </p>
-      </footer>
-    </section>
+      </div>
+    </div>
   )
 }
+
+// frontend/src/app/login/page.tsx
+// Version: 1.1.0
+// Simple login page without external dependencies to fix 500 error

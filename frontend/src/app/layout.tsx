@@ -1,8 +1,8 @@
 // frontend/src/app/layout.tsx
-// Version: 1.2.0
-// Updated: Added AuthProvider wrapper to fix 500 error and enable authentication context
+// Version: 1.3.0
+// Updated: Fixed viewport and themeColor metadata separation to resolve 500 error
 
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/contexts/AuthContext'
 import './globals.css'
@@ -45,17 +45,6 @@ export const metadata: Metadata = {
     description: 'A unidirectional social network for content creators',
     creator: '@parasocial',
   },
-  // Viewport configuration for responsive design
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-  },
-  // Theme color for mobile browsers
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' }
-  ],
   // Robots directive for search engines
   robots: {
     index: true,
@@ -68,6 +57,17 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
+}
+
+// Viewport configuration - MOVED from metadata export to fix Next.js 13+ requirement
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' }
+  ],
 }
 
 /**
@@ -135,5 +135,5 @@ export default function RootLayout({
 }
 
 // frontend/src/app/layout.tsx
-// Version: 1.2.0
-// Updated: Added AuthProvider wrapper to fix 500 error and enable authentication context
+// Version: 1.3.0
+// Updated: Fixed viewport and themeColor metadata separation to resolve 500 error
