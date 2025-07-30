@@ -1,13 +1,14 @@
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.4.0 - Fixed validation logic for all fields
-// Changes: Fixed validateForm function to properly validate email, username, and password
+// Version: 1.3.0
+// Fixed validation error display, localStorage key, API payload, loading state, and callback handling
 
 'use client'
 
 import { useState } from 'react'
+import styles from './RegisterComponent.module.css'
 
 /**
- * Registration form data structure
+ * Form data structure for registration
  */
 interface RegisterFormData {
   email: string
@@ -18,22 +19,10 @@ interface RegisterFormData {
 }
 
 /**
- * API response structure from backend AuthController register endpoint
+ * API error response structure from backend
  */
-interface RegisterResponse {
-  success: boolean
-  data?: {
-    user: {
-      id: string
-      email: string
-      username: string
-      displayName: string
-      avatar: string | null
-      isVerified: boolean
-    }
-    token: string
-  }
-  error?: string
+interface RegisterErrorResponse {
+  message: string
   details?: Array<{ message: string }>
 }
 
@@ -140,107 +129,137 @@ export default function RegisterComponent({
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {}
 
-    // Email validation - must check if empty first
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!formData.email.trim()) {
       errors.email = 'Email is required'
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(formData.email)) {
-        errors.email = 'Please enter a valid email'  // Exact test expectation
-      }
+    } else if (!emailRegex.test(formData.email)) {
+      errors.email = 'Please enter a valid email'
     }
 
-    // Username validation - check required first, then length, then format
+    // Username validation
     if (!formData.username.trim()) {
       errors.username = 'Username is required'
     } else if (formData.username.length < 3) {
-      errors.username = 'Username must be at least 3 characters'  // Exact test expectation
+      errors.username = 'Username must be at least 3 characters'
     } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-      errors.username = 'Username can only contain letters, numbers, and underscores'  // Exact test expectation
+      errors.username = 'Username can only contain letters, numbers, and underscores'
     }
 
-    // Password validation - check required first, then length
+    // Password validation
     if (!formData.password) {
       errors.password = 'Password is required'
     } else if (formData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters'  // Exact test expectation
+      errors.password = 'Password must be at least 8 characters'
     }
 
-    // Password confirmation validation
+    // Confirm password validation
     if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Please confirm your password'
+      errors.confirmPassword = 'Password confirmation is required'
     } else if (formData.password !== formData.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match'
     }
 
-    // Set the errors and return validation result
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
   }
 
   /**
-   * Submit registration form to backend AuthController
-   * Calls POST /auth/register endpoint with user data
+   * Check if form is valid for submit button enabling
+   */
+  const isFormValid = (): boolean => {
+    return (
+      formData.email.trim() !== '' &&
+      formData.username.trim() !== '' &&
+      formData.password !== '' &&
+      formData.confirmPassword !== '' &&
+      formData.password === formData.confirmPassword &&
+      Object.keys(fieldErrors).length === 0
+    )
+  }
+
+  /**
+   * Check if submit button should be disabled
+   * Only disable during loading, allow validation on submit
+   */
+  const isSubmitDisabled = (): boolean => {
+    return isLoading
+  }
+
+  /**
+   * Handle form submission
+   * Validates form, makes API call, and handles response
    */
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     
-    console.log('Form submitted with data:', formData)
-    
-    // Prevent multiple submissions
-    if (isLoading) return
-    
-    // Add this debug line:
-    console.log('Calling validateForm...')
-    const isValid = validateForm()
-    console.log('Validation result:', isValid, 'Field errors:', fieldErrors)
-    
-    if (!isValid) {
-      console.log('Validation failed, stopping submission')
+    // Validate form before submission
+    if (!validateForm()) {
       return
     }
     
     setIsLoading(true)
     setError(null)
-
+    
     try {
-      // Prepare registration data (exclude confirmPassword)
-      const registrationData = {
-        email: formData.email,
-        username: formData.username,
-        password: formData.password,
-        displayName: formData.displayName.trim() || formData.username
+      // Prepare request payload - only include displayName if it's not empty
+      const requestData: Record<string, string> = {
+        email: formData.email.trim(),
+        username: formData.username.trim(),
+        password: formData.password
       }
-
-      // Call backend AuthController register endpoint at /api/auth/register
-      const response = await fetch(`${apiBaseUrl}/auth/register`, {
+      
+      // Only include displayName if it's provided and not empty
+      if (formData.displayName.trim()) {
+        requestData.displayName = formData.displayName.trim()
+      }
+      
+      // Make API call to register endpoint
+      const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(registrationData)
+        body: JSON.stringify(requestData),
       })
-
-      const result: RegisterResponse = await response.json()
-
-      if (result.success && result.data) {
-        // Registration successful - store token and call success callback
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('authToken', result.data.token)
-        }
-        
-        onRegisterSuccess?.(result.data)
-      } else {
-        // Registration failed - show error message
-        const errorMessage = result.error || 'Registration failed'
-        setError(errorMessage)
-        onRegisterError?.(errorMessage)
+      
+      const responseData = await response.json()
+      
+      if (!response.ok) {
+        // Handle error response from backend
+        const errorData = responseData as RegisterErrorResponse
+        throw new Error(errorData.message || 'Registration failed')
       }
-    } catch (networkError) {
-      // Network or parsing error
-      const errorMessage = 'Unable to connect to server. Please try again.'
+      
+      // Handle successful registration
+      const successData = responseData as RegisterSuccessData
+      
+      // Store token in localStorage for future API calls (use "authToken" key as expected by tests)
+      localStorage.setItem('authToken', successData.token)
+      
+      // Call success callback if provided
+      if (onRegisterSuccess) {
+        onRegisterSuccess(successData)
+      }
+      
+    } catch (err) {
+      // Handle network errors or API errors
+      let errorMessage: string
+      
+      if (err instanceof Error) {
+        errorMessage = err.message
+      } else if (typeof err === 'string') {
+        errorMessage = err
+      } else {
+        errorMessage = 'Registration failed. Please try again.'
+      }
+      
       setError(errorMessage)
-      onRegisterError?.(errorMessage)
+      
+      // Call error callback if provided
+      if (onRegisterError) {
+        onRegisterError(errorMessage)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -254,27 +273,35 @@ export default function RegisterComponent({
           <p>Join ParaSocial and start sharing your thoughts with the world</p>
         </header>
 
-        {error && (
-          <div className="error-message" role="alert">
-            {error}
-          </div>
-        )}
+        <form 
+          className="register-form" 
+          onSubmit={handleSubmit}
+          noValidate
+          role="form"
+          aria-label="registration form"
+        >
+          {/* General error message */}
+          {error && (
+            <div className="error-message" role="alert">
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="register-form" noValidate>
-          {/* Email Field */}
+          {/* Email field */}
           <div className="form-group">
             <label htmlFor="email" className="form-label">
               Email Address
             </label>
             <input
+              type="email"
               id="email"
               name="email"
-              type="email"
               value={formData.email}
               onChange={handleInputChange}
-              placeholder="Enter your email"
               className={`form-input ${fieldErrors.email ? 'error' : ''}`}
+              placeholder="Enter your email"
               required
+              disabled={isLoading}
               autoComplete="email"
               aria-describedby={fieldErrors.email ? 'email-error' : undefined}
             />
@@ -285,20 +312,21 @@ export default function RegisterComponent({
             )}
           </div>
 
-          {/* Username Field */}
+          {/* Username field */}
           <div className="form-group">
             <label htmlFor="username" className="form-label">
               Username
             </label>
             <input
+              type="text"
               id="username"
               name="username"
-              type="text"
               value={formData.username}
               onChange={handleInputChange}
-              placeholder="Choose a username"
               className={`form-input ${fieldErrors.username ? 'error' : ''}`}
+              placeholder="Choose a username"
               required
+              disabled={isLoading}
               autoComplete="username"
               aria-describedby={fieldErrors.username ? 'username-error' : undefined}
             />
@@ -309,37 +337,39 @@ export default function RegisterComponent({
             )}
           </div>
 
-          {/* Display Name Field */}
+          {/* Display name field */}
           <div className="form-group">
             <label htmlFor="displayName" className="form-label">
               Display Name <span className="optional">(Optional)</span>
             </label>
             <input
+              type="text"
               id="displayName"
               name="displayName"
-              type="text"
               value={formData.displayName}
               onChange={handleInputChange}
-              placeholder="How should others see your name?"
               className="form-input"
+              placeholder="How should others see your name?"
+              disabled={isLoading}
               autoComplete="name"
             />
           </div>
 
-          {/* Password Field */}
+          {/* Password field */}
           <div className="form-group">
             <label htmlFor="password" className="form-label">
               Password
             </label>
             <input
+              type="password"
               id="password"
               name="password"
-              type="password"
               value={formData.password}
               onChange={handleInputChange}
-              placeholder="Create a strong password"
               className={`form-input ${fieldErrors.password ? 'error' : ''}`}
+              placeholder="Create a strong password"
               required
+              disabled={isLoading}
               autoComplete="new-password"
               aria-describedby={fieldErrors.password ? 'password-error' : undefined}
             />
@@ -350,37 +380,38 @@ export default function RegisterComponent({
             )}
           </div>
 
-          {/* Confirm Password Field */}
+          {/* Confirm password field */}
           <div className="form-group">
             <label htmlFor="confirmPassword" className="form-label">
               Confirm Password
             </label>
             <input
+              type="password"
               id="confirmPassword"
               name="confirmPassword"
-              type="password"
               value={formData.confirmPassword}
               onChange={handleInputChange}
-              placeholder="Confirm your password"
               className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
+              placeholder="Confirm your password"
               required
+              disabled={isLoading}
               autoComplete="new-password"
-              aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
+              aria-describedby={fieldErrors.confirmPassword ? 'confirmPassword-error' : undefined}
             />
             {fieldErrors.confirmPassword && (
-              <div id="confirm-password-error" className="field-error" role="alert">
+              <div id="confirmPassword-error" className="field-error" role="alert">
                 {fieldErrors.confirmPassword}
               </div>
             )}
           </div>
 
-          {/* Submit Button */}
+          {/* Submit button */}
           <button
             type="submit"
             className={`submit-button ${isLoading ? 'loading' : ''}`}
-            disabled={isLoading}
+            disabled={isSubmitDisabled()}
           >
-            {isLoading ? 'Creating Your Account...' : 'Create Your Account'}
+            {isLoading ? 'Creating Account...' : 'Create Your Account'}
           </button>
         </form>
 
@@ -395,8 +426,8 @@ export default function RegisterComponent({
             By registering, you agree to our{' '}
             <a href="/terms" className="footer-link">
               Terms of Service
-            </a>{' '}
-            and{' '}
+            </a>
+            {' '}and{' '}
             <a href="/privacy" className="footer-link">
               Privacy Policy
             </a>
@@ -408,4 +439,3 @@ export default function RegisterComponent({
 }
 
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.4.0 - Fixed validation logic for all fields
