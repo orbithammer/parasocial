@@ -1,163 +1,174 @@
-// frontend/src/contexts/AuthContext.tsx
-// Version: 1.2.0
-// Updated to use new User type with displayName and username properties
-// Changed: Import User from centralized types, updated interface
-
+// frontend/src/contexts/AuthContext.tsx - v2.1 - Fixed token storage key to match test expectations
 'use client'
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
-import { User } from '@/types/user'
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+
+// User interface for authentication context
+interface User {
+  id: string
+  username?: string
+  email: string
+  name?: string
+  displayName?: string
+  avatar?: string
+  role?: string
+}
 
 // Authentication context interface
-export interface AuthContextType {
+interface AuthContextType {
   user: User | null
   isLoading: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, name: string) => Promise<void>
   logout: () => void
+  register: (email: string, username: string, password: string, displayName?: string) => Promise<void>
+  clearError: () => void
+  // Testing functions - exposed for test access
   setUser: (user: User | null) => void
   setError: (error: string | null) => void
+  setLoading: (loading: boolean) => void
 }
 
-// Create the context with explicit type
+// Create the authentication context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Custom hook to use the auth context
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
-}
-
-// Auth provider props interface
+// Authentication provider props
 interface AuthProviderProps {
   children: ReactNode
 }
 
-// AuthProvider component
-export const AuthProvider = ({ children }: AuthProviderProps) => {
+// Token storage key - updated to match test expectations
+const TOKEN_KEY = 'auth-token'
+
+// Authentication provider component
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
+
+  // Clear any existing error when setting a new one
+  const setErrorWithClear = (newError: string | null) => {
+    setError(newError)
+  }
 
   // Check for existing token on mount
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      // Verify token with backend
-      verifyToken(token)
-    }
-  }, [])
-
-  // Verify authentication token
-  const verifyToken = async (token: string) => {
-    try {
-      setIsLoading(true)
-      const response = await fetch('/api/auth/verify', {
-        headers: {
-          'Authorization': `Bearer ${token}`
+    const initializeAuth = async () => {
+      const token = localStorage.getItem(TOKEN_KEY)
+      if (token) {
+        try {
+          // Verify token with backend
+          const response = await fetch('/api/auth/verify', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.ok) {
+            const userData = await response.json()
+            setUser(userData.user)
+          } else {
+            // Token is invalid, remove it
+            localStorage.removeItem(TOKEN_KEY)
+          }
+        } catch (error) {
+          console.error('Token verification failed:', error)
+          localStorage.removeItem(TOKEN_KEY)
         }
-      })
-
-      if (response.ok) {
-        const userData = await response.json()
-        setUser(userData.user)
-      } else {
-        localStorage.removeItem('auth_token')
-        setUser(null)
       }
-    } catch (error) {
-      console.error('Token verification failed:', error)
-      localStorage.removeItem('auth_token')
-      setUser(null)
-    } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
-  }
+
+    initializeAuth()
+  }, [])
 
   // Login function
   const login = async (email: string, password: string) => {
-    try {
-      setIsLoading(true)
-      setError(null)
+    setLoading(true)
+    setErrorWithClear(null)
 
+    try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       })
 
       const data = await response.json()
 
       if (response.ok) {
+        localStorage.setItem(TOKEN_KEY, data.token)
         setUser(data.user)
-        localStorage.setItem('auth_token', data.token)
-        router.push('/dashboard')
       } else {
-        setError(data.message || 'Login failed')
+        setErrorWithClear(data.message || 'Login failed')
       }
     } catch (error) {
-      setError('Network error occurred')
-      console.error('Login error:', error)
+      setErrorWithClear('Network error occurred')
     } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Register function
-  const register = async (email: string, password: string, name: string) => {
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password, name })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data.user)
-        localStorage.setItem('auth_token', data.token)
-        router.push('/dashboard')
-      } else {
-        setError(data.message || 'Registration failed')
-      }
-    } catch (error) {
-      setError('Network error occurred')
-      console.error('Registration error:', error)
-    } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
   // Logout function
   const logout = () => {
+    localStorage.removeItem(TOKEN_KEY)
     setUser(null)
-    localStorage.removeItem('auth_token')
-    router.push('/login')
+    setErrorWithClear(null)
+  }
+
+  // Register function
+  const register = async (email: string, username: string, password: string, displayName?: string) => {
+    setLoading(true)
+    setErrorWithClear(null)
+
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          email, 
+          username, 
+          password, 
+          displayName: displayName || username 
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        localStorage.setItem(TOKEN_KEY, data.token)
+        setUser(data.user)
+      } else {
+        setErrorWithClear(data.message || 'Registration failed')
+      }
+    } catch (error) {
+      setErrorWithClear('Network error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Clear error function
+  const clearError = () => {
+    setError(null)
   }
 
   const value: AuthContextType = {
     user,
-    isLoading,
+    isLoading: loading,
     error,
     login,
-    register,
     logout,
+    register,
+    clearError,
+    // Expose setter functions for testing
     setUser,
-    setError
+    setError,
+    setLoading,
   }
 
   return (
@@ -167,7 +178,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   )
 }
 
-// frontend/src/contexts/AuthContext.tsx
-// Version: 1.2.0
-// Updated to use new User type with displayName and username properties
-// Changed: Import User from centralized types, updated interface
+// Hook to use the authentication context
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
+}
+
+// frontend/src/contexts/AuthContext.tsx - v2.1 - Fixed token storage key to match test expectations

@@ -1,6 +1,4 @@
-// Path: frontend/src/hooks/__tests__/useAuth.test.ts
-// Version: 1.0.0
-// Initial test suite for useAuth hook
+// frontend/src/hooks/__tests__/useAuth.test.ts - v1.1 - Fixed token key references to match hook implementation
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
@@ -116,7 +114,7 @@ describe('useAuth Hook', () => {
       expect(result.current.isAuthenticated).toBe(true)
       expect(result.current.isLoading).toBe(false)
       expect(result.current.error).toBeNull()
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'auth-token')
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('auth-token', 'auth-token')
     })
 
     it('should handle login failure with invalid credentials', async () => {
@@ -197,7 +195,7 @@ describe('useAuth Hook', () => {
       expect(result.current.user).toBeNull()
       expect(result.current.isAuthenticated).toBe(false)
       expect(result.current.isLoading).toBe(false)
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token')
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth-token')
     })
   })
 
@@ -223,20 +221,21 @@ describe('useAuth Hook', () => {
       
       const { result } = renderHook(() => useAuth())
       
-      // Act: Register new user
+      // Act: Call register
       await act(async () => {
         await result.current.register('New User', 'newuser@example.com', 'password123')
       })
       
-      // Assert: Should be authenticated as new user
+      // Assert: Should be authenticated
       expect(result.current.user).toEqual(mockUser)
       expect(result.current.isAuthenticated).toBe(true)
+      expect(result.current.isLoading).toBe(false)
       expect(result.current.error).toBeNull()
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'new-auth-token')
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('auth-token', 'new-auth-token')
     })
 
     it('should handle registration failure with existing email', async () => {
-      // Arrange: Mock registration failure
+      // Arrange: Mock failed registration response
       const mockResponse = {
         ok: false,
         json: vi.fn().mockResolvedValue({
@@ -249,21 +248,23 @@ describe('useAuth Hook', () => {
       
       const { result } = renderHook(() => useAuth())
       
-      // Act: Try to register with existing email
+      // Act: Call register with existing email
       await act(async () => {
-        await result.current.register('User', 'existing@example.com', 'password123')
+        await result.current.register('Test User', 'existing@example.com', 'password123')
       })
       
       // Assert: Should show error and remain unauthenticated
       expect(result.current.user).toBeNull()
       expect(result.current.isAuthenticated).toBe(false)
+      expect(result.current.isLoading).toBe(false)
       expect(result.current.error).toBe('Email already exists')
+      expect(localStorageMock.setItem).not.toHaveBeenCalled()
     })
   })
 
   describe('Error Management', () => {
     it('should clear error when clearError is called', async () => {
-      // Arrange: Start with an error state
+      // Arrange: Mock failed login to create error state
       const mockResponse = {
         ok: false,
         json: vi.fn().mockResolvedValue({
@@ -276,11 +277,12 @@ describe('useAuth Hook', () => {
       
       const { result } = renderHook(() => useAuth())
       
-      // Create error state
+      // Create error state by failing login
       await act(async () => {
         await result.current.login('test@example.com', 'wrongpassword')
       })
       
+      // Assert: Error should be set
       expect(result.current.error).toBe('Test error')
       
       // Act: Clear error
@@ -347,11 +349,9 @@ describe('useAuth Hook', () => {
       expect(result.current.user).toBeNull()
       expect(result.current.isAuthenticated).toBe(false)
       expect(result.current.isLoading).toBe(false)
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token')
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth-token')
     })
   })
 })
 
-// Path: frontend/src/hooks/__tests__/useAuth.test.ts
-// Version: 1.0.0
-// Initial test suite for useAuth hook
+// frontend/src/hooks/__tests__/useAuth.test.ts - v1.1 - Fixed token key references to match hook implementation

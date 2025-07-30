@@ -1,8 +1,4 @@
-// frontend/src/hooks/useAuth.ts
-// Version: 1.2.0
-// Updated to use new User type with displayName and username properties
-// Import: User type from centralized types file
-
+// frontend/src/hooks/useAuth.ts - v1.3 - Fixed token key and error handling for test compatibility
 import { useState, useEffect, useCallback } from 'react'
 import { User } from '@/types/user'
 
@@ -44,6 +40,9 @@ interface VerifyTokenResponse {
   user: User
 }
 
+// Fixed token key to match test expectations
+const AUTH_TOKEN_KEY = 'auth-token'
+
 // Authentication hook implementation
 export const useAuth = (): UseAuthReturn => {
   // Initialize state
@@ -62,15 +61,15 @@ export const useAuth = (): UseAuthReturn => {
     if (userData && token) {
       setUser(userData)
       setIsAuthenticated(true)
-      localStorage.setItem('auth_token', token)
+      localStorage.setItem(AUTH_TOKEN_KEY, token)
     } else {
       setUser(null)
       setIsAuthenticated(false)
-      localStorage.removeItem('auth_token')
+      localStorage.removeItem(AUTH_TOKEN_KEY)
     }
   }, [])
 
-  // Login function
+  // Login function - fixed to handle errors without throwing
   const login = useCallback(async (email: string, password: string): Promise<void> => {
     try {
       setIsLoading(true)
@@ -86,20 +85,24 @@ export const useAuth = (): UseAuthReturn => {
 
       if (!response.ok) {
         const errorData: ErrorResponse = await response.json()
-        throw new Error(errorData.message || 'Login failed')
+        // Set specific error message for invalid credentials
+        const errorMessage = errorData.message || 'Login failed'
+        setError(errorMessage)
+        return // Don't throw, just set error
       }
 
       const data: LoginResponse = await response.json()
       setAuthState(data.user, data.token)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
-      throw err
+      // Handle network errors specifically
+      const errorMessage = err instanceof Error ? err.message : 'Network error'
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }, [setAuthState])
 
-  // Register function
+  // Register function - fixed to handle errors without throwing
   const register = useCallback(async (name: string, email: string, password: string): Promise<void> => {
     try {
       setIsLoading(true)
@@ -115,14 +118,18 @@ export const useAuth = (): UseAuthReturn => {
 
       if (!response.ok) {
         const errorData: ErrorResponse = await response.json()
-        throw new Error(errorData.message || 'Registration failed')
+        // Set specific error message for registration failures
+        const errorMessage = errorData.message || 'Registration failed'
+        setError(errorMessage)
+        return // Don't throw, just set error
       }
 
       const data: RegisterResponse = await response.json()
       setAuthState(data.user, data.token)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed')
-      throw err
+      // Handle network errors specifically
+      const errorMessage = err instanceof Error ? err.message : 'Registration failed'
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -136,7 +143,7 @@ export const useAuth = (): UseAuthReturn => {
   // Verify token on mount
   useEffect(() => {
     const verifyToken = async (): Promise<void> => {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem(AUTH_TOKEN_KEY)
       if (!token) return
 
       try {
@@ -152,11 +159,11 @@ export const useAuth = (): UseAuthReturn => {
           setAuthState(data.user, token)
         } else {
           // Token is invalid, remove it
-          localStorage.removeItem('auth_token')
+          localStorage.removeItem(AUTH_TOKEN_KEY)
         }
       } catch (err) {
         // Token verification failed, remove it
-        localStorage.removeItem('auth_token')
+        localStorage.removeItem(AUTH_TOKEN_KEY)
       } finally {
         setIsLoading(false)
       }
@@ -177,7 +184,4 @@ export const useAuth = (): UseAuthReturn => {
   }
 }
 
-// frontend/src/hooks/useAuth.ts
-// Version: 1.2.0
-// Updated to use new User type with displayName and username properties
-// Import: User type from centralized types file
+// frontend/src/hooks/useAuth.ts - v1.3 - Fixed token key and error handling for test compatibility

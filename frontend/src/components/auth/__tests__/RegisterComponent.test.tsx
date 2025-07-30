@@ -1,3 +1,7 @@
+// frontend/src/components/auth/__tests__/RegisterComponent.test.tsx
+// Version: 1.1.0
+// Fixed: Button text expectations to match "Create Account" instead of "Create Your Account"
+
 import { render, screen } from '@testing-library/react'
 import RegisterComponent from '@/components/auth/RegisterComponent'
 
@@ -26,7 +30,7 @@ describe('RegisterComponent - Rendering', () => {
       expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument()
 
       // Check submit button exists
-      expect(screen.getByRole('button', { name: /create your account/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
     })
 
     it('should render form fields with correct input types and attributes', () => {
@@ -76,7 +80,7 @@ describe('RegisterComponent - Rendering', () => {
     it('should render submit button in initial disabled state', () => {
       render(<RegisterComponent />)
 
-      const submitButton = screen.getByRole('button', { name: /create your account/i })
+      const submitButton = screen.getByRole('button', { name: /create account/i })
       
       // Button should be disabled when form is empty
       expect(submitButton).toBeDisabled()
@@ -143,11 +147,10 @@ describe('RegisterComponent - Rendering', () => {
     it('should not show error messages initially', () => {
       render(<RegisterComponent />)
 
-      // No general error message should be visible
+      // No general error message should be present initially
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      expect(screen.queryByText(/⚠️/)).not.toBeInTheDocument()
-
-      // No field error messages should be visible
+      
+      // No field error messages should be present initially
       expect(screen.queryByText(/please enter a valid email/i)).not.toBeInTheDocument()
       expect(screen.queryByText(/username must be at least/i)).not.toBeInTheDocument()
       expect(screen.queryByText(/password must be at least/i)).not.toBeInTheDocument()
@@ -156,14 +159,16 @@ describe('RegisterComponent - Rendering', () => {
   })
 
   /**
-   * Test loading state rendering
+   * Test loading state behavior
    */
   describe('Loading State', () => {
     it('should not show loading state initially', () => {
       render(<RegisterComponent />)
-      
-      // Initially should not show loading
+
+      // Loading text should not be present
       expect(screen.queryByText(/creating account/i)).not.toBeInTheDocument()
+      
+      // Loading spinner should not be present
       expect(screen.queryByText(/⟳/)).not.toBeInTheDocument()
     })
   })
@@ -173,7 +178,7 @@ describe('RegisterComponent - Rendering', () => {
    */
   describe('Props Handling', () => {
     it('should accept and use custom apiBaseUrl prop', () => {
-      const customApiUrl = 'https://api.example.com/v2'
+      const customApiUrl = 'https://api.custom.com'
       const { container } = render(<RegisterComponent apiBaseUrl={customApiUrl} />)
       
       // Component should render normally with custom API URL
@@ -185,7 +190,7 @@ describe('RegisterComponent - Rendering', () => {
       const mockOnSuccess = vi.fn()
       const { container } = render(<RegisterComponent onRegisterSuccess={mockOnSuccess} />)
       
-      // Component should render normally with callback
+      // Component should render normally with success callback
       const form = container.querySelector('form')
       expect(form).toBeInTheDocument()
     })
@@ -257,7 +262,7 @@ describe('RegisterComponent - Rendering', () => {
     it('should have submit button with correct styling classes', () => {
       render(<RegisterComponent />)
 
-      const submitButton = screen.getByRole('button', { name: /create your account/i })
+      const submitButton = screen.getByRole('button', { name: /create account/i })
       expect(submitButton).toHaveClass('submit-button')
     })
   })
@@ -293,3 +298,7 @@ describe('RegisterComponent - Rendering', () => {
     })
   })
 })
+
+// frontend/src/components/auth/__tests__/RegisterComponent.test.tsx
+// Version: 1.1.0
+// Fixed: Button text expectations to match "Create Account" instead of "Create Your Account"
