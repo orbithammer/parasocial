@@ -1,11 +1,32 @@
-// frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.3.0
-// Fixed validation error display, localStorage key, API payload, loading state, and callback handling
+// src/components/auth/RegisterComponent.tsx
+// Version: 1.4.0
+// Fixed API URL handling, payload structure, token storage, and error handling to match test expectations
 
 'use client'
 
 import { useState } from 'react'
-import styles from './RegisterComponent.module.css'
+// Note: CSS module import - ensure this file exists
+// import styles from './RegisterComponent.module.css'
+
+// Temporary inline styles for testing
+const styles = {
+  registerContainer: 'register-container',
+  registerCard: 'register-card', 
+  registerHeader: 'register-header',
+  registerForm: 'register-form',
+  errorMessage: 'error-message',
+  formGroup: 'form-group',
+  formLabel: 'form-label',
+  formInput: 'form-input',
+  fieldError: 'field-error',
+  error: 'error',
+  optional: 'optional',
+  submitButton: 'submit-button',
+  loading: 'loading',
+  registerFooter: 'register-footer',
+  loginLink: 'login-link',
+  footerLink: 'footer-link'
+}
 
 /**
  * Form data structure for registration
@@ -19,49 +40,38 @@ interface RegisterFormData {
 }
 
 /**
- * API error response structure from backend
+ * API response structure from backend
  */
-interface RegisterErrorResponse {
-  message: string
-  details?: Array<{ message: string }>
-}
-
-/**
- * Successful registration data structure
- */
-interface RegisterSuccessData {
-  user: {
-    id: string
-    email: string
-    username: string
-    displayName: string
-    avatar: string | null
-    isVerified: boolean
+interface ApiResponse {
+  success: boolean
+  data?: {
+    user: {
+      id: string
+      email: string
+      username: string
+      displayName?: string
+    }
+    token: string
   }
-  token: string
+  error?: string
 }
 
 /**
  * Component props for Register component
  */
 interface RegisterComponentProps {
-  onRegisterSuccess?: (userData: RegisterSuccessData) => void
+  onRegisterSuccess?: (userData: { id: string; email: string; username: string }) => void
   onRegisterError?: (error: string) => void
   apiBaseUrl?: string
 }
 
 /**
- * Registration component that integrates with ParaSocial backend AuthController
- * Handles new user account creation with email, username, and password
- * 
- * @param onRegisterSuccess - Callback fired when registration succeeds
- * @param onRegisterError - Callback fired when registration fails  
- * @param apiBaseUrl - Base URL for API calls (defaults to backend with /api prefix)
+ * Registration component with form validation and API integration
  */
 export default function RegisterComponent({ 
   onRegisterSuccess, 
   onRegisterError,
-  apiBaseUrl = 'http://localhost:3001'
+  apiBaseUrl = '' // Default to empty string for relative URLs
 }: RegisterComponentProps) {
   // Form state management
   const [formData, setFormData] = useState<RegisterFormData>({
@@ -79,8 +89,6 @@ export default function RegisterComponent({
 
   /**
    * Handle input field changes
-   * Updates form state when user types in any field
-   * Removes field errors when user starts typing
    */
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
@@ -90,31 +98,29 @@ export default function RegisterComponent({
       [name]: value
     }))
     
-    // Clear previous global errors when user starts typing
+    // Clear errors when user starts typing
     if (error) {
       setError(null)
     }
     
-    // Remove field error entirely instead of setting empty string
     if (fieldErrors[name]) {
       setFieldErrors(prev => {
         const newErrors = { ...prev }
-        delete newErrors[name]  // Remove the key entirely
+        delete newErrors[name]
         return newErrors
       })
     }
 
-    // Real-time validation for password fields
+    // Real-time password confirmation validation
     if (name === 'password' || name === 'confirmPassword') {
       const updatedFormData = { ...formData, [name]: value }
       setFieldErrors(prev => {
         const errors = { ...prev }
         
-        // Validate password confirmation immediately
         if (updatedFormData.password !== updatedFormData.confirmPassword && updatedFormData.confirmPassword.length > 0) {
           errors.confirmPassword = 'Passwords do not match'
         } else if (updatedFormData.password === updatedFormData.confirmPassword) {
-          delete errors.confirmPassword  // Remove the key entirely
+          delete errors.confirmPassword
         }
         
         return errors
@@ -123,8 +129,7 @@ export default function RegisterComponent({
   }
 
   /**
-   * Validate form fields client-side
-   * Returns true if form is valid, false otherwise
+   * Validate form fields
    */
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {}
@@ -165,35 +170,11 @@ export default function RegisterComponent({
   }
 
   /**
-   * Check if form is valid for submit button enabling
-   */
-  const isFormValid = (): boolean => {
-    return (
-      formData.email.trim() !== '' &&
-      formData.username.trim() !== '' &&
-      formData.password !== '' &&
-      formData.confirmPassword !== '' &&
-      formData.password === formData.confirmPassword &&
-      Object.keys(fieldErrors).length === 0
-    )
-  }
-
-  /**
-   * Check if submit button should be disabled
-   * Only disable during loading, allow validation on submit
-   */
-  const isSubmitDisabled = (): boolean => {
-    return isLoading
-  }
-
-  /**
    * Handle form submission
-   * Validates form, makes API call, and handles response
    */
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     
-    // Validate form before submission
     if (!validateForm()) {
       return
     }
@@ -202,61 +183,49 @@ export default function RegisterComponent({
     setError(null)
     
     try {
-      // Prepare request payload - only include displayName if it's not empty
-      const requestData: Record<string, string> = {
+      // Prepare payload in expected order and format
+      const payload = {
         email: formData.email.trim(),
         username: formData.username.trim(),
-        password: formData.password
+        displayName: formData.displayName.trim() || formData.username.trim(), // Use username if displayName is empty
+        password: formData.password,
       }
       
-      // Only include displayName if it's provided and not empty
-      if (formData.displayName.trim()) {
-        requestData.displayName = formData.displayName.trim()
-      }
+      // Construct API URL
+      const url = apiBaseUrl ? `${apiBaseUrl}/api/auth/register` : '/api/auth/register'
       
-      // Make API call to register endpoint
-      const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestData),
+        body: JSON.stringify(payload),
       })
       
-      const responseData = await response.json()
+      const data: ApiResponse = await response.json()
       
-      if (!response.ok) {
-        // Handle error response from backend
-        const errorData = responseData as RegisterErrorResponse
-        throw new Error(errorData.message || 'Registration failed')
-      }
-      
-      // Handle successful registration
-      const successData = responseData as RegisterSuccessData
-      
-      // Store token in localStorage for future API calls (use "authToken" key as expected by tests)
-      localStorage.setItem('authToken', successData.token)
-      
-      // Call success callback if provided
-      if (onRegisterSuccess) {
-        onRegisterSuccess(successData)
-      }
-      
-    } catch (err) {
-      // Handle network errors or API errors
-      let errorMessage: string
-      
-      if (err instanceof Error) {
-        errorMessage = err.message
-      } else if (typeof err === 'string') {
-        errorMessage = err
+      if (response.ok && data.success && data.data) {
+        // Store token in localStorage
+        localStorage.setItem('authToken', data.data.token)
+        
+        // Call success callback with just user data
+        if (onRegisterSuccess) {
+          onRegisterSuccess(data.data.user)
+        }
       } else {
-        errorMessage = 'Registration failed. Please try again.'
+        // Handle API errors - use specific error message from response
+        const errorMessage = data.error || 'Registration failed'
+        setError(errorMessage)
+        
+        if (onRegisterError) {
+          onRegisterError(errorMessage)
+        }
       }
-      
+    } catch (err) {
+      // Handle network errors
+      const errorMessage = 'Registration failed. Please try again.'
       setError(errorMessage)
       
-      // Call error callback if provided
       if (onRegisterError) {
         onRegisterError(errorMessage)
       }
@@ -266,169 +235,168 @@ export default function RegisterComponent({
   }
 
   return (
-    <section className="register-container">
-      <div className="register-card">
-        <header className="register-header">
+    <section className={styles.registerContainer}>
+      <div className={styles.registerCard}>
+        <header className={styles.registerHeader}>
           <h1>Create Account</h1>
           <p>Join ParaSocial and start sharing your thoughts with the world</p>
         </header>
-
+        
         <form 
-          className="register-form" 
+          className={styles.registerForm}
           onSubmit={handleSubmit}
           noValidate
           role="form"
           aria-label="registration form"
         >
-          {/* General error message */}
           {error && (
-            <div className="error-message" role="alert">
+            <div className={styles.errorMessage} role="alert">
               {error}
             </div>
           )}
-
-          {/* Email field */}
-          <div className="form-group">
-            <label htmlFor="email" className="form-label">
+          
+          {/* Email Field */}
+          <div className={styles.formGroup}>
+            <label htmlFor="email" className={styles.formLabel}>
               Email Address
             </label>
             <input
-              type="email"
               id="email"
               name="email"
+              type="email"
               value={formData.email}
               onChange={handleInputChange}
-              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
+              className={`${styles.formInput} ${fieldErrors.email ? styles.error : ''}`}
               placeholder="Enter your email"
               required
-              disabled={isLoading}
               autoComplete="email"
+              disabled={isLoading}
               aria-describedby={fieldErrors.email ? 'email-error' : undefined}
             />
             {fieldErrors.email && (
-              <div id="email-error" className="field-error" role="alert">
+              <div id="email-error" className={styles.fieldError} role="alert">
                 {fieldErrors.email}
               </div>
             )}
           </div>
 
-          {/* Username field */}
-          <div className="form-group">
-            <label htmlFor="username" className="form-label">
+          {/* Username Field */}
+          <div className={styles.formGroup}>
+            <label htmlFor="username" className={styles.formLabel}>
               Username
             </label>
             <input
-              type="text"
               id="username"
               name="username"
+              type="text"
               value={formData.username}
               onChange={handleInputChange}
-              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
+              className={`${styles.formInput} ${fieldErrors.username ? styles.error : ''}`}
               placeholder="Choose a username"
               required
-              disabled={isLoading}
               autoComplete="username"
+              disabled={isLoading}
               aria-describedby={fieldErrors.username ? 'username-error' : undefined}
             />
             {fieldErrors.username && (
-              <div id="username-error" className="field-error" role="alert">
+              <div id="username-error" className={styles.fieldError} role="alert">
                 {fieldErrors.username}
               </div>
             )}
           </div>
 
-          {/* Display name field */}
-          <div className="form-group">
-            <label htmlFor="displayName" className="form-label">
-              Display Name <span className="optional">(Optional)</span>
+          {/* Display Name Field */}
+          <div className={styles.formGroup}>
+            <label htmlFor="displayName" className={styles.formLabel}>
+              Display Name <span className={styles.optional}>(Optional)</span>
             </label>
             <input
-              type="text"
               id="displayName"
               name="displayName"
+              type="text"
               value={formData.displayName}
               onChange={handleInputChange}
-              className="form-input"
+              className={styles.formInput}
               placeholder="How should others see your name?"
-              disabled={isLoading}
               autoComplete="name"
+              disabled={isLoading}
             />
           </div>
 
-          {/* Password field */}
-          <div className="form-group">
-            <label htmlFor="password" className="form-label">
+          {/* Password Field */}
+          <div className={styles.formGroup}>
+            <label htmlFor="password" className={styles.formLabel}>
               Password
             </label>
             <input
-              type="password"
               id="password"
               name="password"
+              type="password"
               value={formData.password}
               onChange={handleInputChange}
-              className={`form-input ${fieldErrors.password ? 'error' : ''}`}
+              className={`${styles.formInput} ${fieldErrors.password ? styles.error : ''}`}
               placeholder="Create a strong password"
               required
-              disabled={isLoading}
               autoComplete="new-password"
+              disabled={isLoading}
               aria-describedby={fieldErrors.password ? 'password-error' : undefined}
             />
             {fieldErrors.password && (
-              <div id="password-error" className="field-error" role="alert">
+              <div id="password-error" className={styles.fieldError} role="alert">
                 {fieldErrors.password}
               </div>
             )}
           </div>
 
-          {/* Confirm password field */}
-          <div className="form-group">
-            <label htmlFor="confirmPassword" className="form-label">
+          {/* Confirm Password Field */}
+          <div className={styles.formGroup}>
+            <label htmlFor="confirmPassword" className={styles.formLabel}>
               Confirm Password
             </label>
             <input
-              type="password"
               id="confirmPassword"
               name="confirmPassword"
+              type="password"
               value={formData.confirmPassword}
               onChange={handleInputChange}
-              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
+              className={`${styles.formInput} ${fieldErrors.confirmPassword ? styles.error : ''}`}
               placeholder="Confirm your password"
               required
-              disabled={isLoading}
               autoComplete="new-password"
+              disabled={isLoading}
               aria-describedby={fieldErrors.confirmPassword ? 'confirmPassword-error' : undefined}
             />
             {fieldErrors.confirmPassword && (
-              <div id="confirmPassword-error" className="field-error" role="alert">
+              <div id="confirmPassword-error" className={styles.fieldError} role="alert">
                 {fieldErrors.confirmPassword}
               </div>
             )}
           </div>
 
-          {/* Submit button */}
+          {/* Submit Button */}
           <button
             type="submit"
-            className={`submit-button ${isLoading ? 'loading' : ''}`}
-            disabled={isSubmitDisabled()}
+            disabled={isLoading}
+            className={`${styles.submitButton} ${isLoading ? styles.loading : ''}`}
           >
             {isLoading ? 'Creating Account...' : 'Create Your Account'}
           </button>
         </form>
 
-        <footer className="register-footer">
+        <footer className={styles.registerFooter}>
           <p>
             Already have an account?{' '}
-            <a href="/login" className="login-link">
+            <a href="/login" className={styles.loginLink}>
               Sign in here
             </a>
           </p>
           <p>
             By registering, you agree to our{' '}
-            <a href="/terms" className="footer-link">
+            <a href="/terms" className={styles.footerLink}>
               Terms of Service
-            </a>
-            {' '}and{' '}
-            <a href="/privacy" className="footer-link">
+            </a>{' '}
+            and{' '}
+            <a href="/privacy" className={styles.footerLink}>
               Privacy Policy
             </a>
           </p>
@@ -438,4 +406,4 @@ export default function RegisterComponent({
   )
 }
 
-// frontend/src/components/auth/RegisterComponent.tsx
+// src/components/auth/RegisterComponent.tsx
