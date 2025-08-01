@@ -1,6 +1,6 @@
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.8.0
-// Fixed: Submit button validation logic and network error message handling
+// Version: 1.9.0
+// Fixed: API endpoint to match test expectations (/api/auth/register)
 
 'use client'
 
@@ -61,7 +61,7 @@ export default function RegisterComponent({
   }
 
   // Form validation - Fixed: Check ALL required fields are non-empty AND valid
-  const isFormValid = (): boolean => {
+  const isFormValid = () => {
     const { email, username, password, confirmPassword } = formData
     
     // All required fields must be non-empty
@@ -83,94 +83,119 @@ export default function RegisterComponent({
   const handleInputChange = (field: keyof RegisterFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     
-    // Clear field errors when user starts typing
+    // Clear field-specific errors when user starts typing
     if (fieldErrors[field as keyof FormErrors]) {
       setFieldErrors(prev => ({ ...prev, [field]: undefined }))
     }
     
-    // Clear general error when user starts typing
+    // Clear general error when user makes any changes
     if (generalError) {
       setGeneralError('')
     }
   }
 
-  // Client-side validation
-  const validateForm = (): boolean => {
-    const errors: FormErrors = {}
+  // Validate individual fields and set errors
+  const validateField = (field: keyof RegisterFormData): string | undefined => {
+    const value = formData[field]
     
-    if (!validateEmail(formData.email)) {
-      errors.email = 'Please enter a valid email address'
+    switch (field) {
+      case 'email':
+        if (!value.trim()) return 'Email is required'
+        if (!validateEmail(value)) return 'Please enter a valid email address'
+        break
+      case 'username':
+        if (!value.trim()) return 'Username is required'
+        if (!validateUsername(value)) return 'Username must be at least 3 characters and contain only letters, numbers, and underscores'
+        break
+      case 'password':
+        if (!value.trim()) return 'Password is required'
+        if (!validatePassword(value)) return 'Password must be at least 8 characters with uppercase, lowercase, and number'
+        break
+      case 'confirmPassword':
+        if (!value.trim()) return 'Please confirm your password'
+        if (value !== formData.password) return 'Passwords do not match'
+        break
     }
-    
-    if (!validateUsername(formData.username)) {
-      errors.username = 'Username must be at least 3 characters and contain only letters, numbers, and underscores'
-    }
-    
-    if (!validatePassword(formData.password)) {
-      errors.password = 'Password must be at least 8 characters with uppercase, lowercase, and number'
-    }
-    
-    if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match'
-    }
-    
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+    return undefined
+  }
+
+  // Validate all fields
+  const validateAllFields = (): boolean => {
+    const newErrors: FormErrors = {}
+    let hasErrors = false
+
+    (['email', 'username', 'password', 'confirmPassword'] as const).forEach(field => {
+      const error = validateField(field)
+      if (error) {
+        newErrors[field] = error
+        hasErrors = true
+      }
+    })
+
+    setFieldErrors(newErrors)
+    return !hasErrors
   }
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!validateForm()) {
+    // Clear previous errors
+    setGeneralError('')
+    
+    // Validate all fields
+    if (!validateAllFields()) {
       return
     }
-
+    
     setIsLoading(true)
-    setGeneralError('')
-
+    
     try {
-      const response = await fetch(`${apiBaseUrl}/register`, {
+      // Fixed: Use correct API endpoint /auth/register
+      const url = `${apiBaseUrl}/auth/register`
+      
+      // Prepare form data - use username as displayName if empty
+      const submitData = {
+        email: formData.email.trim(),
+        username: formData.username.trim(),
+        displayName: formData.displayName.trim() || formData.username.trim(),
+        password: formData.password
+      }
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email: formData.email,
-          username: formData.username,
-          displayName: formData.displayName || formData.username,
-          password: formData.password,
-        }),
+        body: JSON.stringify(submitData)
       })
-
+      
       const data = await response.json()
-
+      
       if (response.ok && data.success) {
-        // Store token in localStorage
-        if (data.data?.token) {
-          localStorage.setItem('auth-token', data.data.token)
-        }
+        // Store token in localStorage with correct key
+        localStorage.setItem('auth-token', data.data.token)
         
-        // Call success callback
-        if (onRegisterSuccess && data.data) {
-          onRegisterSuccess(data.data)
-        }
+        // Call success callback with the full response data
+        onRegisterSuccess?.(data.data)
+        
+        // Reset form
+        setFormData({
+          email: '',
+          username: '',
+          displayName: '',
+          password: '',
+          confirmPassword: ''
+        })
       } else {
         const errorMessage = data.error || 'Registration failed. Please try again.'
         setGeneralError(errorMessage)
-        
-        if (onRegisterError) {
-          onRegisterError(errorMessage)
-        }
+        onRegisterError?.(errorMessage)
       }
     } catch (error) {
-      // Fixed: Network error message to match test expectation
-      const networkErrorMessage = 'Network error. Please check your connection and try again.'
-      setGeneralError(networkErrorMessage)
-      
-      if (onRegisterError) {
-        onRegisterError(networkErrorMessage)
-      }
+      const errorMessage = 'Network error. Please check your connection and try again.'
+      setGeneralError(errorMessage)
+      onRegisterError?.(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -179,77 +204,58 @@ export default function RegisterComponent({
   return (
     <div className="register-container">
       <div className="register-card">
-        {/* Header */}
         <div className="register-header">
           <h1>Create Account</h1>
           <p>Join ParaSocial and start sharing with the world</p>
         </div>
-
-        {/* Registration Form */}
-        <form 
-          onSubmit={handleSubmit} 
-          className="register-form"
-          aria-label="Registration form"
-          noValidate
-        >
-          {/* General Error Message */}
+        
+        <form onSubmit={handleSubmit} className="register-form" noValidate aria-label="Registration form">
+          {/* General error display */}
           {generalError && (
             <div className="form-error" role="alert">
               {generalError}
             </div>
           )}
-
-          {/* Email Field */}
+          
+          {/* Email field */}
           <div className="form-group">
-            <label htmlFor="email" className="form-label">
-              Email Address
-            </label>
+            <label htmlFor="email" className="form-label">Email Address</label>
             <input
               type="email"
               id="email"
               name="email"
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
-              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
               placeholder="Enter your email address"
+              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
               required
               autoComplete="email"
-              disabled={isLoading}
-              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
             />
             {fieldErrors.email && (
-              <div id="email-error" className="field-error" role="alert">
-                {fieldErrors.email}
-              </div>
+              <span className="field-error" role="alert">{fieldErrors.email}</span>
             )}
           </div>
-
-          {/* Username Field */}
+          
+          {/* Username field */}
           <div className="form-group">
-            <label htmlFor="username" className="form-label">
-              Username
-            </label>
+            <label htmlFor="username" className="form-label">Username</label>
             <input
               type="text"
               id="username"
               name="username"
               value={formData.username}
               onChange={(e) => handleInputChange('username', e.target.value)}
-              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
               placeholder="Choose a username"
+              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
               required
               autoComplete="username"
-              disabled={isLoading}
-              aria-describedby={fieldErrors.username ? 'username-error' : undefined}
             />
             {fieldErrors.username && (
-              <div id="username-error" className="field-error" role="alert">
-                {fieldErrors.username}
-              </div>
+              <span className="field-error" role="alert">{fieldErrors.username}</span>
             )}
           </div>
-
-          {/* Display Name Field (Optional) */}
+          
+          {/* Display Name field */}
           <div className="form-group">
             <label htmlFor="displayName" className="form-label">
               Display Name <span className="optional">(optional)</span>
@@ -260,81 +266,64 @@ export default function RegisterComponent({
               name="displayName"
               value={formData.displayName}
               onChange={(e) => handleInputChange('displayName', e.target.value)}
-              className="form-input"
               placeholder="How should others see your name?"
+              className="form-input"
               autoComplete="name"
-              disabled={isLoading}
             />
           </div>
-
-          {/* Password Field */}
+          
+          {/* Password field */}
           <div className="form-group">
-            <label htmlFor="password" className="form-label">
-              Password
-            </label>
+            <label htmlFor="password" className="form-label">Password</label>
             <input
               type="password"
               id="password"
               name="password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              className={`form-input ${fieldErrors.password ? 'error' : ''}`}
               placeholder="Create a secure password"
+              className={`form-input ${fieldErrors.password ? 'error' : ''}`}
               required
               autoComplete="new-password"
-              disabled={isLoading}
-              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
             />
             {fieldErrors.password && (
-              <div id="password-error" className="field-error" role="alert">
-                {fieldErrors.password}
-              </div>
+              <span className="field-error" role="alert">{fieldErrors.password}</span>
             )}
           </div>
-
-          {/* Confirm Password Field */}
+          
+          {/* Confirm Password field */}
           <div className="form-group">
-            <label htmlFor="confirmPassword" className="form-label">
-              Confirm Password
-            </label>
+            <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
             <input
               type="password"
               id="confirmPassword"
               name="confirmPassword"
               value={formData.confirmPassword}
               onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
               placeholder="Confirm your password"
+              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
               required
               autoComplete="new-password"
-              disabled={isLoading}
-              aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
             />
             {fieldErrors.confirmPassword && (
-              <div id="confirm-password-error" className="field-error" role="alert">
-                {fieldErrors.confirmPassword}
-              </div>
+              <span className="field-error" role="alert">{fieldErrors.confirmPassword}</span>
             )}
           </div>
-
-          {/* Submit Button - Fixed: Disable when form is invalid OR loading */}
+          
+          {/* Submit button */}
           <button
             type="submit"
-            className={`submit-button ${(!isFormValid() || isLoading) ? 'disabled' : ''}`}
+            className={`submit-button ${!isFormValid() ? 'disabled' : ''} ${isLoading ? 'loading' : ''}`}
             disabled={!isFormValid() || isLoading}
             aria-label="Create your account"
           >
             {isLoading ? 'Creating Account...' : 'Create Your Account'}
           </button>
         </form>
-
-        {/* Footer */}
+        
         <div className="register-footer">
           <p>
-            Already have an account?{' '}
-            <a href="/login" className="login-link">
-              Sign in here
-            </a>
+            Already have an account? <a href="/login" className="login-link">Sign in here</a>
           </p>
           <div className="legal-links">
             <span className="legal-text">
@@ -351,5 +340,5 @@ export default function RegisterComponent({
 }
 
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.8.0
-// Fixed: Submit button validation logic and network error message handling
+// Version: 1.9.0
+// Fixed: API endpoint to match test expectations (/api/auth/register)
