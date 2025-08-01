@@ -1,6 +1,6 @@
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.6.0
-// Fixed: Submit button validation logic and network error message handling
+// Version: 1.7.0
+// Fixed: JSON property order, localStorage key consistency, and submit button validation
 
 'use client'
 
@@ -67,7 +67,7 @@ export default function RegisterComponent({
 
   /**
    * Computed property to check if form is valid for submission
-   * Button should be enabled only when all required fields are filled
+   * Button should be disabled only when required fields are empty or form is loading
    */
   const isFormValid = (): boolean => {
     const { email, username, password, confirmPassword } = formData
@@ -78,7 +78,7 @@ export default function RegisterComponent({
     const hasPassword = password.trim().length > 0
     const hasConfirmPassword = confirmPassword.trim().length > 0
     
-    // If any required field is empty, form is invalid
+    // Form is valid if all required fields have content
     return hasEmail && hasUsername && hasPassword && hasConfirmPassword
   }
 
@@ -186,11 +186,12 @@ export default function RegisterComponent({
     try {
       const endpoint = apiBaseUrl ? `${apiBaseUrl}/api/auth/register` : '/api/auth/register'
       
+      // Fixed: Property order to match test expectations
       const requestBody = {
         email: formData.email.trim(),
         username: formData.username.trim(),
-        password: formData.password,
-        displayName: formData.displayName.trim() || formData.username.trim()
+        displayName: formData.displayName.trim() || formData.username.trim(),
+        password: formData.password
       }
 
       const response = await fetch(endpoint, {
@@ -204,8 +205,8 @@ export default function RegisterComponent({
       const data: RegisterApiResponse = await response.json()
 
       if (response.ok && data.success) {
-        // Store auth token
-        localStorage.setItem('auth-token', data.data.token)
+        // Fixed: Use consistent localStorage key 'authToken' to match tests
+        localStorage.setItem('authToken', data.data.token)
         
         if (onRegisterSuccess) {
           onRegisterSuccess({
@@ -222,29 +223,50 @@ export default function RegisterComponent({
         }
       }
     } catch (err) {
-      // Network error handling - use standard message for consistency
-      const networkErrorMessage = 'Registration failed. Please try again.'
-      setError(networkErrorMessage)
+      const networkError = 'Network error. Please check your connection and try again.'
+      setError(networkError)
       if (onRegisterError) {
-        onRegisterError(networkErrorMessage)
+        onRegisterError(networkError)
       }
     } finally {
       setIsLoading(false)
     }
   }
 
+  /**
+   * Reset form to initial state
+   */
+  const resetForm = () => {
+    setFormData({
+      email: '',
+      username: '',
+      password: '',
+      confirmPassword: '',
+      displayName: ''
+    })
+    setFieldErrors({})
+    setError(null)
+  }
+
   return (
     <div className="register-container">
       <div className="register-card">
+        {/* Header */}
         <div className="register-header">
           <h1>Create Account</h1>
           <p>Join ParaSocial and start sharing with the world</p>
         </div>
 
-        <form className="register-form" onSubmit={handleSubmit} noValidate aria-label="Registration form">
-          {/* General Error Display */}
+        {/* Registration Form */}
+        <form 
+          className="register-form" 
+          onSubmit={handleSubmit}
+          noValidate
+          aria-label="Registration form"
+        >
+          {/* Global Error Message */}
           {error && (
-            <div className="error-message" role="alert" aria-live="polite">
+            <div className="form-error" role="alert">
               {error}
             </div>
           )}
@@ -358,26 +380,27 @@ export default function RegisterComponent({
               required
               autoComplete="new-password"
               disabled={isLoading}
-              aria-describedby={fieldErrors.confirmPassword ? 'confirmPassword-error' : undefined}
+              aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
             />
             {fieldErrors.confirmPassword && (
-              <div id="confirmPassword-error" className="field-error" role="alert">
+              <div id="confirm-password-error" className="field-error" role="alert">
                 {fieldErrors.confirmPassword}
               </div>
             )}
           </div>
 
-          {/* Submit Button - Uses corrected isFormValid() logic */}
+          {/* Submit Button - Fixed: Only disable when form is invalid OR loading */}
           <button
             type="submit"
+            className={`submit-button ${(!isFormValid() || isLoading) ? 'disabled' : ''}`}
             disabled={!isFormValid() || isLoading}
-            className={`submit-button ${isLoading ? 'loading' : ''}`}
             aria-label="Create your account"
           >
             {isLoading ? 'Creating Account...' : 'Create Your Account'}
           </button>
         </form>
 
+        {/* Footer */}
         <div className="register-footer">
           <p>
             Already have an account?{' '}
@@ -388,13 +411,9 @@ export default function RegisterComponent({
           <div className="legal-links">
             <span className="legal-text">
               By creating an account, you agree to our{' '}
-              <a href="/terms" className="footer-link">
-                Terms of Service
-              </a>{' '}
+              <a href="/terms" className="footer-link">Terms of Service</a>{' '}
               and{' '}
-              <a href="/privacy" className="footer-link">
-                Privacy Policy
-              </a>
+              <a href="/privacy" className="footer-link">Privacy Policy</a>
             </span>
           </div>
         </div>
@@ -404,5 +423,5 @@ export default function RegisterComponent({
 }
 
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.6.0
-// Fixed: Submit button validation logic and network error message handling
+// Version: 1.7.0
+// Fixed: JSON property order, localStorage key consistency, and submit button validation
