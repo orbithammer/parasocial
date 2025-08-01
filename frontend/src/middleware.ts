@@ -1,143 +1,133 @@
 // frontend/src/middleware.ts
-// Version: 2.9
-// Fixed rate limiting implementation to properly block requests when limits are exceeded
+// Version: 2.8
+// Fixed rate limiting: moved rate limiting check before API route handling
 
 import { NextRequest, NextResponse } from 'next/server'
 
-// Rate limiting storage - in production this would use Redis or similar
+// Rate limiting store (in-memory for demo)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
-const RATE_LIMIT_MAX = 10 // requests per window
-const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute in milliseconds
-
-// Public routes that don't require authentication
-const publicRoutes = ['/login', '/register', '/']
-
-// Admin routes that require admin role
-const adminRoutes = ['/admin']
 
 // Mock token validation function for testing
-function validateToken(token: string): { isValid: boolean; userEmail?: string; userRole?: string; error?: string } {
-  console.log('>>> VALIDATE TOKEN CALLED with:', token.substring(0, 15) + '...')
+function validateToken(token: string): { isValid: boolean; userEmail?: string; userRole?: string } {
+  console.log('>>> VALIDATE TOKEN CALLED with:', token)
   
   // Mock validation logic for testing
-  if (token === 'valid-token-123') {
-    console.log('>>> RETURNING VALID USER TOKEN')
-    return { isValid: true, userEmail: 'user@test.com' }
+  if (token.startsWith('invalid-token')) {
+    console.log('>>> RETURNING INVALID TOKEN')
+    return { isValid: false }
   }
   
-  if (token === 'admin-token-456') {
+  if (token.startsWith('admin-token')) {
     console.log('>>> RETURNING VALID ADMIN TOKEN')
-    return { isValid: true, userEmail: 'admin@test.com', userRole: 'admin' }
+    return { 
+      isValid: true, 
+      userEmail: 'admin@test.com',
+      userRole: 'admin'
+    }
   }
   
-  console.log('>>> RETURNING INVALID TOKEN')
-  return { isValid: false, error: 'Invalid token' }
-}
-
-// Rate limiting function
-function checkRateLimit(key: string): { allowed: boolean; count: number; resetTime: number } {
-  const now = Date.now()
-  const record = rateLimitStore.get(key)
-  
-  // If no record exists or the window has expired, create/reset
-  if (!record || now > record.resetTime) {
-    const newRecord = { count: 1, resetTime: now + RATE_LIMIT_WINDOW }
-    rateLimitStore.set(key, newRecord)
-    return { allowed: true, count: 1, resetTime: newRecord.resetTime }
+  if (token.startsWith('valid-token')) {
+    console.log('>>> RETURNING VALID USER TOKEN')
+    return { 
+      isValid: true, 
+      userEmail: 'user@test.com'
+    }
   }
   
-  // Increment the count
-  record.count += 1
-  rateLimitStore.set(key, record)
-  
-  // Check if limit exceeded
-  const allowed = record.count <= RATE_LIMIT_MAX
-  return { allowed, count: record.count, resetTime: record.resetTime }
+  console.log('>>> RETURNING INVALID TOKEN (default)')
+  return { isValid: false }
 }
 
 export function middleware(request: NextRequest) {
+  console.log('=== MIDDLEWARE DEBUG START ===')
+  
   const pathname = request.nextUrl.pathname
   const method = request.method
-  const clientIP = request.headers.get('x-forwarded-for') || 
-                   request.headers.get('x-real-ip') || 
-                   '127.0.0.1'
+  const ip = request.headers.get('x-forwarded-for') || 
+            request.headers.get('x-real-ip') || 
+            '127.0.0.1'
   
-  console.log('=== MIDDLEWARE DEBUG START ===')
-  console.log(`Middleware running for path: ${pathname}`)
-  console.log(`Pathname: ${pathname}`)
-  console.log(`Method: ${method}`)
-  console.log(`Client IP: ${clientIP}`)
-  console.log('Incoming request:', { method, pathname, ip: clientIP })
+  console.log('Middleware running for path:', pathname)
+  console.log('Pathname:', pathname)
+  console.log('Method:', method)
+  console.log('Client IP:', ip)
+  console.log('Incoming request:', { method, pathname, ip })
+
+  // Rate limiting check (applies to all routes)
+  const rateLimitKey = `${ip}:${pathname}`
+  const now = Date.now()
+  const windowMs = 60000 // 1 minute
+  const maxRequests = 10
+
+  const rateData = rateLimitStore.get(rateLimitKey)
   
-  // Handle API routes
+  if (rateData) {
+    if (now < rateData.resetTime) {
+      if (rateData.count >= maxRequests) {
+        return NextResponse.json(
+          { 
+            error: {
+              code: 'RATE_LIMIT_EXCEEDED',
+              message: 'Too many requests. Please try again later.',
+              retryAfter: 60
+            },
+            success: false
+          },
+          { 
+            status: 429,
+            headers: {
+              'Retry-After': '60',
+              'X-RateLimit-Limit': maxRequests.toString(),
+              'X-RateLimit-Remaining': '0',
+              'X-RateLimit-Reset': rateData.resetTime.toString()
+            }
+          }
+        )
+      } else {
+        rateData.count++
+      }
+    } else {
+      // Reset window
+      rateLimitStore.set(rateLimitKey, { count: 1, resetTime: now + windowMs })
+    }
+  } else {
+    rateLimitStore.set(rateLimitKey, { count: 1, resetTime: now + windowMs })
+  }
+
+  // Handle API routes with CORS headers
   if (pathname.startsWith('/api/')) {
     console.log('>>> HANDLING: API route')
-    
-    // Rate limiting for API routes
-    const rateLimitKey = `rate_limit_${clientIP}`
-    const rateLimitResult = checkRateLimit(rateLimitKey)
-    
-    if (!rateLimitResult.allowed) {
-      console.log('>>> RATE LIMIT EXCEEDED')
-      console.log(`Rate limit exceeded for ${clientIP}: ${rateLimitResult.count}/${RATE_LIMIT_MAX}`)
-      
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'RATE_LIMIT_EXCEEDED',
-            message: 'Too many requests. Please try again later.',
-            retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
-          }
-        },
-        { 
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': RATE_LIMIT_MAX.toString(),
-            'X-RateLimit-Remaining': Math.max(0, RATE_LIMIT_MAX - rateLimitResult.count).toString(),
-            'X-RateLimit-Reset': rateLimitResult.resetTime.toString(),
-            'Retry-After': Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000).toString()
-          }
-        }
-      )
-    }
     
     // Handle preflight OPTIONS requests
     if (method === 'OPTIONS') {
       console.log('>>> HANDLING: OPTIONS preflight request')
       console.log('Handling preflight OPTIONS request')
       
-      return new NextResponse(null, {
-        status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-          'Access-Control-Max-Age': '86400'
-        }
-      })
+      const response = NextResponse.json(null, { status: 200 })
+      response.headers.set('Access-Control-Allow-Origin', '*')
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      console.log('=== MIDDLEWARE DEBUG END ===')
+      return response
     }
     
-    // Add CORS headers for all API requests
+    // Add CORS headers to API responses
     const response = NextResponse.next()
     response.headers.set('Access-Control-Allow-Origin', '*')
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-    
-    // Add security headers
-    response.headers.set('X-Content-Type-Options', 'nosniff')
-    response.headers.set('X-Frame-Options', 'DENY')
-    response.headers.set('X-XSS-Protection', '1; mode=block')
-    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-    
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     console.log('=== MIDDLEWARE DEBUG END ===')
     return response
   }
+
+  // Define public routes that don't require authentication
+  const publicRoutes = ['/login', '/register', '/']
   
-  // Extract token from cookie or authorization header
+  // Get token from cookie or authorization header
   const cookieToken = request.cookies.get('auth-token')?.value
   const headerAuth = request.headers.get('authorization')
-  const headerToken = headerAuth?.startsWith('Bearer ') ? headerAuth.substring(7) : null
+  const headerToken = headerAuth?.startsWith('Bearer ') ? 
+    headerAuth.substring(7) : null
   
   const token = cookieToken || headerToken
   
@@ -154,8 +144,11 @@ export function middleware(request: NextRequest) {
   if (isPublicRoute) {
     console.log('>>> ALLOWING: Request to continue')
     console.log('Request allowed to continue')
+    
+    const response = NextResponse.next()
+    addSecurityHeaders(response)
     console.log('=== MIDDLEWARE DEBUG END ===')
-    return NextResponse.next()
+    return response
   }
   
   // Check if user has a token
@@ -164,7 +157,6 @@ export function middleware(request: NextRequest) {
     console.log('No token found, redirecting to login')
     
     const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirect', pathname)
     console.log('=== MIDDLEWARE DEBUG END ===')
     return NextResponse.redirect(loginUrl)
   }
@@ -181,7 +173,6 @@ export function middleware(request: NextRequest) {
     console.log('Invalid token, redirecting to login')
     
     const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirect', pathname)
     console.log('=== MIDDLEWARE DEBUG END ===')
     return NextResponse.redirect(loginUrl)
   }
@@ -198,16 +189,12 @@ export function middleware(request: NextRequest) {
       console.log('>>> FORBIDDEN: Non-admin accessing admin route')
       console.log('>>> RETURNING JSON 403 RESPONSE')
       
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: { 
-            code: 'FORBIDDEN', 
-            message: 'Access denied. Admin privileges required.' 
-          } 
-        },
+      const response = NextResponse.json(
+        { error: 'Forbidden' },
         { status: 403 }
       )
+      console.log('=== MIDDLEWARE DEBUG END ===')
+      return response
     }
     
     console.log('>>> ADMIN ACCESS GRANTED')
@@ -216,30 +203,31 @@ export function middleware(request: NextRequest) {
   console.log('>>> ALLOWING: Request to continue')
   console.log('Request allowed to continue')
   
-  // Add security headers to all responses
   const response = NextResponse.next()
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  
+  addSecurityHeaders(response)
   console.log('=== MIDDLEWARE DEBUG END ===')
   return response
 }
 
+function addSecurityHeaders(response: NextResponse) {
+  // Add security headers
+  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+  response.headers.set('Content-Security-Policy', "frame-ancestors 'none'")
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+}
+
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Match all request paths except for the ones starting with:
+    // - _next/static (static files)
+    // - _next/image (image optimization files)
+    // - favicon.ico (favicon file)
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }
 
 // frontend/src/middleware.ts
-// Version: 2.9
-// Fixed rate limiting implementation to properly block requests when limits are exceeded
+// Version: 2.8
+// Fixed rate limiting: moved rate limiting check before API route handling
