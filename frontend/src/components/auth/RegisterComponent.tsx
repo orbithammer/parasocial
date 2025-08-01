@@ -1,7 +1,6 @@
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.3
-// Fixed: Added proper isFormValid computed property to enable/disable submit button
-// Fixed: Corrected localStorage key to 'auth-token', JSON property order, and error messages
+// Version: 1.6.0
+// Fixed: Submit button validation logic and network error message handling
 
 'use client'
 
@@ -68,29 +67,19 @@ export default function RegisterComponent({
 
   /**
    * Computed property to check if form is valid for submission
-   * Button should be enabled only when all required fields are filled and basic validation passes
+   * Button should be enabled only when all required fields are filled
    */
   const isFormValid = (): boolean => {
     const { email, username, password, confirmPassword } = formData
     
-    // Check required fields are not empty
-    const hasRequiredFields = email.trim() !== '' && username.trim() !== '' && password.trim() !== '' && confirmPassword.trim() !== ''
+    // All required fields must have content (not just whitespace)
+    const hasEmail = email.trim().length > 0
+    const hasUsername = username.trim().length > 0
+    const hasPassword = password.trim().length > 0
+    const hasConfirmPassword = confirmPassword.trim().length > 0
     
     // If any required field is empty, form is invalid
-    if (!hasRequiredFields) {
-      return false
-    }
-    
-    // Basic validation checks
-    const isEmailValid = email.includes('@') && email.includes('.')
-    const isPasswordValid = password.length >= 8
-    const passwordsMatch = password === confirmPassword
-    
-    // Only block if there are actual validation errors that prevent submission
-    // Don't block for missing field errors when fields have valid content
-    const hasBlockingPasswordError = fieldErrors.confirmPassword && confirmPassword.length > 0
-    
-    return isEmailValid && isPasswordValid && passwordsMatch && !hasBlockingPasswordError
+    return hasEmail && hasUsername && hasPassword && hasConfirmPassword
   }
 
   /**
@@ -144,28 +133,33 @@ export default function RegisterComponent({
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!formData.email.trim()) {
       errors.email = 'Email is required'
-    } else if (!emailRegex.test(formData.email.trim())) {
+    } else if (!emailRegex.test(formData.email)) {
       errors.email = 'Please enter a valid email address'
     }
 
     // Username validation
+    const usernameRegex = /^[a-zA-Z0-9_]+$/
     if (!formData.username.trim()) {
       errors.username = 'Username is required'
-    } else if (formData.username.trim().length < 3) {
+    } else if (formData.username.length < 3) {
       errors.username = 'Username must be at least 3 characters long'
-    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username.trim())) {
+    } else if (formData.username.length > 30) {
+      errors.username = 'Username must be no more than 30 characters long'
+    } else if (!usernameRegex.test(formData.username)) {
       errors.username = 'Username can only contain letters, numbers, and underscores'
     }
 
     // Password validation
-    if (!formData.password) {
+    if (!formData.password.trim()) {
       errors.password = 'Password is required'
     } else if (formData.password.length < 8) {
       errors.password = 'Password must be at least 8 characters long'
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      errors.password = 'Password must contain at least one uppercase letter, one lowercase letter, and one number'
     }
 
-    // Password confirmation validation
-    if (!formData.confirmPassword) {
+    // Confirm password validation
+    if (!formData.confirmPassword.trim()) {
       errors.confirmPassword = 'Please confirm your password'
     } else if (formData.password !== formData.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match'
@@ -181,7 +175,8 @@ export default function RegisterComponent({
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     
-    if (!validateForm() || isLoading) {
+    // Validate form before submission
+    if (!validateForm()) {
       return
     }
 
@@ -189,35 +184,29 @@ export default function RegisterComponent({
     setError(null)
 
     try {
-      // Prepare submission data - ensure property order matches test expectations
-      const submissionData = {
+      const endpoint = apiBaseUrl ? `${apiBaseUrl}/api/auth/register` : '/api/auth/register'
+      
+      const requestBody = {
         email: formData.email.trim(),
         username: formData.username.trim(),
-        displayName: formData.displayName.trim() || formData.username.trim(),
-        password: formData.password
+        password: formData.password,
+        displayName: formData.displayName.trim() || formData.username.trim()
       }
 
-      const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submissionData),
+        body: JSON.stringify(requestBody),
       })
 
       const data: RegisterApiResponse = await response.json()
 
-      if (!response.ok) {
-        // Handle HTTP errors by extracting message from response
-        const errorMessage = data.error || `HTTP error! status: ${response.status}`
-        throw new Error(errorMessage)
-      }
-
-      if (data.success && data.data) {
-        // Store token in localStorage with correct key expected by tests
-        localStorage.setItem('authToken', data.data.token)
+      if (response.ok && data.success) {
+        // Store auth token
+        localStorage.setItem('auth-token', data.data.token)
         
-        // Call success callback
         if (onRegisterSuccess) {
           onRegisterSuccess({
             id: data.data.user.id,
@@ -225,40 +214,19 @@ export default function RegisterComponent({
             username: data.data.user.username
           })
         }
-
-        // Reset form
-        setFormData({
-          email: '',
-          username: '',
-          password: '',
-          confirmPassword: '',
-          displayName: ''
-        })
       } else {
-        // Handle API response with success: false
-        const errorMessage = data.error || 'Registration failed'
-        throw new Error(errorMessage)
-      }
-    } catch (error) {
-      let errorMessage = 'Registration failed. Please try again.'
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
-          errorMessage = 'Network error'
-        } else if (error.message.includes('email already exists') || error.message.includes('Email already exists')) {
-          errorMessage = 'Email already exists'
-        } else if (error.message.includes('Username already taken') || error.message.includes('username already taken')) {
-          errorMessage = 'Username already taken'
-        } else if (error.message && error.message !== 'Registration failed') {
-          // Use the specific error message from the API response
-          errorMessage = error.message
+        const errorMessage = data.error || 'Registration failed. Please try again.'
+        setError(errorMessage)
+        if (onRegisterError) {
+          onRegisterError(errorMessage)
         }
       }
-      
-      setError(errorMessage)
-      
+    } catch (err) {
+      // Network error handling - use standard message for consistency
+      const networkErrorMessage = 'Registration failed. Please try again.'
+      setError(networkErrorMessage)
       if (onRegisterError) {
-        onRegisterError(errorMessage)
+        onRegisterError(networkErrorMessage)
       }
     } finally {
       setIsLoading(false)
@@ -273,13 +241,8 @@ export default function RegisterComponent({
           <p>Join ParaSocial and start sharing with the world</p>
         </div>
 
-        <form 
-          className="register-form"
-          onSubmit={handleSubmit}
-          noValidate
-          aria-label="Registration form"
-        >
-          {/* Global Error Message */}
+        <form className="register-form" onSubmit={handleSubmit} noValidate aria-label="Registration form">
+          {/* General Error Display */}
           {error && (
             <div className="error-message" role="alert" aria-live="polite">
               {error}
@@ -404,7 +367,7 @@ export default function RegisterComponent({
             )}
           </div>
 
-          {/* Submit Button - Now uses isFormValid() to control disabled state */}
+          {/* Submit Button - Uses corrected isFormValid() logic */}
           <button
             type="submit"
             disabled={!isFormValid() || isLoading}
@@ -441,5 +404,5 @@ export default function RegisterComponent({
 }
 
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.5
-// Fixed: Improved isFormValid logic to properly enable button, enhanced error message parsing for API responses
+// Version: 1.6.0
+// Fixed: Submit button validation logic and network error message handling

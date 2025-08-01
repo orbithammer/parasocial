@@ -1,4 +1,6 @@
-// frontend/src/middleware.ts - v1.1 - Added CORS, security headers, rate limiting, and proper logging
+// frontend/src/middleware.ts
+// Version: 1.3
+// Added rateLimitStore export for testing and comprehensive debug logging
 
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -31,14 +33,19 @@ const RATE_LIMIT_WINDOW = 15 * 60 * 1000 // 15 minutes
  * @returns TokenValidationResult with validation status and user data
  */
 function validateToken(token: string): TokenValidationResult {
+  console.log('>>> VALIDATE TOKEN CALLED with:', token?.substring(0, 15) + '...')
+  
   // Handle test tokens
   if (token === 'valid-token-123') {
+    console.log('>>> RETURNING VALID USER TOKEN')
     return { isValid: true, user: { userId: '1', email: 'user@test.com', exp: 9999999999, iat: 1000000000 } }
   }
   if (token === 'admin-token-456') {
+    console.log('>>> RETURNING VALID ADMIN TOKEN')
     return { isValid: true, user: { userId: '2', email: 'admin@test.com', role: 'admin', exp: 9999999999, iat: 1000000000 } }
   }
   if (token === 'invalid-token-999') {
+    console.log('>>> RETURNING INVALID TOKEN')
     return { isValid: false, error: 'Invalid token' }
   }
 
@@ -46,6 +53,7 @@ function validateToken(token: string): TokenValidationResult {
     // Split JWT into header, payload, signature
     const parts = token.split('.')
     if (parts.length !== 3) {
+      console.log('>>> TOKEN FORMAT INVALID')
       return { isValid: false, error: 'Invalid token format' }
     }
 
@@ -61,12 +69,15 @@ function validateToken(token: string): TokenValidationResult {
     // Check if token is expired
     const currentTime = Math.floor(Date.now() / 1000)
     if (decodedPayload.exp && decodedPayload.exp < currentTime) {
+      console.log('>>> TOKEN EXPIRED')
       return { isValid: false, error: 'Token expired' }
     }
 
+    console.log('>>> TOKEN VALID, USER:', decodedPayload.email)
     // Return valid token with user data
     return { isValid: true, user: decodedPayload }
   } catch (error) {
+    console.log('>>> TOKEN DECODE ERROR:', error)
     return { isValid: false, error: 'Invalid token structure' }
   }
 }
@@ -146,10 +157,15 @@ function logRequest(request: NextRequest): void {
  * @returns NextResponse for routing
  */
 export function middleware(request: NextRequest) {
+  console.log('=== MIDDLEWARE DEBUG START ===')
   console.log('Middleware running for path:', request.nextUrl.pathname)
   
   const { pathname } = request.nextUrl
   const clientIP = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '127.0.0.1'
+  
+  console.log('Pathname:', pathname)
+  console.log('Method:', request.method)
+  console.log('Client IP:', clientIP)
   
   // Log the incoming request
   logRequest(request)
@@ -160,11 +176,14 @@ export function middleware(request: NextRequest) {
     pathname.includes('.') ||
     pathname.startsWith('/favicon')
   ) {
+    console.log('>>> SKIPPING: Static file or Next.js internal')
     return NextResponse.next()
   }
   
   // Handle preflight OPTIONS requests for CORS
   if (request.method === 'OPTIONS') {
+    console.log('>>> HANDLING: OPTIONS preflight request')
+    console.log('Handling preflight OPTIONS request')
     const response = NextResponse.json(null, { status: 200 })
     addCORSHeaders(response)
     return response
@@ -173,6 +192,7 @@ export function middleware(request: NextRequest) {
   // Rate limiting check
   const rateLimit = checkRateLimit(clientIP)
   if (rateLimit.blocked) {
+    console.log('>>> BLOCKED: Rate limit exceeded')
     const response = NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
     response.headers.set('X-RateLimit-Remaining', '0')
     response.headers.set('Retry-After', '900') // 15 minutes
@@ -181,6 +201,7 @@ export function middleware(request: NextRequest) {
   
   // For API routes, add CORS headers
   if (pathname.startsWith('/api/')) {
+    console.log('>>> HANDLING: API route')
     const response = NextResponse.next()
     addCORSHeaders(response)
     addSecurityHeaders(response)
@@ -193,12 +214,20 @@ export function middleware(request: NextRequest) {
   const headerToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const token = cookieToken || headerToken
   
+  console.log('Cookie token found:', !!cookieToken)
+  console.log('Header token found:', !!headerToken)
+  console.log('Final token:', token ? token.substring(0, 10) + '...' : 'none')
+  
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/']
   const isPublicRoute = publicRoutes.includes(pathname)
   
+  console.log('Is public route:', isPublicRoute)
+  console.log('Public routes list:', publicRoutes)
+  
   // If no token and trying to access protected route
   if (!token && !isPublicRoute) {
+    console.log('>>> REDIRECTING: No token on protected route')
     console.log('No token found, redirecting to login')
     const response = NextResponse.redirect(new URL('/login', request.url))
     addSecurityHeaders(response)
@@ -207,28 +236,50 @@ export function middleware(request: NextRequest) {
   
   // If token exists, validate it
   if (token) {
+    console.log('>>> TOKEN EXISTS: Starting validation')
     const validationResult = validateToken(token)
     
+    console.log('Token validation result:', {
+      isValid: validationResult.isValid,
+      error: validationResult.error,
+      userEmail: validationResult.user?.email,
+      userRole: validationResult.user?.role
+    })
+    
     if (!validationResult.isValid) {
+      console.log('>>> INVALID TOKEN: Should redirect to login')
       console.log('Invalid token:', validationResult.error)
+      
       // Clear invalid token and redirect to login
       const response = NextResponse.redirect(new URL('/login', request.url))
       response.cookies.delete('auth-token')
       addSecurityHeaders(response)
+      console.log('>>> RETURNING REDIRECT RESPONSE FOR INVALID TOKEN')
       return response
     }
     
+    console.log('>>> VALID TOKEN')
     console.log('Valid token for user:', validationResult.user?.email)
     
     // Check admin route access
-    if (pathname.startsWith('/admin') && validationResult.user?.role !== 'admin') {
-      const response = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      addSecurityHeaders(response)
-      return response
+    if (pathname.startsWith('/admin')) {
+      console.log('>>> CHECKING: Admin route access')
+      console.log('User role:', validationResult.user?.role)
+      
+      if (validationResult.user?.role !== 'admin') {
+        console.log('>>> FORBIDDEN: Non-admin accessing admin route')
+        const response = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        addSecurityHeaders(response)
+        console.log('>>> RETURNING JSON 403 RESPONSE')
+        return response
+      }
+      
+      console.log('>>> ADMIN ACCESS GRANTED')
     }
     
     // If user is authenticated and trying to access login/register, redirect to dashboard
     if (isPublicRoute && pathname !== '/') {
+      console.log('>>> REDIRECTING: Authenticated user accessing public route')
       console.log('Authenticated user accessing public route, redirecting to dashboard')
       const response = NextResponse.redirect(new URL('/dashboard', request.url))
       addSecurityHeaders(response)
@@ -237,10 +288,12 @@ export function middleware(request: NextRequest) {
   }
   
   // Allow request to continue with security headers
+  console.log('>>> ALLOWING: Request to continue')
   console.log('Request allowed to continue')
   const response = NextResponse.next()
   addSecurityHeaders(response)
   response.headers.set('X-RateLimit-Remaining', rateLimit.remaining.toString())
+  console.log('=== MIDDLEWARE DEBUG END ===')
   return response
 }
 
@@ -258,4 +311,5 @@ export const config = {
   ],
 }
 
-// frontend/src/middleware.ts - v1.1 - Added CORS, security headers, rate limiting, and proper logging
+// Export for testing
+export { rateLimitStore }

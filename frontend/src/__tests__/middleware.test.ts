@@ -262,9 +262,22 @@ describe('Middleware', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid authentication tokens gracefully', async () => {
+      console.log('=== DEBUG: Starting invalid token test ===')
       mockRequest = createMockRequest('GET', '/dashboard', 'invalid-token-999')
       
+      console.log('=== DEBUG: Mock request created ===')
+      console.log('Request URL:', mockRequest.url)
+      console.log('Request pathname:', mockRequest.nextUrl.pathname)
+      console.log('Request headers authorization:', mockRequest.headers.get('authorization'))
+      console.log('Request cookie auth-token:', mockRequest.cookies.get('auth-token'))
+      
       const response = await middleware(mockRequest)
+      
+      console.log('=== DEBUG: Middleware completed ===')
+      console.log('mockRedirect called?', mockRedirect.mock.calls.length > 0)
+      console.log('mockRedirect calls:', mockRedirect.mock.calls)
+      console.log('mockNext called?', mockNext.mock.calls.length > 0)
+      console.log('mockJson called?', mockJson.mock.calls.length > 0)
       
       // Check that redirect was called for invalid tokens
       expect(mockRedirect).toHaveBeenCalledWith(
