@@ -1,6 +1,6 @@
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.9.0
-// Fixed: API endpoint to match test expectations (/api/auth/register)
+// Version: 1.10.0
+// Fixed: isFormValid function definition to ensure proper TypeScript function type
 
 'use client'
 
@@ -60,8 +60,8 @@ export default function RegisterComponent({
     return password.length >= 8 && /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)
   }
 
-  // Form validation - Fixed: Check ALL required fields are non-empty AND valid
-  const isFormValid = () => {
+  // Form validation - Fixed: Explicit function type annotation
+  const isFormValid = (): boolean => {
     const { email, username, password, confirmPassword } = formData
     
     // All required fields must be non-empty
@@ -80,7 +80,7 @@ export default function RegisterComponent({
   }
 
   // Handle input changes
-  const handleInputChange = (field: keyof RegisterFormData, value: string) => {
+  const handleInputChange = (field: keyof RegisterFormData, value: string): void => {
     setFormData(prev => ({ ...prev, [field]: value }))
     
     // Clear field-specific errors when user starts typing
@@ -92,131 +92,116 @@ export default function RegisterComponent({
     if (generalError) {
       setGeneralError('')
     }
-  }
 
-  // Validate individual fields and set errors
-  const validateField = (field: keyof RegisterFormData): string | undefined => {
-    const value = formData[field]
-    
-    switch (field) {
-      case 'email':
-        if (!value.trim()) return 'Email is required'
-        if (!validateEmail(value)) return 'Please enter a valid email address'
-        break
-      case 'username':
-        if (!value.trim()) return 'Username is required'
-        if (!validateUsername(value)) return 'Username must be at least 3 characters and contain only letters, numbers, and underscores'
-        break
-      case 'password':
-        if (!value.trim()) return 'Password is required'
-        if (!validatePassword(value)) return 'Password must be at least 8 characters with uppercase, lowercase, and number'
-        break
-      case 'confirmPassword':
-        if (!value.trim()) return 'Please confirm your password'
-        if (value !== formData.password) return 'Passwords do not match'
-        break
-    }
-    return undefined
-  }
-
-  // Validate all fields
-  const validateAllFields = (): boolean => {
-    const newErrors: FormErrors = {}
-    let hasErrors = false
-
-    (['email', 'username', 'password', 'confirmPassword'] as const).forEach(field => {
-      const error = validateField(field)
-      if (error) {
-        newErrors[field] = error
-        hasErrors = true
+    // Real-time validation for password confirmation
+    if (field === 'confirmPassword' || field === 'password') {
+      const newFormData = { ...formData, [field]: value }
+      if (newFormData.password && newFormData.confirmPassword) {
+        if (newFormData.password !== newFormData.confirmPassword) {
+          setFieldErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }))
+        } else {
+          setFieldErrors(prev => ({ ...prev, confirmPassword: undefined }))
+        }
       }
-    })
+    }
 
-    setFieldErrors(newErrors)
-    return !hasErrors
+    // Real-time validation for other fields
+    if (field === 'email' && value) {
+      if (!validateEmail(value)) {
+        setFieldErrors(prev => ({ ...prev, email: 'Please enter a valid email address' }))
+      } else {
+        setFieldErrors(prev => ({ ...prev, email: undefined }))
+      }
+    }
+
+    if (field === 'username' && value) {
+      if (!validateUsername(value)) {
+        setFieldErrors(prev => ({ ...prev, username: 'Username must be at least 3 characters and contain only letters, numbers, and underscores' }))
+      } else {
+        setFieldErrors(prev => ({ ...prev, username: undefined }))
+      }
+    }
+
+    if (field === 'password' && value) {
+      if (!validatePassword(value)) {
+        setFieldErrors(prev => ({ ...prev, password: 'Password must be at least 8 characters with uppercase, lowercase, and number' }))
+      } else {
+        setFieldErrors(prev => ({ ...prev, password: undefined }))
+      }
+    }
   }
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     
-    // Clear previous errors
-    setGeneralError('')
-    
-    // Validate all fields
-    if (!validateAllFields()) {
+    if (!isFormValid() || isLoading) {
       return
     }
-    
+
     setIsLoading(true)
-    
+    setGeneralError('')
+    setFieldErrors({})
+
     try {
-      // Fixed: Use correct API endpoint /auth/register
-      const url = `${apiBaseUrl}/auth/register`
-      
-      // Prepare form data - use username as displayName if empty
-      const submitData = {
-        email: formData.email.trim(),
-        username: formData.username.trim(),
-        displayName: formData.displayName.trim() || formData.username.trim(),
-        password: formData.password
-      }
-      
-      const response = await fetch(url, {
+      const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submitData)
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          username: formData.username.trim(),
+          displayName: formData.displayName.trim() || formData.username.trim(),
+          password: formData.password,
+        }),
       })
-      
+
       const data = await response.json()
-      
-      if (response.ok && data.success) {
-        // Store token in localStorage with correct key
-        localStorage.setItem('auth-token', data.data.token)
-        
-        // Call success callback with the full response data
-        onRegisterSuccess?.(data.data)
-        
-        // Reset form
-        setFormData({
-          email: '',
-          username: '',
-          displayName: '',
-          password: '',
-          confirmPassword: ''
-        })
-      } else {
-        const errorMessage = data.error || 'Registration failed. Please try again.'
-        setGeneralError(errorMessage)
-        onRegisterError?.(errorMessage)
+
+      if (!response.ok) {
+        if (data.error) {
+          setGeneralError(data.error)
+          onRegisterError?.(data.error)
+        } else {
+          const errorMsg = 'Registration failed. Please try again.'
+          setGeneralError(errorMsg)
+          onRegisterError?.(errorMsg)
+        }
+        return
       }
+
+      // Success
+      onRegisterSuccess?.(data.data || data)
     } catch (error) {
-      const errorMessage = 'Network error. Please check your connection and try again.'
-      setGeneralError(errorMessage)
-      onRegisterError?.(errorMessage)
+      const errorMsg = 'Registration failed. Please try again.'
+      setGeneralError(errorMsg)
+      onRegisterError?.(errorMsg)
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="register-container">
-      <div className="register-card">
+    <div className="register-page-container">
+      <div className="register-container">
         <div className="register-header">
           <h1>Create Account</h1>
-          <p>Join ParaSocial and start sharing with the world</p>
+          <p>Join Parasocial and start sharing your thoughts!</p>
         </div>
         
-        <form onSubmit={handleSubmit} className="register-form" noValidate aria-label="Registration form">
-          {/* General error display */}
-          {generalError && (
-            <div className="form-error" role="alert">
-              {generalError}
-            </div>
-          )}
-          
+        {generalError && (
+          <div className="general-error" role="alert">
+            {generalError}
+          </div>
+        )}
+        
+        <form 
+          onSubmit={handleSubmit} 
+          className="register-form"
+          aria-label="Registration form"
+          noValidate
+        >
           {/* Email field */}
           <div className="form-group">
             <label htmlFor="email" className="form-label">Email Address</label>
@@ -245,7 +230,7 @@ export default function RegisterComponent({
               name="username"
               value={formData.username}
               onChange={(e) => handleInputChange('username', e.target.value)}
-              placeholder="Choose a username"
+              placeholder="Choose a unique username"
               className={`form-input ${fieldErrors.username ? 'error' : ''}`}
               required
               autoComplete="username"
@@ -340,5 +325,5 @@ export default function RegisterComponent({
 }
 
 // frontend/src/components/auth/RegisterComponent.tsx
-// Version: 1.9.0
-// Fixed: API endpoint to match test expectations (/api/auth/register)
+// Version: 1.10.0
+// Fixed: isFormValid function definition to ensure proper TypeScript function type
