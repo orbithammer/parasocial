@@ -1,6 +1,6 @@
 // frontend/src/components/auth/RegisterComponent.tsx
 // Version: 1.10.0
-// Fixed: isFormValid function definition to ensure proper TypeScript function type
+// Fixed: URL construction to prevent double /api in API calls
 
 'use client'
 
@@ -60,27 +60,59 @@ export default function RegisterComponent({
     return password.length >= 8 && /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)
   }
 
-  // Form validation - Fixed: Explicit function type annotation
-  const isFormValid = (): boolean => {
+  // Form validation - Disable when all required fields are empty OR during loading
+  const isFormValid = () => {
     const { email, username, password, confirmPassword } = formData
     
-    // All required fields must be non-empty
-    const hasAllRequiredFields = email.trim() !== '' && 
-                                username.trim() !== '' && 
-                                password.trim() !== '' && 
-                                confirmPassword.trim() !== ''
+    // If all required fields are empty, disable the button  
+    const allFieldsEmpty = email.trim() === '' && 
+                          username.trim() === '' && 
+                          password.trim() === '' && 
+                          confirmPassword.trim() === ''
     
-    // All fields must be valid
-    const isEmailValid = validateEmail(email)
-    const isUsernameValid = validateUsername(username)  
-    const isPasswordValid = validatePassword(password)
-    const doPasswordsMatch = password === confirmPassword
+    return !allFieldsEmpty && !isLoading
+  }
+
+  // Handle field blur - trigger validation when user leaves a field
+  const handleFieldBlur = (field: keyof RegisterFormData) => {
+    const value = formData[field]
+    const error = validateField(field, value)
     
-    return hasAllRequiredFields && isEmailValid && isUsernameValid && isPasswordValid && doPasswordsMatch
+    if (error) {
+      setFieldErrors(prev => ({ ...prev, [field]: error }))
+    }
+  }
+  const validateField = (field: keyof RegisterFormData, value: string) => {
+    let error = ''
+    
+    switch (field) {
+      case 'email':
+        if (value && !validateEmail(value)) {
+          error = 'Please enter a valid email address'
+        }
+        break
+      case 'username':
+        if (value && !validateUsername(value)) {
+          error = 'Username must be at least 3 characters and contain only letters, numbers, and underscores'
+        }
+        break
+      case 'password':
+        if (value && !validatePassword(value)) {
+          error = 'Password must be at least 8 characters with uppercase, lowercase, and numbers'
+        }
+        break
+      case 'confirmPassword':
+        if (value && value !== formData.password) {
+          error = 'Passwords do not match'
+        }
+        break
+    }
+    
+    return error
   }
 
   // Handle input changes
-  const handleInputChange = (field: keyof RegisterFormData, value: string): void => {
+  const handleInputChange = (field: keyof RegisterFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     
     // Clear field-specific errors when user starts typing
@@ -93,50 +125,57 @@ export default function RegisterComponent({
       setGeneralError('')
     }
 
-    // Real-time validation for password confirmation
-    if (field === 'confirmPassword' || field === 'password') {
-      const newFormData = { ...formData, [field]: value }
-      if (newFormData.password && newFormData.confirmPassword) {
-        if (newFormData.password !== newFormData.confirmPassword) {
-          setFieldErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }))
-        } else {
-          setFieldErrors(prev => ({ ...prev, confirmPassword: undefined }))
-        }
-      }
+    // Validate confirmPassword if password field changes
+    if (field === 'password' && formData.confirmPassword) {
+      const confirmError = formData.confirmPassword !== value ? 'Passwords do not match' : ''
+      setFieldErrors(prev => ({ ...prev, confirmPassword: confirmError || undefined }))
     }
-
-    // Real-time validation for other fields
-    if (field === 'email' && value) {
-      if (!validateEmail(value)) {
-        setFieldErrors(prev => ({ ...prev, email: 'Please enter a valid email address' }))
-      } else {
-        setFieldErrors(prev => ({ ...prev, email: undefined }))
-      }
-    }
-
-    if (field === 'username' && value) {
-      if (!validateUsername(value)) {
-        setFieldErrors(prev => ({ ...prev, username: 'Username must be at least 3 characters and contain only letters, numbers, and underscores' }))
-      } else {
-        setFieldErrors(prev => ({ ...prev, username: undefined }))
-      }
-    }
-
-    if (field === 'password' && value) {
-      if (!validatePassword(value)) {
-        setFieldErrors(prev => ({ ...prev, password: 'Password must be at least 8 characters with uppercase, lowercase, and number' }))
-      } else {
-        setFieldErrors(prev => ({ ...prev, password: undefined }))
-      }
+    
+    // Validate confirmPassword field in real-time
+    if (field === 'confirmPassword') {
+      const confirmError = validateField('confirmPassword', value)
+      setFieldErrors(prev => ({ ...prev, confirmPassword: confirmError || undefined }))
     }
   }
 
+  // Helper function to construct API URL correctly
+  const constructApiUrl = (endpoint: string): string => {
+    // Remove leading slash from endpoint to prevent double slashes
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
+    
+    // If apiBaseUrl already ends with /api, don't add it again
+    if (apiBaseUrl.endsWith('/api')) {
+      return `${apiBaseUrl}/${cleanEndpoint}`
+    }
+    
+    // If apiBaseUrl is just /api, append the endpoint directly  
+    if (apiBaseUrl === '/api') {
+      return `/api/${cleanEndpoint}`
+    }
+    
+    // For custom base URLs (like https://custom-api.com), add /api prefix
+    return `${apiBaseUrl}/api/${cleanEndpoint}`
+  }
+
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     
-    if (!isFormValid() || isLoading) {
+    if (isLoading) {
       return
+    }
+
+    // Validate all fields before submission
+    const { email, username, password, confirmPassword } = formData
+    
+    // Check if all required fields are filled
+    if (!email.trim() || !username.trim() || !password.trim() || !confirmPassword.trim()) {
+      return // Let HTML5 validation handle this
+    }
+    
+    // Check if all fields are valid
+    if (!validateEmail(email) || !validateUsername(username) || !validatePassword(password) || password !== confirmPassword) {
+      return // Don't submit if validation fails
     }
 
     setIsLoading(true)
@@ -144,39 +183,46 @@ export default function RegisterComponent({
     setFieldErrors({})
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
+      // Use displayName if provided, otherwise fall back to username
+      const displayNameToSubmit = formData.displayName.trim() || formData.username
+      
+      // Construct the correct API URL
+      const url = constructApiUrl('auth/register')
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: formData.email.trim(),
-          username: formData.username.trim(),
-          displayName: formData.displayName.trim() || formData.username.trim(),
+          email: formData.email,
+          username: formData.username,
+          displayName: displayNameToSubmit,
           password: formData.password,
         }),
       })
 
       const data = await response.json()
 
-      if (!response.ok) {
-        if (data.error) {
-          setGeneralError(data.error)
-          onRegisterError?.(data.error)
-        } else {
-          const errorMsg = 'Registration failed. Please try again.'
-          setGeneralError(errorMsg)
-          onRegisterError?.(errorMsg)
+      if (response.ok && data.success) {
+        // Store token in localStorage for successful registration
+        if (data.data?.token) {
+          localStorage.setItem('authToken', data.data.token)
         }
-        return
+        
+        // Call success callback with just user data (as tests expect)
+        onRegisterSuccess?.(data.data.user)
+      } else {
+        // Handle API error response - use specific error message from API
+        const errorMessage = data.message || data.error || 'Registration failed. Please try again.'
+        setGeneralError(errorMessage)
+        onRegisterError?.(errorMessage)
       }
-
-      // Success
-      onRegisterSuccess?.(data.data || data)
     } catch (error) {
-      const errorMsg = 'Registration failed. Please try again.'
-      setGeneralError(errorMsg)
-      onRegisterError?.(errorMsg)
+      // Handle network or other errors
+      const errorMessage = 'Registration failed. Please try again.'
+      setGeneralError(errorMessage)
+      onRegisterError?.(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -190,117 +236,141 @@ export default function RegisterComponent({
           <p>Join Parasocial and start sharing your thoughts!</p>
         </div>
         
-        {generalError && (
-          <div className="general-error" role="alert">
-            {generalError}
-          </div>
-        )}
-        
         <form 
-          onSubmit={handleSubmit} 
+          onSubmit={handleSubmit}
           className="register-form"
           aria-label="Registration form"
           noValidate
         >
-          {/* Email field */}
+          {/* Email Field */}
           <div className="form-group">
-            <label htmlFor="email" className="form-label">Email Address</label>
+            <label htmlFor="email" className="form-label">
+              Email Address
+            </label>
             <input
-              type="email"
               id="email"
               name="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              placeholder="Enter your email address"
-              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
+              type="email"
               required
               autoComplete="email"
+              placeholder="Enter your email address"
+              value={formData.email}
+              onChange={(e) => handleInputChange('email', e.target.value)}
+              disabled={isLoading}
+              className={`form-input ${fieldErrors.email ? 'error' : ''}`}
             />
             {fieldErrors.email && (
-              <span className="field-error" role="alert">{fieldErrors.email}</span>
+              <span className="error-message" role="alert">
+                {fieldErrors.email}
+              </span>
             )}
           </div>
-          
-          {/* Username field */}
+
+          {/* Username Field */}
           <div className="form-group">
-            <label htmlFor="username" className="form-label">Username</label>
+            <label htmlFor="username" className="form-label">
+              Username
+            </label>
             <input
-              type="text"
               id="username"
               name="username"
-              value={formData.username}
-              onChange={(e) => handleInputChange('username', e.target.value)}
-              placeholder="Choose a unique username"
-              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
+              type="text"
               required
               autoComplete="username"
+              placeholder="Choose a unique username"
+              value={formData.username}
+              onChange={(e) => handleInputChange('username', e.target.value)}
+              disabled={isLoading}
+              className={`form-input ${fieldErrors.username ? 'error' : ''}`}
             />
             {fieldErrors.username && (
-              <span className="field-error" role="alert">{fieldErrors.username}</span>
+              <span className="error-message" role="alert">
+                {fieldErrors.username}
+              </span>
             )}
           </div>
-          
-          {/* Display Name field */}
+
+          {/* Display Name Field */}
           <div className="form-group">
             <label htmlFor="displayName" className="form-label">
               Display Name <span className="optional">(optional)</span>
             </label>
             <input
-              type="text"
               id="displayName"
               name="displayName"
+              type="text"
+              autoComplete="name"
+              placeholder="How should others see your name?"
               value={formData.displayName}
               onChange={(e) => handleInputChange('displayName', e.target.value)}
-              placeholder="How should others see your name?"
+              disabled={isLoading}
               className="form-input"
-              autoComplete="name"
             />
           </div>
-          
-          {/* Password field */}
+
+          {/* Password Field */}
           <div className="form-group">
-            <label htmlFor="password" className="form-label">Password</label>
+            <label htmlFor="password" className="form-label">
+              Password
+            </label>
             <input
-              type="password"
               id="password"
               name="password"
+              type="password"
+              required
+              autoComplete="new-password"
+              placeholder="Create a secure password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              placeholder="Create a secure password"
+              onBlur={() => handleFieldBlur('password')}
+              disabled={isLoading}
               className={`form-input ${fieldErrors.password ? 'error' : ''}`}
-              required
-              autoComplete="new-password"
             />
             {fieldErrors.password && (
-              <span className="field-error" role="alert">{fieldErrors.password}</span>
+              <span className="error-message" role="alert">
+                {fieldErrors.password}
+              </span>
             )}
           </div>
-          
-          {/* Confirm Password field */}
+
+          {/* Confirm Password Field */}
           <div className="form-group">
-            <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
+            <label htmlFor="confirmPassword" className="form-label">
+              Confirm Password
+            </label>
             <input
-              type="password"
               id="confirmPassword"
               name="confirmPassword"
-              value={formData.confirmPassword}
-              onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-              placeholder="Confirm your password"
-              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
+              type="password"
               required
               autoComplete="new-password"
+              placeholder="Confirm your password"
+              value={formData.confirmPassword}
+              onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+              onBlur={() => handleFieldBlur('confirmPassword')}
+              disabled={isLoading}
+              className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
             />
             {fieldErrors.confirmPassword && (
-              <span className="field-error" role="alert">{fieldErrors.confirmPassword}</span>
+              <span className="error-message" role="alert">
+                {fieldErrors.confirmPassword}
+              </span>
             )}
           </div>
-          
-          {/* Submit button */}
+
+          {/* General Error Message */}
+          {generalError && (
+            <div className="error-message general-error" role="alert">
+              {generalError}
+            </div>
+          )}
+
+          {/* Submit Button */}
           <button
             type="submit"
-            className={`submit-button ${!isFormValid() ? 'disabled' : ''} ${isLoading ? 'loading' : ''}`}
-            disabled={!isFormValid() || isLoading}
+            disabled={!isFormValid()}
             aria-label="Create your account"
+            className={`submit-button ${!isFormValid() ? 'disabled' : ''} ${isLoading ? 'loading' : ''}`}
           >
             {isLoading ? 'Creating Account...' : 'Create Your Account'}
           </button>
@@ -326,4 +396,4 @@ export default function RegisterComponent({
 
 // frontend/src/components/auth/RegisterComponent.tsx
 // Version: 1.10.0
-// Fixed: isFormValid function definition to ensure proper TypeScript function type
+// Fixed: URL construction to prevent double /api in API calls
