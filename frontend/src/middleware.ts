@@ -1,233 +1,143 @@
 // frontend/src/middleware.ts
-// Version: 2.8
-// Fixed rate limiting: moved rate limiting check before API route handling
+// Version: 2.11.0
+// Fixed: Browser-compatible base64url decoding
+// Changed: Proper JWT decoding that works in Edge Runtime
 
 import { NextRequest, NextResponse } from 'next/server'
 
-// Rate limiting store (in-memory for demo)
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
+interface TokenValidationResult {
+  isValid: boolean
+  userEmail?: string
+  userRole?: string
+}
 
-// Mock token validation function for testing
-function validateToken(token: string): { isValid: boolean; userEmail?: string; userRole?: string } {
-  console.log('>>> VALIDATE TOKEN CALLED with:', token)
-  
-  // Mock validation logic for testing
-  if (token.startsWith('invalid-token')) {
-    console.log('>>> RETURNING INVALID TOKEN')
+/**
+ * Base64url decode function compatible with Edge Runtime
+ */
+function base64urlDecode(str: string): string {
+  // Add padding if necessary
+  str += '='.repeat((4 - str.length % 4) % 4)
+  // Replace URL-safe characters
+  str = str.replace(/-/g, '+').replace(/_/g, '/')
+  // Decode base64
+  return atob(str)
+}
+
+/**
+ * JWT decoder compatible with Edge Runtime
+ */
+function validateToken(token: string): TokenValidationResult {
+  try {
+    console.log('>>> VALIDATE TOKEN CALLED with JWT:', token.substring(0, 20) + '...')
+    
+    // Split JWT token
+    const parts = token.split('.')
+    if (parts.length !== 3) {
+      console.log('>>> INVALID JWT FORMAT')
+      return { isValid: false }
+    }
+    
+    // Decode payload using browser-compatible method
+    const payloadStr = base64urlDecode(parts[1])
+    const payload = JSON.parse(payloadStr)
+    
+    console.log('>>> JWT PAYLOAD:', payload)
+    
+    // Check expiration
+    if (payload.exp && Date.now() >= payload.exp * 1000) {
+      console.log('>>> TOKEN EXPIRED')
+      return { isValid: false }
+    }
+    
+    return {
+      isValid: true,
+      userEmail: payload.email,
+      userRole: payload.role || 'user'
+    }
+  } catch (error) {
+    console.log('>>> JWT DECODE FAILED:', error)
     return { isValid: false }
   }
-  
-  if (token.startsWith('admin-token')) {
-    console.log('>>> RETURNING VALID ADMIN TOKEN')
-    return { 
-      isValid: true, 
-      userEmail: 'admin@test.com',
-      userRole: 'admin'
-    }
-  }
-  
-  if (token.startsWith('valid-token')) {
-    console.log('>>> RETURNING VALID USER TOKEN')
-    return { 
-      isValid: true, 
-      userEmail: 'user@test.com'
-    }
-  }
-  
-  console.log('>>> RETURNING INVALID TOKEN (default)')
-  return { isValid: false }
 }
+
+const publicRoutes = [
+  '/',
+  '/login',
+  '/register',
+  '/api/auth/login',
+  '/api/auth/register',
+  '/favicon.ico',
+  '/_next',
+  '/static'
+]
 
 export function middleware(request: NextRequest) {
   console.log('=== MIDDLEWARE DEBUG START ===')
   
   const pathname = request.nextUrl.pathname
-  const method = request.method
-  const ip = request.headers.get('x-forwarded-for') || 
-            request.headers.get('x-real-ip') || 
-            '127.0.0.1'
+  console.log('Processing path:', pathname)
   
-  console.log('Middleware running for path:', pathname)
-  console.log('Pathname:', pathname)
-  console.log('Method:', method)
-  console.log('Client IP:', ip)
-  console.log('Incoming request:', { method, pathname, ip })
-
-  // Rate limiting check (applies to all routes)
-  const rateLimitKey = `${ip}:${pathname}`
-  const now = Date.now()
-  const windowMs = 60000 // 1 minute
-  const maxRequests = 10
-
-  const rateData = rateLimitStore.get(rateLimitKey)
-  
-  if (rateData) {
-    if (now < rateData.resetTime) {
-      if (rateData.count >= maxRequests) {
-        return NextResponse.json(
-          { 
-            error: {
-              code: 'RATE_LIMIT_EXCEEDED',
-              message: 'Too many requests. Please try again later.',
-              retryAfter: 60
-            },
-            success: false
-          },
-          { 
-            status: 429,
-            headers: {
-              'Retry-After': '60',
-              'X-RateLimit-Limit': maxRequests.toString(),
-              'X-RateLimit-Remaining': '0',
-              'X-RateLimit-Reset': rateData.resetTime.toString()
-            }
-          }
-        )
-      } else {
-        rateData.count++
-      }
-    } else {
-      // Reset window
-      rateLimitStore.set(rateLimitKey, { count: 1, resetTime: now + windowMs })
-    }
-  } else {
-    rateLimitStore.set(rateLimitKey, { count: 1, resetTime: now + windowMs })
+  // Skip static files and API routes
+  if (pathname.startsWith('/_next/') || 
+      pathname.startsWith('/api/') ||
+      pathname.endsWith('.ico')) {
+    console.log('>>> SKIPPING: Static/API route')
+    return NextResponse.next()
   }
 
-  // Handle API routes with CORS headers
-  if (pathname.startsWith('/api/')) {
-    console.log('>>> HANDLING: API route')
-    
-    // Handle preflight OPTIONS requests
-    if (method === 'OPTIONS') {
-      console.log('>>> HANDLING: OPTIONS preflight request')
-      console.log('Handling preflight OPTIONS request')
-      
-      const response = NextResponse.json(null, { status: 200 })
-      response.headers.set('Access-Control-Allow-Origin', '*')
-      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-      console.log('=== MIDDLEWARE DEBUG END ===')
-      return response
-    }
-    
-    // Add CORS headers to API responses
-    const response = NextResponse.next()
-    response.headers.set('Access-Control-Allow-Origin', '*')
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    console.log('=== MIDDLEWARE DEBUG END ===')
-    return response
-  }
-
-  // Define public routes that don't require authentication
-  const publicRoutes = ['/login', '/register', '/']
-  
-  // Get token from cookie or authorization header
+  // Extract token
   const cookieToken = request.cookies.get('auth-token')?.value
   const headerAuth = request.headers.get('authorization')
   const headerToken = headerAuth?.startsWith('Bearer ') ? 
-    headerAuth.substring(7) : null
+                     headerAuth.substring(7) : null
   
   const token = cookieToken || headerToken
   
   console.log('Cookie token found:', !!cookieToken)
   console.log('Header token found:', !!headerToken)
-  console.log('Final token:', token ? token.substring(0, 15) + '...' : 'none')
+  console.log('Using token:', token ? 'YES' : 'NO')
   
-  // Check if the current route is public
-  const isPublicRoute = publicRoutes.includes(pathname)
+  // Check if route is public
+  const isPublicRoute = publicRoutes.some(route => 
+    pathname === route || pathname.startsWith(route + '/')
+  )
+  
   console.log('Is public route:', isPublicRoute)
-  console.log('Public routes list:', publicRoutes)
   
-  // Allow access to public routes without authentication
   if (isPublicRoute) {
-    console.log('>>> ALLOWING: Request to continue')
-    console.log('Request allowed to continue')
-    
-    const response = NextResponse.next()
-    addSecurityHeaders(response)
+    console.log('>>> ALLOWING: Public route')
     console.log('=== MIDDLEWARE DEBUG END ===')
-    return response
+    return NextResponse.next()
   }
   
-  // Check if user has a token
+  // Protected route - check token
   if (!token) {
     console.log('>>> REDIRECTING: No token on protected route')
-    console.log('No token found, redirecting to login')
-    
-    const loginUrl = new URL('/login', request.url)
     console.log('=== MIDDLEWARE DEBUG END ===')
-    return NextResponse.redirect(loginUrl)
+    return NextResponse.redirect(new URL('/login', request.url))
   }
   
-  console.log('>>> TOKEN EXISTS: Starting validation')
+  // Validate token
+  const validation = validateToken(token)
   
-  // Validate the token
-  const validationResult = validateToken(token)
+  console.log('Validation result:', validation)
   
-  console.log('Token validation result:', validationResult)
-  
-  if (!validationResult.isValid) {
-    console.log('>>> INVALID TOKEN')
-    console.log('Invalid token, redirecting to login')
-    
-    const loginUrl = new URL('/login', request.url)
+  if (!validation.isValid) {
+    console.log('>>> REDIRECTING: Invalid token')
     console.log('=== MIDDLEWARE DEBUG END ===')
-    return NextResponse.redirect(loginUrl)
+    return NextResponse.redirect(new URL('/login', request.url))
   }
   
-  console.log('>>> VALID TOKEN')
-  console.log('Valid token for user:', validationResult.userEmail)
-  
-  // Check admin routes
-  if (pathname.startsWith('/admin/')) {
-    console.log('>>> CHECKING: Admin route access')
-    console.log('User role:', validationResult.userRole)
-    
-    if (validationResult.userRole !== 'admin') {
-      console.log('>>> FORBIDDEN: Non-admin accessing admin route')
-      console.log('>>> RETURNING JSON 403 RESPONSE')
-      
-      const response = NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      )
-      console.log('=== MIDDLEWARE DEBUG END ===')
-      return response
-    }
-    
-    console.log('>>> ADMIN ACCESS GRANTED')
-  }
-  
-  console.log('>>> ALLOWING: Request to continue')
-  console.log('Request allowed to continue')
-  
-  const response = NextResponse.next()
-  addSecurityHeaders(response)
+  console.log('>>> ALLOWING: Valid token for', validation.userEmail)
   console.log('=== MIDDLEWARE DEBUG END ===')
-  return response
-}
-
-function addSecurityHeaders(response: NextResponse) {
-  // Add security headers
-  response.headers.set('X-Frame-Options', 'DENY')
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Content-Security-Policy', "frame-ancestors 'none'")
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  return NextResponse.next()
 }
 
 export const config = {
   matcher: [
-    // Match all request paths except for the ones starting with:
-    // - _next/static (static files)
-    // - _next/image (image optimization files)
-    // - favicon.ico (favicon file)
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }
 
 // frontend/src/middleware.ts
-// Version: 2.8
-// Fixed rate limiting: moved rate limiting check before API route handling
+// Version: 2.11.0

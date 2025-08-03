@@ -1,10 +1,11 @@
 // frontend/src/app/login/page.tsx
-// Version: 2.1.1
-// Fixed: Changed label text color from text-gray-100 to text-gray-700 for better readability
+// Version: 2.4.0
+// Enhanced debugging to identify navigation blocking issue
+// Changed: Added navigation interception, GET request testing, and redirect detection
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -30,21 +31,114 @@ export default function LoginPage(): React.JSX.Element {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
+
+  const addDebugInfo = (message: string) => {
+    console.log('DEBUG:', message)
+    setDebugInfo(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+  }
+
+  // Listen for navigation events
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      addDebugInfo('🔄 Page about to unload - navigation starting')
+    }
+
+    const handleUnload = (e: Event) => {
+      console.log('🚪 Page unloaded - navigation completed')
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('unload', handleUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('unload', handleUnload)
+    }
+  }, [])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
-    if (error) setError('') // Clear error when user types
+    if (error) setError('')
+  }
+
+  const testFullDashboardAccess = async (): Promise<boolean> => {
+    try {
+      addDebugInfo('🧪 Testing full GET request to /dashboard...')
+      
+      const response = await fetch('/dashboard', {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+      })
+      
+      addDebugInfo(`GET /dashboard response: ${response.status} ${response.statusText}`)
+      addDebugInfo(`Response URL: ${response.url}`)
+      addDebugInfo(`Redirected: ${response.redirected}`)
+      
+      if (response.redirected) {
+        addDebugInfo(`❌ Server redirected to: ${response.url}`)
+        return false
+      }
+      
+      if (response.status === 200) {
+        addDebugInfo('✅ Full GET request successful')
+        return true
+      }
+      
+      return false
+    } catch (error) {
+      addDebugInfo(`❌ GET test failed: ${error}`)
+      return false
+    }
+  }
+
+  const attemptMultipleNavigation = async () => {
+    addDebugInfo('🎯 Starting navigation attempts...')
+    
+    // Method 1: Direct window.location
+    addDebugInfo('📍 Method 1: window.location.href')
+    window.location.href = '/dashboard'
+    
+    // Wait to see if navigation happened
+    await new Promise(resolve => setTimeout(resolve, 500))
+    addDebugInfo('🤔 Still here after window.location.href - trying alternatives')
+    
+    // Method 2: window.location.assign
+    addDebugInfo('📍 Method 2: window.location.assign')
+    window.location.assign('/dashboard')
+    
+    await new Promise(resolve => setTimeout(resolve, 500))
+    addDebugInfo('🤔 Still here after assign - trying replace')
+    
+    // Method 3: window.location.replace
+    addDebugInfo('📍 Method 3: window.location.replace')
+    window.location.replace('/dashboard')
+    
+    await new Promise(resolve => setTimeout(resolve, 500))
+    addDebugInfo('🤔 Still here after replace - trying router')
+    
+    // Method 4: Next.js router with refresh
+    addDebugInfo('📍 Method 4: router.refresh + router.push')
+    router.refresh()
+    router.push('/dashboard')
+    
+    await new Promise(resolve => setTimeout(resolve, 500))
+    addDebugInfo('❌ All navigation methods failed')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    console.log('🚀 handleSubmit called!')
     e.preventDefault()
     setIsLoading(true)
     setError('')
+    setDebugInfo([])
     
     try {
-      console.log('1. Starting login request...')
+      addDebugInfo('🚀 Starting login process...')
+      
       const response = await fetch('http://localhost:3001/auth/login', {
         method: 'POST',
         headers: {
@@ -56,30 +150,39 @@ export default function LoginPage(): React.JSX.Element {
         }),
       })
       
-      console.log('2. Response status:', response.status, response.ok)
       const result: LoginResponse = await response.json()
-      console.log('3. Response data:', result)
       
       if (response.ok && result.success && result.data) {
-        console.log('4. Login successful, setting tokens...')
-        // Set cookie that middleware expects
-        document.cookie = `auth-token=${result.data.token}; path=/; max-age=86400; secure=false; samesite=lax`
+        const token = result.data.token
+        addDebugInfo(`🎫 Token received: ${token.substring(0, 20)}...`)
         
-        // Store in localStorage too
-        localStorage.setItem('authToken', result.data.token)
+        // Set cookie
+        document.cookie = `auth-token=${token}; path=/; max-age=86400; secure=false; samesite=lax`
+        addDebugInfo('🍪 Cookie set')
+        
+        // Store in localStorage
+        localStorage.setItem('authToken', token)
         localStorage.setItem('user', JSON.stringify(result.data.user))
+        addDebugInfo('💾 LocalStorage updated')
         
-        console.log('5. Attempting navigation to /dashboard...')
-        // Navigate to dashboard
-        window.location.href = '/dashboard'
-        console.log('6. Navigation called')
+        // Wait for cookie to propagate
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
+        // Test full access
+        const hasAccess = await testFullDashboardAccess()
+        
+        if (hasAccess) {
+          // Try multiple navigation methods
+          await attemptMultipleNavigation()
+        } else {
+          addDebugInfo('❌ Full access test failed')
+          setError('Authentication succeeded but dashboard access blocked')
+        }
       } else {
-        console.log('4. Login failed:', result.error)
         setError(result.error || 'Login failed. Please check your credentials.')
       }
       
     } catch (networkError) {
-      console.log('Error caught:', networkError)
       setError('Unable to connect to server. Please try again.')
     } finally {
       setIsLoading(false)
@@ -87,105 +190,99 @@ export default function LoginPage(): React.JSX.Element {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <header>
+          <h1 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to your account
-          </h2>
-        </div>
-        
+          </h1>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Welcome back! Please enter your credentials.
+          </p>
+        </header>
+
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {/* Error message display */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded" role="alert">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {/* Email field */}
+          <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  disabled={isLoading}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="Enter your email"
-                />
-              </div>
+              <label htmlFor="email" className="sr-only">Email address</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
+                value={formData.email}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
             </div>
-
-            {/* Password field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  disabled={isLoading}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="Enter your password"
-                />
-              </div>
+              <label htmlFor="password" className="sr-only">Password</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                value={formData.password}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
             </div>
           </div>
 
-          {/* Submit button */}
+          {error && (
+            <div className="rounded-md bg-red-50 p-4">
+              <div className="text-sm text-red-700">{error}</div>
+            </div>
+          )}
+
           <div>
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Signing in...
-                </>
-              ) : (
-                'Sign in'
-              )}
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
 
-          {/* Link to register */}
           <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
-              <Link 
-                href="/register" 
-                className="font-medium text-indigo-600 hover:text-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded"
-              >
-                Register here
-              </Link>
-            </p>
+            <Link href="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
+              Need an account? Sign up here
+            </Link>
           </div>
         </form>
+
+        {/* Debug Panel */}
+        {debugInfo.length > 0 && (
+          <div className="mt-8 bg-gray-100 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">Debug Information:</h3>
+            <div className="text-xs space-y-1 max-h-60 overflow-y-auto">
+              {debugInfo.map((info, index) => (
+                <div key={index} className="font-mono text-gray-700">{info}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Manual Navigation Test */}
+        <div className="mt-4">
+          <button
+            onClick={() => window.location.href = '/dashboard'}
+            className="w-full py-2 px-4 bg-gray-600 text-white rounded-md text-sm"
+          >
+            Manual Test: Go to Dashboard
+          </button>
+        </div>
       </div>
     </main>
   )
 }
 
 // frontend/src/app/login/page.tsx
-// Version: 2.1.1
-// Fixed: Changed label text color from text-gray-100 to text-gray-700 for better readability
+// Version: 2.4.0
