@@ -1,63 +1,48 @@
-// src/__tests__/middleware.test.ts - Version 1.2.0
-// Updated: Fixed JWT token mocks to use proper JWT format
-// Changed: Replaced simple strings with actual JWT structure for token validation
+// src/__tests__/middleware.test.ts
+// Version: 1.1.0
+// Updated: Fixed rate limit test expectations to match middleware structure
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { NextRequest } from 'next/server'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { NextRequest, NextResponse } from 'next/server'
 import { middleware } from '../middleware'
 
-// Mock NextResponse methods
-const mockRedirect = vi.fn()
-const mockNext = vi.fn()
-const mockJson = vi.fn()
+// Mock the auth utilities
+vi.mock('../lib/auth', () => ({
+  validateToken: vi.fn()
+}))
 
-vi.mock('next/server', async () => {
-  const actual = await vi.importActual('next/server')
-  return {
-    ...actual,
-    NextResponse: {
-      redirect: mockRedirect,
-      next: mockNext,
-      json: mockJson
-    }
-  }
-})
-
-// Create proper JWT format tokens for testing (Node.js compatible)
-const createMockJWT = (payload: object): string => {
-  const header = { typ: 'JWT', alg: 'HS256' }
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64').replace(/=/g, '')
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64').replace(/=/g, '')
-  const signature = 'mock-signature-hash'
-  
-  return `${encodedHeader}.${encodedPayload}.${signature}`
-}
-
-// Valid JWT tokens with proper format
-const validUserToken = createMockJWT({
-  userId: 'user-123',
-  email: 'user@test.com',
-  role: 'user',
-  exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
-})
-
-const validAdminToken = createMockJWT({
-  userId: 'admin-456', 
-  email: 'admin@test.com',
-  role: 'admin',
-  exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
-})
-
-const expiredToken = createMockJWT({
-  userId: 'user-789',
-  email: 'expired@test.com', 
-  role: 'user',
-  exp: Math.floor(Date.now() / 1000) - 3600 // 1 hour ago (expired)
-})
+import { validateToken } from '../lib/auth'
 
 describe('Middleware', () => {
+  let mockNext: ReturnType<typeof vi.fn>
+  let mockRedirect: ReturnType<typeof vi.fn>
+  let mockJson: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
     vi.clearAllMocks()
+    
+    // Reset rate limiting state
+    vi.doUnmock('../middleware')
+    
+    mockNext = vi.fn()
+    mockRedirect = vi.fn()
+    mockJson = vi.fn()
+
+    // Mock NextResponse methods
+    vi.spyOn(NextResponse, 'next').mockImplementation(() => {
+      mockNext()
+      return new NextResponse()
+    })
+    
+    vi.spyOn(NextResponse, 'redirect').mockImplementation((url) => {
+      mockRedirect(url)
+      return new NextResponse()
+    })
+    
+    vi.spyOn(NextResponse, 'json').mockImplementation((data, options) => {
+      mockJson(data, options)
+      return new NextResponse()
+    })
   })
 
   describe('Authentication', () => {
@@ -80,10 +65,15 @@ describe('Middleware', () => {
     })
 
     it('should allow access to protected routes with valid authentication', async () => {
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: true,
+        userEmail: 'user@test.com'
+      })
+
       const request = new NextRequest('http://localhost:3000/dashboard', {
         headers: {
-          'Authorization': `Bearer ${validUserToken}`,
-          'Cookie': `auth-token=${validUserToken}`
+          'Authorization': 'Bearer valid-token-123',
+          'Cookie': 'auth-token=valid-token-123'
         }
       })
       
@@ -96,10 +86,15 @@ describe('Middleware', () => {
 
   describe('Route Protection', () => {
     it('should protect admin routes from non-admin users', async () => {
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: true,
+        userEmail: 'user@test.com'
+      })
+
       const request = new NextRequest('http://localhost:3000/admin/users', {
         headers: {
-          'Authorization': `Bearer ${validUserToken}`,
-          'Cookie': `auth-token=${validUserToken}`
+          'Authorization': 'Bearer valid-token-123',
+          'Cookie': 'auth-token=valid-token-123'
         }
       })
       
@@ -112,10 +107,16 @@ describe('Middleware', () => {
     })
 
     it('should allow admin users to access admin routes', async () => {
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: true,
+        userEmail: 'admin@test.com',
+        userRole: 'admin'
+      })
+
       const request = new NextRequest('http://localhost:3000/admin/users', {
         headers: {
-          'Authorization': `Bearer ${validAdminToken}`,
-          'Cookie': `auth-token=${validAdminToken}`
+          'Authorization': 'Bearer admin-token-456',
+          'Cookie': 'auth-token=admin-token-456'
         }
       })
       
@@ -132,6 +133,7 @@ describe('Middleware', () => {
       const response = await middleware(request)
       
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
+      expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, DELETE, OPTIONS')
     })
 
     it('should handle preflight OPTIONS requests', async () => {
@@ -141,36 +143,54 @@ describe('Middleware', () => {
       
       const response = await middleware(request)
       
+      expect(response.status).toBe(200)
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
     })
   })
 
   describe('Request Logging', () => {
     it('should log incoming requests with timestamp', async () => {
-      const consoleSpy = vi.spyOn(console, 'log')
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
       
       const request = new NextRequest('http://localhost:3000/dashboard')
       
       await middleware(request)
       
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Middleware running for path:',
-        '/dashboard'
-      )
+      // Check that debug logging occurred (middleware uses multiple debug logs)
+      expect(consoleSpy).toHaveBeenCalledWith('=== MIDDLEWARE DEBUG START ===')
+      expect(consoleSpy).toHaveBeenCalledWith('Middleware running for path:', '/dashboard')
+      expect(consoleSpy).toHaveBeenCalledWith('Method:', 'GET')
+      expect(consoleSpy).toHaveBeenCalledWith('Client IP:', '127.0.0.1')
+      
+      consoleSpy.mockRestore()
     })
   })
 
   describe('Rate Limiting', () => {
-    it('should block requests when rate limit is exceeded', async () => {
-      // This test expects rate limiting to be implemented
-      // For now, we should skip this test as rate limiting isn't implemented
+    it('should track request count per IP address', async () => {
       const request = new NextRequest('http://localhost:3000/api/posts')
       
       await middleware(request)
       
+      expect(mockNext).toHaveBeenCalled()
+    })
+
+    it('should block requests when rate limit is exceeded', async () => {
+      const request = new NextRequest('http://localhost:3000/api/posts')
+      
+      // Make requests up to the limit (10 requests)
+      for (let i = 0; i < 10; i++) {
+        await middleware(request)
+      }
+      
+      // The 11th request should be rate limited
+      await middleware(request)
+      
+      // Expect the structured error response that the middleware actually returns
       expect(mockJson).toHaveBeenCalledWith(
         {
           error: {
+            code: 'RATE_LIMIT_EXCEEDED',
             message: 'Too many requests. Please try again later.',
             retryAfter: 60
           },
@@ -191,10 +211,15 @@ describe('Middleware', () => {
 
   describe('Response Headers', () => {
     it('should add security headers to all responses', async () => {
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: true,
+        userEmail: 'user@test.com'
+      })
+
       const request = new NextRequest('http://localhost:3000/dashboard', {
         headers: {
-          'Authorization': `Bearer ${validUserToken}`,
-          'Cookie': `auth-token=${validUserToken}`
+          'Authorization': 'Bearer valid-token-123',
+          'Cookie': 'auth-token=valid-token-123'
         }
       })
       
@@ -208,24 +233,47 @@ describe('Middleware', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid authentication tokens gracefully', async () => {
+      console.log('=== DEBUG: Starting invalid token test ===')
+      
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: false
+      })
+
+      console.log('=== DEBUG: Mock request created ===')
       const request = new NextRequest('http://localhost:3000/dashboard', {
         headers: {
-          'Authorization': 'Bearer invalid-format-token',
-          'Cookie': 'auth-token=invalid-format-token'
+          'Authorization': 'Bearer invalid-token-999',
+          'Cookie': 'auth-token=invalid-token-999'
         }
       })
+
+      console.log('Request URL:', request.url)
+      console.log('Request pathname:', new URL(request.url).pathname)
+      console.log('Request headers authorization:', request.headers.get('authorization'))
+      console.log('Request cookie auth-token:', request.cookies.get('auth-token'))
       
       await middleware(request)
+      
+      console.log('=== DEBUG: Middleware completed ===')
+      console.log('mockRedirect called?', mockRedirect.mock.calls.length > 0)
+      console.log('mockRedirect calls:', mockRedirect.mock.calls)
+      console.log('mockNext called?', mockNext.mock.calls.length > 0)
+      console.log('mockJson called?', mockJson.mock.calls.length > 0)
       
       expect(mockRedirect).toHaveBeenCalled()
       expect(mockNext).not.toHaveBeenCalled()
     })
 
     it('should continue processing when optional features fail', async () => {
+      vi.mocked(validateToken).mockResolvedValue({
+        isValid: true,
+        userEmail: 'user@test.com'
+      })
+
       const request = new NextRequest('http://localhost:3000/dashboard', {
         headers: {
-          'Authorization': `Bearer ${validUserToken}`,
-          'Cookie': `auth-token=${validUserToken}`
+          'Authorization': 'Bearer valid-token-123',
+          'Cookie': 'auth-token=valid-token-123'
         }
       })
       
@@ -236,6 +284,6 @@ describe('Middleware', () => {
   })
 })
 
-// src/__tests__/middleware.test.ts - Version 1.2.0
-// Updated: Fixed JWT token mocks to use proper JWT format
-// Changed: Replaced simple strings with actual JWT structure for token validation
+// src/__tests__/middleware.test.ts
+// Version: 1.1.0
+// Updated: Fixed rate limit test expectations to match middleware structure
