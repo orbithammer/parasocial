@@ -1,50 +1,46 @@
 // frontend/src/middleware.ts
-// Version: 2.12.0
-// Fixed: JWT validation logic to properly decode base64 tokens from tests
-// Changed: Updated base64urlDecode to handle both base64 and base64url formats
+// Version: 2.13.0
+// Fixed: Route protection logic to properly distinguish public vs protected routes
+// Changed: Updated isPublicRoute logic to handle root path correctly
 
 import { NextRequest, NextResponse } from 'next/server'
 
-interface TokenValidationResult {
-  isValid: boolean
-  userEmail?: string
-  userRole?: string
-}
-
 /**
- * Base64url decode function compatible with Edge Runtime
- * Handles both regular base64 and base64url encoded strings
+ * Helper function to decode base64url (JWT format)
+ * Handles both standard base64 and base64url encoding
  */
 function base64urlDecode(str: string): string {
+  // Convert base64url to base64
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/')
+  
+  // Add padding if needed
+  const padding = base64.length % 4
+  if (padding) {
+    base64 += '='.repeat(4 - padding)
+  }
+  
   try {
-    // Handle base64url format (with - and _ characters)
-    if (str.includes('-') || str.includes('_')) {
-      // Add padding if necessary
-      str += '='.repeat((4 - str.length % 4) % 4)
-      // Replace URL-safe characters
-      str = str.replace(/-/g, '+').replace(/_/g, '/')
-    } else {
-      // Handle regular base64 format (add padding if missing)
-      str += '='.repeat((4 - str.length % 4) % 4)
-    }
-    
-    // Decode base64
-    return atob(str)
+    // Use browser-compatible base64 decoding
+    return atob(base64)
   } catch (error) {
-    console.log('>>> BASE64 DECODE ERROR:', error)
-    throw new Error('Invalid base64 encoding')
+    // Fallback for Node.js environment
+    return Buffer.from(base64, 'base64').toString('utf-8')
   }
 }
 
 /**
- * JWT decoder compatible with Edge Runtime
- * Validates JWT token format and extracts payload
+ * JWT token validation function
+ * Validates token format and expiration
  */
-function validateToken(token: string): TokenValidationResult {
+function validateToken(token: string): {
+  isValid: boolean
+  userEmail?: string
+  userRole?: string
+} {
   try {
-    console.log('>>> VALIDATE TOKEN CALLED with JWT:', token.substring(0, 20) + '...')
+    console.log('>>> VALIDATING TOKEN:', token.substring(0, 20) + '...')
     
-    // Split JWT token into parts
+    // Split JWT into parts
     const parts = token.split('.')
     if (parts.length !== 3) {
       console.log('>>> INVALID JWT FORMAT: Expected 3 parts, got', parts.length)
@@ -75,17 +71,29 @@ function validateToken(token: string): TokenValidationResult {
   }
 }
 
-// Define public routes that don't require authentication
-const publicRoutes = [
-  '/',
-  '/login',
-  '/register',
-  '/api/auth/login',
-  '/api/auth/register',
-  '/favicon.ico',
-  '/_next',
-  '/static'
-]
+/**
+ * Check if a path is a public route
+ * Uses exact matching for root path and prefix matching for others
+ */
+function isPublicRoute(pathname: string): boolean {
+  const publicRoutes = [
+    '/login',
+    '/register',
+    '/api/auth/login',
+    '/api/auth/register',
+    '/favicon.ico',
+    '/_next',
+    '/static'
+  ]
+  
+  // Handle root path exactly
+  if (pathname === '/') {
+    return true
+  }
+  
+  // Check other public routes with prefix matching
+  return publicRoutes.some(route => pathname.startsWith(route))
+}
 
 /**
  * Next.js middleware function for authentication and route protection
@@ -127,12 +135,12 @@ export function middleware(request: NextRequest) {
   console.log('Header token found:', !!headerToken)
   console.log('Using token:', token ? 'YES' : 'NO')
   
-  // Check if current route is public
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
-  console.log('Is public route:', isPublicRoute)
+  // Check if current route is public using new logic
+  const isPublic = isPublicRoute(pathname)
+  console.log('Is public route:', isPublic)
   
   // Allow access to public routes without authentication
-  if (isPublicRoute) {
+  if (isPublic) {
     console.log('>>> ALLOWING: Public route')
     console.log('=== MIDDLEWARE DEBUG END ===')
     return NextResponse.next()
@@ -186,6 +194,6 @@ export const config = {
 }
 
 // frontend/src/middleware.ts
-// Version: 2.12.0
-// Fixed: JWT validation logic to properly decode base64 tokens from tests
-// Changed: Updated base64urlDecode to handle both base64 and base64url formats
+// Version: 2.13.0
+// Fixed: Route protection logic to properly distinguish public vs protected routes
+// Changed: Updated isPublicRoute logic to handle root path correctly
