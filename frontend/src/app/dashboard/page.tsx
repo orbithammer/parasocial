@@ -252,15 +252,6 @@ export default function LoginPage(): React.ReactElement {
             </div>
           </div>
         </form>
-
-        {/* Test Credentials Helper */}
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="text-sm font-semibold text-blue-800 mb-2">Test Credentials</h3>
-          <div className="text-xs text-blue-700 space-y-1">
-            <p><strong>Email:</strong> test@example.com</p>
-            <p><strong>Password:</strong> password123</p>
-          </div>
-        </div>
       </div>
     </main>
   )
